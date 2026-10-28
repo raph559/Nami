@@ -12,5 +12,5 @@ export CGO_LDFLAGS="-target arm64-apple-ios$IOS_MIN -isysroot $IOS_SDK"
 
 go mod tidy >/dev/null
 mkdir -p out
-go build -trimpath -ldflags="-s -w" -buildmode=c-archive -o out/libnami.a .
+go build -tags nosqlite -trimpath -ldflags="-s -w" -buildmode=c-archive -o out/libnami.a .
 ls -la out

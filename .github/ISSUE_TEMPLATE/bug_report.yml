@@ -1,0 +1,46 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Tap …
+  - type: input
+    id: version
+    attributes:
+      label: Nami version
+      description: Settings → Version
+    validations:
+      required: true
+  - type: input
+    id: ios
+    attributes:
+      label: iOS version and device
+      placeholder: iOS 27.2, iPhone 17
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How Nami is installed
+      options:
+        - LiveContainer
+        - SideStore / AltStore
+        - xtool / Xcode
+        - Other
+  - type: textarea
+    id: logs
+    attributes:
+      label: Crash report or logs
+      description: If it crashed, attach the .ips crash report (Settings → Privacy & Security → Analytics Data). Do not include links to content.
