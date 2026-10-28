@@ -8,3 +8,8 @@ app/Vendor/MobileVLCKit.xcframework/
 *.ipa
 *.p12
 *.mobiledevicepairing
+
+# Engine binaries built by engine/build-shared.sh
+mobile/android/app/src/main/jniLibs/
+mobile/windows/engine/
+mobile/android/build/
