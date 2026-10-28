@@ -1,0 +1,10 @@
+.build/
+.bsp/
+.swiftpm/
+app/xtool/
+engine/out/
+vendor/
+app/Vendor/MobileVLCKit.xcframework/
+*.ipa
+*.p12
+*.mobiledevicepairing

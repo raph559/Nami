@@ -1,0 +1,6 @@
+version: 1
+bundleID: com.raphr.nami
+product: Nami
+infoPath: Info.plist
+iconPath: Icon.png
+skipLSP: true
