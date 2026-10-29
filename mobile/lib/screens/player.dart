@@ -104,7 +104,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (mounted) {
         setState(() {
           phase = _Phase.failed;
-          failure = e.toString();
+          failure = _explain(e);
         });
       }
     }
@@ -172,82 +172,128 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _toggleControls,
-            child: Video(controller: controller, controls: NoVideoControls, fill: Colors.black),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.space): () {
+          player.playOrPause();
+          _scheduleHide();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyK): () => player.playOrPause(),
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _seekBy(-10),
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () => _seekBy(10),
+        const SingleActivator(LogicalKeyboardKey.keyS): () => _seekBy(85),
+        const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.maybePop(context),
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _toggleControls,
+                child: Video(controller: controller, controls: NoVideoControls, fill: Colors.black),
+              ),
+              if (phase == _Phase.connecting)
+                _status(null, t('Connexion aux pairs…', 'Connecting to peers…'), widget.result.title),
+              if (phase == _Phase.failed)
+                _status(Icons.warning_amber, t('Impossible de lire', 'Cannot play'), failure ?? ''),
+              if (phase == _Phase.chooseFile) _fileChooser(),
+              if (phase == _Phase.playing && (player.state.buffering || player.state.position == Duration.zero))
+                IgnorePointer(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(color: Colors.white),
+                        const SizedBox(height: 10),
+                        Text(statsLine, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
+              if (phase == _Phase.playing && controls) _overlay(),
+              if (phase != _Phase.playing)
+                SafeArea(
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: IconButton(
+                      tooltip: t('Fermer', 'Close'),
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          if (phase == _Phase.connecting)
-            _status(null, t('Connexion aux pairs…', 'Connecting to peers…'), widget.result.title),
-          if (phase == _Phase.failed) _status(Icons.warning_amber, t('Impossible de lire', 'Cannot play'), failure ?? ''),
-          if (phase == _Phase.chooseFile) _fileChooser(),
-          if (phase == _Phase.playing && (player.state.buffering || player.state.position == Duration.zero))
-            IgnorePointer(
-              child: Center(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const CircularProgressIndicator(color: Colors.white),
-                  const SizedBox(height: 10),
-                  Text(statsLine, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                ]),
-              ),
-            ),
-          if (phase == _Phase.playing && controls) _overlay(),
-          if (phase != _Phase.playing)
-            SafeArea(
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)),
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _status(IconData? icon, String title, String detail) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            icon == null ? const CircularProgressIndicator(color: Colors.white) : Icon(icon, color: Colors.amber, size: 40),
-            const SizedBox(height: 14),
-            Text(title, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 6),
-            Text(detail, textAlign: TextAlign.center, maxLines: 4, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-            if (phase == _Phase.connecting && stats != null)
-              Text(t('${stats!.peers} pairs', '${stats!.peers} peers'), style: const TextStyle(color: Colors.white54, fontSize: 11)),
-          ]),
-        ),
-      );
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          icon == null
+              ? const CircularProgressIndicator(color: Colors.white)
+              : Icon(icon, color: Colors.amber, size: 40),
+          const SizedBox(height: 14),
+          Text(
+            title,
+            style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            detail,
+            textAlign: TextAlign.center,
+            maxLines: 4,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+          if (phase == _Phase.connecting && stats != null)
+            Text(
+              t('${stats!.peers} pairs', '${stats!.peers} peers'),
+              style: const TextStyle(color: Colors.white54, fontSize: 11),
+            ),
+        ],
+      ),
+    ),
+  );
 
   Widget _fileChooser() => Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 340),
-          margin: const EdgeInsets.all(16),
-          decoration: BoxDecoration(color: Colors.grey.shade900, borderRadius: BorderRadius.circular(16)),
-          child: Column(children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(t("Choisis le fichier de l'épisode ${widget.episode}", 'Pick the file for episode ${widget.episode}'),
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+    child: Container(
+      constraints: const BoxConstraints(maxWidth: 600, maxHeight: 340),
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: Colors.grey.shade900, borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              t("Choisis le fichier de l'épisode ${widget.episode}", 'Pick the file for episode ${widget.episode}'),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
             ),
-            Expanded(
-              child: ListView(children: [
+          ),
+          Expanded(
+            child: ListView(
+              children: [
                 for (final f in torrent!.files.where((f) => f.isVideo))
                   ListTile(
                     title: Text(f.name, style: const TextStyle(color: Colors.white, fontSize: 13)),
                     trailing: Text(formatBytes(f.length), style: const TextStyle(color: Colors.white54, fontSize: 12)),
                     onTap: () => _play(f),
                   ),
-              ]),
+              ],
             ),
-          ]),
-        ),
-      );
+          ),
+        ],
+      ),
+    ),
+  );
 
   Widget _overlay() {
     final position = player.state.position;
@@ -261,7 +307,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Colors.black87, Colors.transparent, Colors.transparent, Colors.black87],
+          stops: [0, 0.2, 0.42, 0.58, 0.8, 1],
+          colors: [
+            Color(0xE6000000),
+            Color(0xCC000000),
+            Color(0x00000000),
+            Color(0x00000000),
+            Color(0xCC000000),
+            Color(0xE6000000),
+          ],
         ),
       ),
       child: SafeArea(
@@ -269,48 +323,82 @@ class _PlayerScreenState extends State<PlayerScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Column(
             children: [
-              Row(children: [
-                IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)),
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(widget.media.title.display,
-                        maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                    Text(widget.media.isMovie ? statsLine : '${t('Épisode ${widget.episode}', 'Episode ${widget.episode}')} · $statsLine',
-                        style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                  ]),
-                ),
-                _trackMenu(),
-              ]),
-              const Spacer(),
-              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                IconButton(iconSize: 36, icon: const Icon(Icons.replay_10, color: Colors.white), onPressed: () => _seekBy(-10)),
-                const SizedBox(width: 40),
-                IconButton(
-                  iconSize: 56,
-                  icon: Icon(player.state.playing ? Icons.pause : Icons.play_arrow, color: Colors.white),
-                  onPressed: () {
-                    player.playOrPause();
-                    _scheduleHide();
-                  },
-                ),
-                const SizedBox(width: 40),
-                IconButton(iconSize: 36, icon: const Icon(Icons.forward_10, color: Colors.white), onPressed: () => _seekBy(10)),
-              ]),
-              const Spacer(),
-              Row(children: [
-                OutlinedButton(
-                  style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
-                  onPressed: () => _seekBy(85),
-                  child: const Text('+85 s'),
-                ),
-                const Spacer(),
-                if (hasNext)
-                  FilledButton.icon(
-                    onPressed: () => Navigator.pop(context, true),
-                    icon: const Icon(Icons.skip_next),
-                    label: Text(t('Épisode suivant', 'Next episode')),
+              Row(
+                children: [
+                  FocusOutline(
+                    child: IconButton(
+                      tooltip: t('Fermer', 'Close'),
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
                   ),
-              ]),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.media.title.display,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          widget.media.isMovie
+                              ? statsLine
+                              : '${t('Épisode ${widget.episode}', 'Episode ${widget.episode}')} · $statsLine',
+                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _trackMenu(),
+                ],
+              ),
+              const Spacer(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _roundButton(Icons.replay_10, 36, t('Reculer de 10 secondes', 'Back 10 seconds'), () => _seekBy(-10)),
+                  const SizedBox(width: 40),
+                  _roundButton(
+                    player.state.playing ? Icons.pause : Icons.play_arrow,
+                    56,
+                    player.state.playing ? t('Pause', 'Pause') : t('Lecture', 'Play'),
+                    () {
+                      player.playOrPause();
+                      _scheduleHide();
+                    },
+                  ),
+                  const SizedBox(width: 40),
+                  _roundButton(
+                    Icons.forward_10,
+                    36,
+                    t('Avancer de 10 secondes', 'Forward 10 seconds'),
+                    () => _seekBy(10),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              Row(
+                children: [
+                  FocusOutline(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
+                      onPressed: () => _seekBy(85),
+                      child: Text(t("Passer l'intro (+85 s)", 'Skip intro (+85 s)')),
+                    ),
+                  ),
+                  const Spacer(),
+                  if (hasNext)
+                    FocusOutline(
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.pop(context, true),
+                        icon: const Icon(Icons.skip_next),
+                        label: Text(t('Épisode suivant', 'Next episode')),
+                      ),
+                    ),
+                ],
+              ),
               Slider(
                 value: shown,
                 activeColor: accent,
@@ -321,11 +409,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   _scheduleHide();
                 },
               ),
-              Row(children: [
-                Text(clock(scrub == null ? position : duration * scrub!), style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                const Spacer(),
-                Text(clock(duration), style: const TextStyle(color: Colors.white70, fontSize: 12)),
-              ]),
+              Row(
+                children: [
+                  Text(
+                    clock(scrub == null ? position : duration * scrub!),
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                  const Spacer(),
+                  Text(clock(duration), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                ],
+              ),
             ],
           ),
         ),
@@ -339,6 +432,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     String label(String id, String? title, String? language) =>
         [title, language].whereType<String>().where((s) => s.isNotEmpty).join(' · ').ifEmpty(id);
     return PopupMenuButton<void Function()>(
+      tooltip: t('Sous-titres et audio', 'Subtitles and audio'),
       icon: const Icon(Icons.subtitles, color: Colors.white),
       onSelected: (apply) => apply(),
       itemBuilder: (_) => [
@@ -361,6 +455,34 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 }
+
+/// The engine reports in English; this says what happened and what to try.
+String _explain(Object e) {
+  final raw = e.toString();
+  if (raw.contains('no peers sent metadata') || e is TimeoutException) {
+    return t("Personne ne partage ce torrent en ce moment. Essaie une autre source dans la liste.",
+        'Nobody is sharing this torrent right now. Try another source from the list.');
+  }
+  if (raw.contains("n'a pas démarré") || raw.contains('did not start')) {
+    return t("Le moteur torrent n'a pas démarré. Ferme Nami et rouvre-la.",
+        'The torrent engine did not start. Close Nami and open it again.');
+  }
+  return t('Le torrent n\'a pas pu être ouvert ($raw). Essaie une autre source.',
+      'The torrent could not be opened ($raw). Try another source.');
+}
+
+/// Control over the video: a dark disc keeps the icon at 3:1 or more even
+/// over a white frame.
+Widget _roundButton(IconData icon, double size, String label, VoidCallback onPressed) => FocusOutline(
+  radius: size,
+  child: IconButton(
+    tooltip: label,
+    iconSize: size,
+    style: IconButton.styleFrom(backgroundColor: const Color(0x8C000000)),
+    icon: Icon(icon, color: Colors.white),
+    onPressed: onPressed,
+  ),
+);
 
 extension on String {
   String ifEmpty(String fallback) => isEmpty ? fallback : this;

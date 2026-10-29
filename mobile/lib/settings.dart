@@ -18,8 +18,7 @@ class AppSettings extends ChangeNotifier {
   final SharedPreferences _prefs;
   SharedPreferences get prefs => _prefs;
 
-  AppLanguage get language =>
-      AppLanguage.values.asNameMap()[_prefs.getString('appLanguage')] ?? AppLanguage.fr;
+  AppLanguage get language => AppLanguage.values.asNameMap()[_prefs.getString('appLanguage')] ?? AppLanguage.fr;
   set language(AppLanguage v) {
     _prefs.setString('appLanguage', v.name);
     notifyListeners();
@@ -44,28 +43,28 @@ String t(String fr, String en) => AppSettings.instance.language == AppLanguage.e
 
 extension TitleLanguageLabel on TitleLanguage {
   String get label => switch (this) {
-        TitleLanguage.romaji => 'Romaji',
-        TitleLanguage.english => t('Anglais', 'English'),
-        TitleLanguage.native => t('Japonais', 'Japanese'),
-      };
+    TitleLanguage.romaji => 'Romaji',
+    TitleLanguage.english => t('Anglais', 'English'),
+    TitleLanguage.native => t('Japonais', 'Japanese'),
+  };
 }
 
 /// AniList genre names are English identifiers; this is how they read in the UI.
 String genreLabel(String g) => switch (g) {
-      'Action' => 'Action',
-      'Adventure' => t('Aventure', 'Adventure'),
-      'Comedy' => t('Comédie', 'Comedy'),
-      'Drama' => t('Drame', 'Drama'),
-      'Fantasy' => t('Fantastique', 'Fantasy'),
-      'Horror' => t('Horreur', 'Horror'),
-      'Music' => t('Musique', 'Music'),
-      'Mystery' => t('Mystère', 'Mystery'),
-      'Psychological' => t('Psychologique', 'Psychological'),
-      'Sci-Fi' => t('Science-fiction', 'Sci-Fi'),
-      'Slice of Life' => t('Tranche de vie', 'Slice of Life'),
-      'Supernatural' => t('Surnaturel', 'Supernatural'),
-      _ => g,
-    };
+  'Action' => 'Action',
+  'Adventure' => t('Aventure', 'Adventure'),
+  'Comedy' => t('Comédie', 'Comedy'),
+  'Drama' => t('Drame', 'Drama'),
+  'Fantasy' => t('Fantastique', 'Fantasy'),
+  'Horror' => t('Horreur', 'Horror'),
+  'Music' => t('Musique', 'Music'),
+  'Mystery' => t('Mystère', 'Mystery'),
+  'Psychological' => t('Psychologique', 'Psychological'),
+  'Sci-Fi' => t('Science-fiction', 'Sci-Fi'),
+  'Slice of Life' => t('Tranche de vie', 'Slice of Life'),
+  'Supernatural' => t('Surnaturel', 'Supernatural'),
+  _ => g,
+};
 
 extension AppLanguageLabel on AppLanguage {
   String get label => this == AppLanguage.fr ? 'Français' : 'English';

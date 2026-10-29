@@ -7,8 +7,9 @@ import 'settings.dart';
 
 /// AniList API client registered for Nami (redirect URL nami://auth).
 const aniListClientId = '55284';
-final aniListAuthorizeUrl =
-    Uri.parse('https://anilist.co/api/v2/oauth/authorize?client_id=$aniListClientId&response_type=token');
+final aniListAuthorizeUrl = Uri.parse(
+  'https://anilist.co/api/v2/oauth/authorize?client_id=$aniListClientId&response_type=token',
+);
 
 class MediaTitle {
   MediaTitle(this.romaji, this.english, this.native, this.userPreferred);
@@ -18,8 +19,12 @@ class MediaTitle {
   factory MediaTitle.fromJson(Map<String, dynamic>? j) =>
       MediaTitle(j?['romaji'], j?['english'], j?['native'], j?['userPreferred']);
 
-  Map<String, dynamic> toJson() =>
-      {'romaji': romaji, 'english': english, 'native': native, 'userPreferred': userPreferred};
+  Map<String, dynamic> toJson() => {
+    'romaji': romaji,
+    'english': english,
+    'native': native,
+    'userPreferred': userPreferred,
+  };
 
   String get display {
     final preferred = switch (AppSettings.instance.titleLanguage) {
@@ -41,19 +46,15 @@ class ListEntry {
   final String? status;
   final double? score;
 
-  factory ListEntry.fromJson(Map<String, dynamic> j) => ListEntry(
-        id: j['id'],
-        progress: j['progress'],
-        status: j['status'],
-        score: (j['score'] as num?)?.toDouble(),
-      );
+  factory ListEntry.fromJson(Map<String, dynamic> j) =>
+      ListEntry(id: j['id'], progress: j['progress'], status: j['status'], score: (j['score'] as num?)?.toDouble());
 }
 
 class Media {
   Media(this.json)
-      : id = json['id'],
-        title = MediaTitle.fromJson(json['title']),
-        listEntry = json['mediaListEntry'] == null ? null : ListEntry.fromJson(json['mediaListEntry']);
+    : id = json['id'],
+      title = MediaTitle.fromJson(json['title']),
+      listEntry = json['mediaListEntry'] == null ? null : ListEntry.fromJson(json['mediaListEntry']);
 
   /// Raw AniList object, also handed to extensions as `query.media`.
   final Map<String, dynamic> json;
@@ -162,15 +163,21 @@ class AniList extends ChangeNotifier {
   List<Media> _page(Map<String, dynamic> d) =>
       (d['Page']['media'] as List).map((m) => Media(m as Map<String, dynamic>)).toList();
 
-  Future<List<Media>> trending() async => _page(await query(
-      'query { Page(perPage: 30) { media(type: ANIME, sort: TRENDING_DESC, isAdult: false) { $mediaFields } } }'));
+  Future<List<Media>> trending() async => _page(
+    await query(
+      'query { Page(perPage: 30) { media(type: ANIME, sort: TRENDING_DESC, isAdult: false) { $mediaFields } } }',
+    ),
+  );
 
   Future<List<Media>> seasonal() async {
     final (season, year) = currentSeason();
-    return _page(await query(
+    return _page(
+      await query(
         r'query($s: MediaSeason, $y: Int) { Page(perPage: 30) { media(type: ANIME, season: $s, seasonYear: $y, sort: POPULARITY_DESC, isAdult: false) { '
         '$mediaFields } } }',
-        {'s': season, 'y': year}));
+        {'s': season, 'y': year},
+      ),
+    );
   }
 
   /// Searches by text and/or genre; with neither, returns the most popular.
@@ -180,14 +187,22 @@ class AniList extends ChangeNotifier {
       if (text.isNotEmpty) 'q': text,
       'g': ?genre,
     };
-    return _page(await query(
+    return _page(
+      await query(
         r'query($q: String, $g: String, $sort: [MediaSort]) { Page(perPage: 40) { media(type: ANIME, search: $q, genre: $g, sort: $sort, isAdult: false) { '
         '$mediaFields } } }',
-        vars));
+        vars,
+      ),
+    );
   }
 
-  Future<Media> media(int id) async =>
-      Media((await query(r'query($id: Int) { Media(id: $id) { ' '$mediaFields } }', {'id': id}))['Media']);
+  Future<Media> media(int id) async => Media(
+    (await query(
+      r'query($id: Int) { Media(id: $id) { '
+      '$mediaFields } }',
+      {'id': id},
+    ))['Media'],
+  );
 
   static (String, int) currentSeason([DateTime? now]) {
     final d = now ?? DateTime.now();
@@ -217,9 +232,10 @@ class AniList extends ChangeNotifier {
     final v = viewer;
     if (v == null) return [];
     final d = await query(
-        r'query($u: Int) { MediaListCollection(userId: $u, type: ANIME, status_in: [CURRENT, REPEATING], sort: UPDATED_TIME_DESC) { lists { entries { progress media { '
-        '$mediaFields } } } } }',
-        {'u': v.id});
+      r'query($u: Int) { MediaListCollection(userId: $u, type: ANIME, status_in: [CURRENT, REPEATING], sort: UPDATED_TIME_DESC) { lists { entries { progress media { '
+      '$mediaFields } } } } }',
+      {'u': v.id},
+    );
     return [
       for (final list in d['MediaListCollection']['lists'] as List)
         for (final e in list['entries'] as List) WatchingEntry(Media(e['media']), e['progress'] ?? 0),
@@ -231,8 +247,9 @@ class AniList extends ChangeNotifier {
     if (!isLoggedIn || media.progress >= episode) return;
     final status = (media.episodes != null && episode >= media.episodes!) ? 'COMPLETED' : 'CURRENT';
     await query(
-        r'mutation($id: Int, $p: Int, $s: MediaListStatus) { SaveMediaListEntry(mediaId: $id, progress: $p, status: $s) { progress } }',
-        {'id': media.id, 'p': episode, 's': status});
+      r'mutation($id: Int, $p: Int, $s: MediaListStatus) { SaveMediaListEntry(mediaId: $id, progress: $p, status: $s) { progress } }',
+      {'id': media.id, 'p': episode, 's': status},
+    );
   }
 
   /// Stores the token from an implicit-grant callback (nami://auth#access_token=...).

@@ -16,8 +16,22 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   static const genres = [
-    'Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Mecha', 'Music', 'Mystery',
-    'Psychological', 'Romance', 'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller',
+    'Action',
+    'Adventure',
+    'Comedy',
+    'Drama',
+    'Fantasy',
+    'Horror',
+    'Mecha',
+    'Music',
+    'Mystery',
+    'Psychological',
+    'Romance',
+    'Sci-Fi',
+    'Slice of Life',
+    'Sports',
+    'Supernatural',
+    'Thriller',
   ];
 
   final _controller = TextEditingController();
@@ -53,9 +67,19 @@ class _SearchScreenState extends State<SearchScreen> {
     setState(() => loading = true);
     try {
       final found = await AniList.instance.search(q, genre: genre);
-      if (mounted && request == _request) setState(() { results = found; failed = false; });
+      if (mounted && request == _request) {
+        setState(() {
+          results = found;
+          failed = false;
+        });
+      }
     } catch (_) {
-      if (mounted && request == _request) setState(() { results = []; failed = true; });
+      if (mounted && request == _request) {
+        setState(() {
+          results = [];
+          failed = true;
+        });
+      }
     } finally {
       if (mounted && request == _request) setState(() => loading = false);
     }
@@ -73,6 +97,7 @@ class _SearchScreenState extends State<SearchScreen> {
         title: TextField(
           controller: _controller,
           onChanged: _onText,
+          textInputAction: TextInputAction.search,
           decoration: InputDecoration(
             hintText: t("Titre d'un anime", 'Anime title'),
             border: InputBorder.none,
@@ -84,19 +109,24 @@ class _SearchScreenState extends State<SearchScreen> {
         slivers: [
           SliverToBoxAdapter(
             child: SizedBox(
-              height: 52,
+              // Chips keep a 48 px touch area and grow with the text size.
+              height: 64 + MediaQuery.textScalerOf(context).scale(13) - 13,
               child: ListView.separated(
+                clipBehavior: Clip.none,
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 itemCount: genres.length,
                 separatorBuilder: (_, _) => const SizedBox(width: 8),
-                itemBuilder: (_, i) => FilterChip(
-                  label: Text(genreLabel(genres[i])),
-                  selected: genre == genres[i],
-                  onSelected: (on) {
-                    setState(() => genre = on ? genres[i] : null);
-                    _search();
-                  },
+                itemBuilder: (_, i) => FocusOutline(
+                  child: FilterChip(
+                    label: Text(genreLabel(genres[i])),
+                    selected: genre == genres[i],
+                    materialTapTargetSize: MaterialTapTargetSize.padded,
+                    onSelected: (on) {
+                      setState(() => genre = on ? genres[i] : null);
+                      _search();
+                    },
+                  ),
                 ),
               ),
             ),
@@ -104,7 +134,7 @@ class _SearchScreenState extends State<SearchScreen> {
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             sliver: SliverToBoxAdapter(
-              child: Text(heading, style: Nami.section),
+              child: Semantics(header: true, child: Text(heading, style: Nami.section)),
             ),
           ),
           if (loading && results.isEmpty)
@@ -113,7 +143,7 @@ class _SearchScreenState extends State<SearchScreen> {
             SliverToBoxAdapter(
               child: StateMessage(
                 title: t('La recherche a échoué', 'Search failed'),
-                body: networkError(Exception()),
+                body: networkError(),
                 action: t('Réessayer', 'Try again'),
                 onAction: _search,
               ),
@@ -122,22 +152,34 @@ class _SearchScreenState extends State<SearchScreen> {
             SliverToBoxAdapter(
               child: StateMessage(
                 title: t('Aucun anime trouvé', 'No anime found'),
-                body: t("Vérifie l'orthographe ou essaie le titre japonais.", 'Check the spelling or try the Japanese title.'),
+                body: t(
+                  "Vérifie l'orthographe ou essaie le titre japonais.",
+                  'Check the spelling or try the Japanese title.',
+                ),
               ),
             ),
           SliverPadding(
             padding: const EdgeInsets.all(16),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 130,
-                childAspectRatio: 1 / 1.85,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-              ),
-              delegate: SliverChildBuilderDelegate(
-                (_, i) => LayoutBuilder(builder: (_, c) => MediaCard(results[i], width: c.maxWidth)),
-                childCount: results.length,
-              ),
+            sliver: SliverLayoutBuilder(
+              builder: (context, c) {
+                // Columns of about 130 px (3 on a phone, more on wider screens);
+                // the cell height follows the text size so titles never clip.
+                final available = c.crossAxisExtent;
+                final columns = ((available + 12) / (130 + 12)).ceil().clamp(2, 10);
+                final cell = (available - 12 * (columns - 1)) / columns;
+                return SliverGrid(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    mainAxisExtent: MediaCard.heightFor(context, cell),
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 16,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (_, i) => MediaCard(results[i], width: cell),
+                    childCount: results.length,
+                  ),
+                );
+              },
             ),
           ),
         ],

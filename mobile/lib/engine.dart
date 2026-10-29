@@ -15,8 +15,15 @@ class EngineFile {
   final int length;
 
   String get name => path.split(RegExp(r'[/\\]')).last;
-  bool get isVideo => const {'mkv', 'mp4', 'avi', 'webm', 'm4v', 'mov', 'ts'}
-      .contains(name.contains('.') ? name.split('.').last.toLowerCase() : '');
+  bool get isVideo => const {
+    'mkv',
+    'mp4',
+    'avi',
+    'webm',
+    'm4v',
+    'mov',
+    'ts',
+  }.contains(name.contains('.') ? name.split('.').last.toLowerCase() : '');
 }
 
 class EngineTorrent {
@@ -28,9 +35,9 @@ class EngineTorrent {
 
 class EngineStats {
   EngineStats(Map<String, dynamic> j)
-      : peers = j['peers'] ?? 0,
-        downloaded = j['downloaded'] ?? 0,
-        total = j['total'] ?? 0;
+    : peers = j['peers'] ?? 0,
+      downloaded = j['downloaded'] ?? 0,
+      total = j['total'] ?? 0;
   final int peers;
   final int downloaded;
   final int total;
@@ -82,12 +89,17 @@ class Engine {
 
   Future<Uri> _url(String path) async => Uri.parse('http://127.0.0.1:${await start()}/$path');
 
-  Future<dynamic> _call(String path, {Map<String, dynamic>? body, Duration timeout = const Duration(seconds: 30)}) async {
+  Future<dynamic> _call(
+    String path, {
+    Map<String, dynamic>? body,
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
     final url = await _url(path);
-    final res = await (body == null
-            ? http.post(url)
-            : http.post(url, headers: {'Content-Type': 'application/json'}, body: jsonEncode(body)))
-        .timeout(timeout);
+    final res =
+        await (body == null
+                ? http.post(url)
+                : http.post(url, headers: {'Content-Type': 'application/json'}, body: jsonEncode(body)))
+            .timeout(timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       String message = 'HTTP ${res.statusCode}';
       try {

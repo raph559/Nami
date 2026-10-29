@@ -24,7 +24,10 @@ Future<void> startWatching(BuildContext context, Media media, int episode) async
     );
     if (result == null || !navigator.mounted) return;
     final next = await navigator.push<bool>(
-      MaterialPageRoute(fullscreenDialog: true, builder: (_) => PlayerScreen(media: media, episode: ep, result: result)),
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => PlayerScreen(media: media, episode: ep, result: result),
+      ),
     );
     if (next != true) return;
     ep++;
@@ -84,7 +87,9 @@ class _DetailScreenState extends State<DetailScreen> {
     final airing = media.nextAiringAt;
     if (airing == null) return null;
     final d = DateTime.fromMillisecondsSinceEpoch(airing * 1000).difference(DateTime.now());
-    final when = d.inDays > 0 ? t('dans ${d.inDays} j', 'in ${d.inDays} d') : t('dans ${d.inHours} h', 'in ${d.inHours} h');
+    final when = d.inDays > 0
+        ? t('dans ${d.inDays} j', 'in ${d.inDays} d')
+        : t('dans ${d.inHours} h', 'in ${d.inHours} h');
     return t('Épisode ${media.nextEpisode} $when', 'Episode ${media.nextEpisode} $when');
   }
 
@@ -123,63 +128,84 @@ class _DetailScreenState extends State<DetailScreen> {
         children: [
           SizedBox(
             height: 300 + top,
-            child: Stack(fit: StackFit.expand, children: [
-              CoverImage(media.banner ?? media.cover, radius: 0),
-              const GroundFade(from: 0.3),
-            ]),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [CoverImage(media.banner ?? media.cover, radius: 0), const GroundFade(from: 0.3)],
+            ),
           ),
           Transform.translate(
             offset: const Offset(0, -84),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(media.title.display, style: Nami.pageTitle),
-                  const SizedBox(height: 10),
-                  Text(metaLine, style: Nami.meta),
-                  if (airingLine != null) ...[
-                    const SizedBox(height: 4),
-                    Text(airingLine!, style: Nami.meta),
-                  ],
-                  if (AniList.instance.isLoggedIn && !media.isMovie && total > 0) ...[
-                    const SizedBox(height: 14),
-                    Row(children: [
-                      Text(t('Ta progression', 'Your progress'), style: Nami.caption.copyWith(fontSize: 13)),
-                      const SizedBox(width: 10),
-                      Expanded(child: ProgressLine(value: media.progress / total, color: accent)),
-                      const SizedBox(width: 10),
-                      Text('${media.progress} / $total', style: Nami.caption.copyWith(fontSize: 13)),
-                    ]),
-                  ],
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
-                    onPressed: canWatch ? () => _watch(media.isMovie ? 1 : nextEpisode) : null,
-                    icon: const Icon(Icons.play_arrow_rounded, size: 22),
-                    label: Text(media.isMovie ? t('Regarder', 'Watch') : t("Regarder l'épisode $nextEpisode", 'Watch episode $nextEpisode')),
-                  ),
-                  if (media.plainDescription.isNotEmpty) ...[
+            child: ContentWidth(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Semantics(header: true, child: Text(media.title.display, style: Nami.pageTitle)),
+                    const SizedBox(height: 10),
+                    Text(metaLine, style: Nami.meta),
+                    if (airingLine != null) ...[const SizedBox(height: 4), Text(airingLine!, style: Nami.meta)],
+                    if (AniList.instance.isLoggedIn && !media.isMovie && total > 0) ...[
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Text(t('Ta progression', 'Your progress'), style: Nami.caption.copyWith(fontSize: 13)),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ProgressLine(value: media.progress / total, color: accent),
+                          ),
+                          const SizedBox(width: 10),
+                          Text('${media.progress} / $total', style: Nami.caption.copyWith(fontSize: 13)),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 16),
-                    InkWell(
-                      onTap: () => setState(() => expanded = !expanded),
-                      child: Text(
-                        media.plainDescription,
-                        maxLines: expanded ? null : 4,
-                        overflow: expanded ? null : TextOverflow.ellipsis,
-                        style: Nami.body.copyWith(fontSize: 14, color: Nami.textSecondary),
+                    FocusOutline(
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+                        onPressed: canWatch ? () => _watch(media.isMovie ? 1 : nextEpisode) : null,
+                        icon: const Icon(Icons.play_arrow_rounded, size: 22),
+                        label: Text(
+                          media.isMovie
+                              ? t('Regarder', 'Watch')
+                              : t("Regarder l'épisode $nextEpisode", 'Watch episode $nextEpisode'),
+                        ),
                       ),
                     ),
+                    if (media.plainDescription.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      FocusOutline(
+                        radius: Nami.radiusImage,
+                        child: InkWell(
+                          onTap: () => setState(() => expanded = !expanded),
+                          child: Text(
+                            media.plainDescription,
+                            maxLines: expanded ? null : 4,
+                            overflow: expanded ? null : TextOverflow.ellipsis,
+                            style: Nami.body.copyWith(fontSize: 14, color: Nami.textSecondary),
+                            semanticsLabel: media.plainDescription,
+                          ),
+                        ),
+                      ),
+                      if (!expanded)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: () => setState(() => expanded = true),
+                            child: Text(t('Lire la suite', 'Read more')),
+                          ),
+                        ),
+                    ],
+                    if (!media.isMovie) ...[
+                      const SizedBox(height: 26),
+                      Semantics(header: true, child: Text(t('Épisodes', 'Episodes'), style: Nami.section)),
+                      const SizedBox(height: 12),
+                      if (media.availableEpisodes == 0)
+                        Text(t("Aucun épisode diffusé pour l'instant.", 'No episode has aired yet.'), style: Nami.meta),
+                      for (var n = 1; n <= media.availableEpisodes; n++) _episodeRow(n, accent),
+                    ],
                   ],
-                  if (!media.isMovie) ...[
-                    const SizedBox(height: 26),
-                    Text(t('Épisodes', 'Episodes'), style: Nami.section),
-                    const SizedBox(height: 12),
-                    if (media.availableEpisodes == 0)
-                      Text(t("Aucun épisode diffusé pour l'instant.", 'No episode has aired yet.'), style: Nami.meta),
-                    for (var n = 1; n <= media.availableEpisodes; n++) _episodeRow(n, accent),
-                  ],
-                ],
+                ),
               ),
             ),
           ),
@@ -193,8 +219,9 @@ class _DetailScreenState extends State<DetailScreen> {
     final watched = n <= media.progress;
     final isNext = AniList.instance.isLoggedIn && n == nextEpisode && !watched;
     final state = watched ? t('Vu', 'Watched') : (isNext ? t('À voir', 'Up next') : null);
-    return Opacity(
-      opacity: watched ? 0.55 : 1,
+    // Watched episodes dim their picture only: dimmed text would drop under 4.5:1.
+    return FocusOutline(
+      radius: Nami.radiusImage,
       child: InkWell(
         onTap: () => _watch(n),
         borderRadius: BorderRadius.circular(Nami.radiusImage),
@@ -207,20 +234,32 @@ class _DetailScreenState extends State<DetailScreen> {
                 height: 68,
                 padding: EdgeInsets.all(isNext ? 2 : 0),
                 decoration: isNext
-                    ? BoxDecoration(border: Border.all(color: accent, width: 2), borderRadius: BorderRadius.circular(Nami.radiusImage + 2))
+                    ? BoxDecoration(
+                        border: Border.all(color: accent, width: 2),
+                        borderRadius: BorderRadius.circular(Nami.radiusImage + 2),
+                      )
                     : null,
-                child: CoverImage(ep?.image ?? media.banner ?? media.coverSmall),
+                child: Opacity(
+                  opacity: watched ? 0.45 : 1,
+                  child: CoverImage(ep?.image ?? media.banner ?? media.coverSmall),
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(['$n', ?state].join(' · '),
-                        style: Nami.caption.copyWith(color: isNext ? accent : Nami.textSecondary)),
+                    Text(
+                      ['$n', ?state].join(' · '),
+                      style: Nami.caption.copyWith(color: isNext ? accent : Nami.textSecondary),
+                    ),
                     const SizedBox(height: 2),
-                    Text(ep?.title(AppSettings.instance.language.name) ?? t('Épisode $n', 'Episode $n'),
-                        maxLines: 2, overflow: TextOverflow.ellipsis, style: Nami.body),
+                    Text(
+                      ep?.title(AppSettings.instance.language.name) ?? t('Épisode $n', 'Episode $n'),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Nami.body.copyWith(color: watched ? Nami.textSecondary : Nami.text),
+                    ),
                     if (ep?.runtime != null) Text('${ep!.runtime} min', style: Nami.caption),
                   ],
                 ),
@@ -262,13 +301,17 @@ class _SourcesSheetState extends State<SourcesSheet> {
   @override
   Widget build(BuildContext context) {
     final s = search;
-    final title = widget.media.isMovie ? widget.media.title.display : t('Épisode ${widget.episode}', 'Episode ${widget.episode}');
+    final title = widget.media.isMovie
+        ? widget.media.title.display
+        : t('Épisode ${widget.episode}', 'Episode ${widget.episode}');
     Widget body;
     if (ExtensionStore.instance.enabled.isEmpty) {
       body = StateMessage(
         title: t('Aucune source installée', 'No sources installed'),
-        body: t("Ajoute un dépôt d'extensions dans Réglages, puis reviens ici.",
-            'Add an extension repository in Settings, then come back here.'),
+        body: t(
+          "Ajoute un dépôt d'extensions dans Réglages, puis reviens ici.",
+          'Add an extension repository in Settings, then come back here.',
+        ),
       );
     } else if (s == null) {
       body = StateMessage(loading: true, title: t('Recherche des sources…', 'Looking for sources…'));
@@ -276,8 +319,10 @@ class _SourcesSheetState extends State<SourcesSheet> {
       body = StateMessage(
         title: t('Aucune source trouvée', 'No source found'),
         body: s.failures.isEmpty
-            ? t("Tes extensions n'ont rien pour cet épisode. Essaie une autre qualité dans Réglages.",
-                'Your extensions have nothing for this episode. Try another quality in Settings.')
+            ? t(
+                "Tes extensions n'ont rien pour cet épisode. Essaie une autre qualité dans Réglages.",
+                'Your extensions have nothing for this episode. Try another quality in Settings.',
+              )
             : [for (final f in s.failures) '${f.name} : ${f.message}'].join('\n'),
         action: t('Relancer la recherche', 'Search again'),
         onAction: _run,
@@ -290,34 +335,42 @@ class _SourcesSheetState extends State<SourcesSheet> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-                onPressed: () => Navigator.pop(context, s.results.first),
-                icon: const Icon(Icons.play_arrow_rounded),
-                label: Text(t('Lire la meilleure source', 'Play the best source')),
+              child: FocusOutline(
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                  onPressed: () => Navigator.pop(context, s.results.first),
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: Text(t('Lire la meilleure source', 'Play the best source')),
+                ),
               ),
             ),
             for (final r in s.results)
-              ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-                title: Text(r.title, maxLines: 3, overflow: TextOverflow.ellipsis, style: Nami.body.copyWith(fontSize: 14)),
-                subtitle: Text(
-                  [
-                    if (r.isBest) t('Recommandée', 'Recommended'),
-                    '${r.seeders} seeders',
-                    if (r.size != null && r.size! > 0) formatBytes(r.size!),
-                    r.source,
-                  ].join(' · '),
+              FocusOutline(
+                radius: 0,
+                gap: -2,
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+                  title: Text(
+                    r.title,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: Nami.body.copyWith(fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    [
+                      if (r.isBest) t('Conseillée par ${r.source}', 'Picked by ${r.source}'),
+                      '${r.seeders} seeders',
+                      if (r.size != null && r.size! > 0) formatBytes(r.size!),
+                      if (!r.isBest) r.source,
+                    ].join(' · '),
+                  ),
+                  onTap: () => Navigator.pop(context, r),
                 ),
-                onTap: () => Navigator.pop(context, r),
               ),
             if (s.failures.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                child: Text(
-                  [for (final f in s.failures) t('${f.name} a échoué : ${f.message}', '${f.name} failed: ${f.message}')].join('\n'),
-                  style: Nami.caption,
-                ),
+                child: Text([for (final f in s.failures) '${f.name} : ${f.message}'].join('\n'), style: Nami.caption),
               ),
           ],
         ),

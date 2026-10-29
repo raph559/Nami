@@ -44,6 +44,22 @@ If an anime has no color, the accent falls back to the text color.
 - No shadows and no glow: depth comes from the gradient that fades banners into the ground.
 - Icons: thin stroke (1.8), only where they carry meaning (play, back, search, tabs).
 
+## Accessibility rules
+
+Measured with the WCAG 2.x formula; keep them when adding screens.
+
+- Text over artwork sits on `TextScrim`: at least 80 % ground behind it. Secondary text needs
+  76 % over a white pixel to reach 4.5:1, so a lighter fade fails on bright banners.
+- Control borders use `Nami.border` (text at 45 %, 3.9:1). Lighter borders fail the 3:1
+  minimum for component boundaries.
+- Dimmed content dims the picture, never the text: text at 55 % opacity drops to 3.5:1.
+- The anime accent goes through `Nami.accentOf`, which lightens dark colors to 4.5:1.
+- Keyboard focus is shown by `FocusOutline` (a 2 px off-white ring, 16:1). Material's own focus
+  overlay is 1.5:1 on black. Wrap every new focusable row, card and button in it.
+- Layouts grow with the text size (tested at 200 %): no fixed heights around text, cover widths
+  follow the text scale, rows wrap instead of clipping.
+- Widths: bottom bar under 900 px, side rail above; reading width capped at 760 px.
+
 ## Screens
 
 - Home: a full-bleed "À reprendre" banner for the anime you are watching (or the top trending one

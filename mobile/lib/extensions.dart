@@ -39,14 +39,18 @@ class InstalledExtension {
   String get id => '$repo#${manifest.id}';
 
   Map<String, dynamic> get resolvedOptions => {
-        for (final e in manifest.options.entries)
-          if ((options[e.key] ?? (e.value as Map)['default']) != null) e.key: options[e.key] ?? (e.value as Map)['default'],
-      };
+    for (final e in manifest.options.entries)
+      if ((options[e.key] ?? (e.value as Map)['default']) != null) e.key: options[e.key] ?? (e.value as Map)['default'],
+  };
 
   Map<String, dynamic> toJson() => {'repo': repo, 'manifest': manifest.json, 'enabled': enabled, 'options': options};
 
   factory InstalledExtension.fromJson(Map<String, dynamic> j) => InstalledExtension(
-      j['repo'], ExtensionManifest(j['manifest']), j['enabled'] ?? true, Map<String, dynamic>.from(j['options'] ?? {}));
+    j['repo'],
+    ExtensionManifest(j['manifest']),
+    j['enabled'] ?? true,
+    Map<String, dynamic>.from(j['options'] ?? {}),
+  );
 }
 
 class TorrentResult {
@@ -197,7 +201,10 @@ class ExtensionRuntime {
   Future<void> _setUp() async {
     final loaded = Completer<void>();
     _webView = HeadlessInAppWebView(
-      initialData: InAppWebViewInitialData(data: '<!doctype html><title>nami</title>', baseUrl: WebUri('https://extensions.nami.local/')),
+      initialData: InAppWebViewInitialData(
+        data: '<!doctype html><title>nami</title>',
+        baseUrl: WebUri('https://extensions.nami.local/'),
+      ),
       initialUserScripts: UnmodifiableListView([
         UserScript(source: _bootstrap, injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START),
       ]),
@@ -247,10 +254,13 @@ class ExtensionRuntime {
     final id = '${_nextCall++}';
     final completer = _pending[id] = Completer<String>();
     _controller!.evaluateJavascript(source: js.replaceAll('__CALL__', jsonEncode(id)));
-    return completer.future.timeout(const Duration(seconds: 30), onTimeout: () {
-      _pending.remove(id);
-      throw TimeoutException('extension');
-    });
+    return completer.future.timeout(
+      const Duration(seconds: 30),
+      onTimeout: () {
+        _pending.remove(id);
+        throw TimeoutException('extension');
+      },
+    );
   }
 
   Future<void> _ensureLoaded(InstalledExtension ext) async {
@@ -264,8 +274,10 @@ class ExtensionRuntime {
 
   Future<List<TorrentResult>> run(InstalledExtension ext, String method, Map<String, dynamic> query) async {
     await _ensureLoaded(ext);
-    final json = await _invoke('__nami.run(__CALL__, ${jsonEncode(ext.id)}, ${jsonEncode(method)}, '
-        '${jsonEncode(query)}, ${jsonEncode(ext.resolvedOptions)})');
+    final json = await _invoke(
+      '__nami.run(__CALL__, ${jsonEncode(ext.id)}, ${jsonEncode(method)}, '
+      '${jsonEncode(query)}, ${jsonEncode(ext.resolvedOptions)})',
+    );
     return [
       for (final r in jsonDecode(json) as List)
         if (r is Map && r['link'] != null) TorrentResult(Map<String, dynamic>.from(r), ext.manifest.name),
@@ -277,6 +289,18 @@ class SourceFailure {
   SourceFailure(this.name, this.message);
   final String name;
   final String message;
+}
+
+/// Short, readable reason for a failed extension call.
+String _describe(Object e) {
+  if (e is TimeoutException) {
+    return t("ne répond pas, le site est peut-être en panne", 'did not answer, the site may be down');
+  }
+  final raw = e.toString().replaceFirst(RegExp(r'^(Exception|Error): '), '');
+  if (RegExp(r'HTTP 4\d\d|HTTP 5\d\d').hasMatch(raw)) {
+    return t('le site a refusé la requête ($raw)', 'the site refused the request ($raw)');
+  }
+  return raw.length > 120 ? '${raw.substring(0, 120)}…' : raw;
 }
 
 class SourceSearch {
@@ -316,7 +340,7 @@ class SourceSearch {
       try {
         out.results.addAll(await call);
       } catch (e) {
-        out.failures.add(SourceFailure(name, e.toString()));
+        out.failures.add(SourceFailure(name, _describe(e)));
       }
     }
     final seen = <String>{};
