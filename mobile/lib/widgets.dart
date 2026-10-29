@@ -328,7 +328,7 @@ class StateMessage extends StatelessWidget {
               const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)),
               const SizedBox(height: 16),
             ],
-            Text(title, textAlign: TextAlign.center, style: Nami.section.copyWith(fontSize: 22)),
+            Text(title, textAlign: TextAlign.center, style: Nami.section.copyWith(fontSize: 18)),
             if (body != null) ...[
               const SizedBox(height: 8),
               Text(body!, textAlign: TextAlign.center, style: Nami.meta),

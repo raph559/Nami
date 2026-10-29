@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../anilist.dart';
-import '../extensions.dart';
 import '../mappings.dart';
 import '../settings.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'player.dart';
+import 'sources.dart';
 
 /// Picks a source for [episode], plays it, and keeps going while the player
 /// asks for the next episode. Returns when the user stops.
@@ -14,14 +14,9 @@ Future<void> startWatching(BuildContext context, Media media, int episode) async
   final navigator = Navigator.of(context);
   var ep = episode;
   while (navigator.mounted) {
-    final result = await showModalBottomSheet<TorrentResult>(
-      // navigator.mounted is checked by the loop condition.
-      // ignore: use_build_context_synchronously
-      context: navigator.context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => SourcesSheet(media: media, episode: ep),
-    );
+    // navigator.mounted is checked by the loop condition.
+    // ignore: use_build_context_synchronously
+    final result = await pickSource(navigator.context, media, ep);
     if (result == null || !navigator.mounted) return;
     final next = await navigator.push<bool>(
       MaterialPageRoute(
@@ -267,124 +262,6 @@ class _DetailScreenState extends State<DetailScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class SourcesSheet extends StatefulWidget {
-  const SourcesSheet({super.key, required this.media, required this.episode});
-  final Media media;
-  final int episode;
-
-  @override
-  State<SourcesSheet> createState() => _SourcesSheetState();
-}
-
-class _SourcesSheetState extends State<SourcesSheet> {
-  SourceSearch? search;
-
-  @override
-  void initState() {
-    super.initState();
-    _run();
-  }
-
-  void _run() {
-    if (ExtensionStore.instance.enabled.isEmpty) return;
-    setState(() => search = null);
-    SourceSearch.run(widget.media, widget.episode).then((s) {
-      if (mounted) setState(() => search = s);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = search;
-    final title = widget.media.isMovie
-        ? widget.media.title.display
-        : t('Épisode ${widget.episode}', 'Episode ${widget.episode}');
-    Widget body;
-    if (ExtensionStore.instance.enabled.isEmpty) {
-      body = StateMessage(
-        title: t('Aucune source installée', 'No sources installed'),
-        body: t(
-          "Ajoute un dépôt d'extensions dans Réglages, puis reviens ici.",
-          'Add an extension repository in Settings, then come back here.',
-        ),
-      );
-    } else if (s == null) {
-      body = StateMessage(loading: true, title: t('Recherche des sources…', 'Looking for sources…'));
-    } else if (s.results.isEmpty) {
-      body = StateMessage(
-        title: t('Aucune source trouvée', 'No source found'),
-        body: s.failures.isEmpty
-            ? t(
-                "Tes extensions n'ont rien pour cet épisode. Essaie une autre qualité dans Réglages.",
-                'Your extensions have nothing for this episode. Try another quality in Settings.',
-              )
-            : [for (final f in s.failures) '${f.name} : ${f.message}'].join('\n'),
-        action: t('Relancer la recherche', 'Search again'),
-        onAction: _run,
-      );
-    } else {
-      body = Flexible(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.only(bottom: 16),
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-              child: FocusOutline(
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-                  onPressed: () => Navigator.pop(context, s.results.first),
-                  icon: const Icon(Icons.play_arrow_rounded),
-                  label: Text(t('Lire la meilleure source', 'Play the best source')),
-                ),
-              ),
-            ),
-            for (final r in s.results)
-              FocusOutline(
-                radius: 0,
-                gap: -2,
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-                  title: Text(
-                    r.title,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: Nami.body.copyWith(fontSize: 14),
-                  ),
-                  subtitle: Text(
-                    [
-                      if (r.isBest) t('Conseillée par ${r.source}', 'Picked by ${r.source}'),
-                      '${r.seeders} seeders',
-                      if (r.size != null && r.size! > 0) formatBytes(r.size!),
-                      if (!r.isBest) r.source,
-                    ].join(' · '),
-                  ),
-                  onTap: () => Navigator.pop(context, r),
-                ),
-              ),
-            if (s.failures.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                child: Text([for (final f in s.failures) '${f.name} : ${f.message}'].join('\n'), style: Nami.caption),
-              ),
-          ],
-        ),
-      );
-    }
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(title, style: Nami.section.copyWith(fontSize: 24)),
-          const SizedBox(height: 8),
-          body,
-        ],
       ),
     );
   }

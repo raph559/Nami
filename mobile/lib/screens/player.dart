@@ -460,15 +460,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
 String _explain(Object e) {
   final raw = e.toString();
   if (raw.contains('no peers sent metadata') || e is TimeoutException) {
-    return t("Personne ne partage ce torrent en ce moment. Essaie une autre source dans la liste.",
-        'Nobody is sharing this torrent right now. Try another source from the list.');
+    return t(
+      "Personne ne partage ce torrent en ce moment. Essaie une autre source dans la liste.",
+      'Nobody is sharing this torrent right now. Try another source from the list.',
+    );
   }
   if (raw.contains("n'a pas démarré") || raw.contains('did not start')) {
-    return t("Le moteur torrent n'a pas démarré. Ferme Nami et rouvre-la.",
-        'The torrent engine did not start. Close Nami and open it again.');
+    return t(
+      "Le moteur torrent n'a pas démarré. Ferme Nami et rouvre-la.",
+      'The torrent engine did not start. Close Nami and open it again.',
+    );
   }
-  return t('Le torrent n\'a pas pu être ouvert ($raw). Essaie une autre source.',
-      'The torrent could not be opened ($raw). Try another source.');
+  return t(
+    'Le torrent n\'a pas pu être ouvert ($raw). Essaie une autre source.',
+    'The torrent could not be opened ($raw). Try another source.',
+  );
 }
 
 /// Control over the video: a dark disc keeps the icon at 3:1 or more even

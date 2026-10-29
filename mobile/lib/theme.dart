@@ -8,15 +8,35 @@ abstract final class Nami {
   static const textMuted = Color(0xFF8F8B83);
   static final line = text.withValues(alpha: 0.12);
 
-  static const serif = 'InstrumentSerif';
   static const sans = 'HankenGrotesk';
 
   static const radiusImage = 4.0;
   static const radiusButton = 6.0;
 
-  static const heroTitle = TextStyle(fontFamily: serif, fontSize: 42, height: 1.02, color: text);
-  static const pageTitle = TextStyle(fontFamily: serif, fontSize: 38, height: 1.04, color: text);
-  static const section = TextStyle(fontFamily: serif, fontSize: 26, height: 1.1, color: text);
+  static const heroTitle = TextStyle(
+    fontFamily: sans,
+    fontSize: 32,
+    height: 1.1,
+    fontWeight: FontWeight.w700,
+    letterSpacing: -0.6,
+    color: text,
+  );
+  static const pageTitle = TextStyle(
+    fontFamily: sans,
+    fontSize: 28,
+    height: 1.12,
+    fontWeight: FontWeight.w700,
+    letterSpacing: -0.5,
+    color: text,
+  );
+  static const section = TextStyle(
+    fontFamily: sans,
+    fontSize: 20,
+    height: 1.2,
+    fontWeight: FontWeight.w700,
+    letterSpacing: -0.2,
+    color: text,
+  );
   static const body = TextStyle(fontFamily: sans, fontSize: 15, height: 1.45, color: text);
   static const meta = TextStyle(fontFamily: sans, fontSize: 14, height: 1.35, color: textSecondary);
   static const caption = TextStyle(fontFamily: sans, fontSize: 12, height: 1.3, color: textSecondary);
@@ -63,7 +83,7 @@ abstract final class Nami {
         foregroundColor: text,
         elevation: 0,
         scrolledUnderElevation: 0,
-        titleTextStyle: TextStyle(fontFamily: serif, fontSize: 28, color: text),
+        titleTextStyle: TextStyle(fontFamily: sans, fontSize: 22, fontWeight: FontWeight.w700, color: text),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(

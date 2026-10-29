@@ -171,27 +171,29 @@ extension on Scaffold {
   /// Keeps the status bar readable once the page scrolls under it.
   Widget withStatusScrim(BuildContext context) {
     final top = MediaQuery.paddingOf(context).top;
-    return Stack(children: [
-      this,
-      Positioned(
-        top: 0,
-        left: 0,
-        right: 0,
-        height: top + 16,
-        child: IgnorePointer(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                stops: [0, top / (top + 16), 1],
-                colors: [Nami.ground, Nami.ground.withValues(alpha: 0.9), Nami.ground.withValues(alpha: 0)],
+    return Stack(
+      children: [
+        this,
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: top + 16,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: [0, top / (top + 16), 1],
+                  colors: [Nami.ground, Nami.ground.withValues(alpha: 0.9), Nami.ground.withValues(alpha: 0)],
+                ),
               ),
             ),
           ),
         ),
-      ),
-    ]);
+      ],
+    );
   }
 }
 
@@ -231,7 +233,7 @@ class _Hero extends StatelessWidget {
                 header: true,
                 child: const Text(
                   'Nami',
-                  style: TextStyle(fontFamily: Nami.serif, fontSize: 26, color: Nami.text),
+                  style: TextStyle(fontFamily: Nami.sans, fontSize: 22, fontWeight: FontWeight.w700, color: Nami.text),
                 ),
               ),
             ),

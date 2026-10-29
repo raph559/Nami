@@ -74,7 +74,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _header(String text) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
-    child: Semantics(header: true, child: Text(text, style: Nami.section.copyWith(fontSize: 22))),
+    child: Semantics(header: true, child: Text(text, style: Nami.section.copyWith(fontSize: 18))),
   );
 
   @override

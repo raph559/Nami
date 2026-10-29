@@ -29,14 +29,24 @@ Dial: ENERGY 1 / RHYTHM 2 / MOTION 1
 
 There is no fixed brand accent: each anime page is tinted by its own color, which is the
 identity motif. Primary buttons are off-white on black (`#EDEAE4` / `#0A0A0B`).
-If an anime has no color, the accent falls back to the text color.
+If an anime has no color, the accent falls back to the text color. The sources sheet uses it
+too: the recommended card's border and its Play button.
+
+The only fixed colors are the three seeder levels in the sources sheet, because they carry
+meaning (how fast playback starts). Each comes with a signal icon and a word, so the color
+is never the only cue:
+
+| Level | Seeders | Color | Contrast on the sheet (`#131315`) |
+|---|---|---|---|
+| Well seeded | 50+ | `#6FD39B` | 10.1:1 |
+| Fairly seeded | 5-49 | `#F2C14E` | 11.1:1 |
+| Slow start | under 5 | `#FF8A80` | 8.1:1 |
 
 ## Typography
 
-- Display: **Instrument Serif** for anime titles and section headings, like a film poster.
-- Body: **Hanken Grotesk** (400/500/600), plain and readable at small sizes, tabular enough for
-  episode numbers and times.
-- Sizes: hero title 40-44, section 26, body 14-15, captions 12-13.
+- One family, **Hanken Grotesk** (400/500/600/700): plain and readable at small sizes, tabular
+  enough for episode numbers and times. Titles and headings use it in bold (700).
+- Sizes: hero title 32, page title 28, app bar 22, section 20, body 14-15, captions 12-13.
 
 ## Shape and depth
 
