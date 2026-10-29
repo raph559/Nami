@@ -92,6 +92,7 @@ class Media {
     final nodes = json['studios']?['nodes'] as List?;
     return nodes == null || nodes.isEmpty ? null : nodes.first['name'] as String?;
   }
+
   List<String> get genres => List<String>.from(json['genres'] ?? const []);
   List<String> get synonyms => List<String>.from(json['synonyms'] ?? const []);
   int? get nextEpisode => json['nextAiringEpisode']?['episode'];
@@ -280,7 +281,9 @@ class AniList extends ChangeNotifier {
   }
 
   Future<List<Media>> topRated() async => _page(
-    await query('query { Page(perPage: 30) { media(type: ANIME, sort: SCORE_DESC, isAdult: false) { $mediaFields } } }'),
+    await query(
+      'query { Page(perPage: 30) { media(type: ANIME, sort: SCORE_DESC, isAdult: false) { $mediaFields } } }',
+    ),
   );
 
   /// Local midnight to the next one.

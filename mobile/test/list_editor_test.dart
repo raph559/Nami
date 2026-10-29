@@ -4,6 +4,7 @@ import 'package:nami/anilist.dart';
 import 'package:nami/screens/list_editor.dart';
 import 'package:nami/settings.dart';
 import 'package:nami/theme.dart';
+import 'package:nami/ui/tags.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Media anime({Map<String, dynamic>? entry, int episodes = 12}) => Media({
@@ -54,7 +55,7 @@ void main() {
     await tester.tap(find.byTooltip('One more'));
     await tester.pump();
     expect(find.text('1 / 12'), findsOneWidget);
-    final chip = tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Watching'));
+    final chip = tester.widget<FlatTag>(find.widgetWithText(FlatTag, 'Watching'));
     expect(chip.selected, isTrue);
   });
 
@@ -62,7 +63,7 @@ void main() {
     await pump(tester, anime(entry: {'id': 5, 'progress': 3, 'status': 'CURRENT', 'score': 75}));
     expect(find.text('7.5 / 10'), findsOneWidget);
     expect(find.text('Remove'), findsOneWidget);
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Completed'));
+    await tester.tap(find.widgetWithText(FlatTag, 'Completed'));
     await tester.pump();
     expect(find.text('12 / 12'), findsOneWidget);
     expect(find.byTooltip('One more'), findsOneWidget);

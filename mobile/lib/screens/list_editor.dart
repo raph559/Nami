@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../anilist.dart';
 import '../settings.dart';
 import '../theme.dart';
+import '../ui/tags.dart';
 import '../widgets.dart';
 
 /// Edits the viewer's AniList entry for [media]: status, progress and score.
@@ -158,14 +159,10 @@ class _ListEditorState extends State<ListEditor> {
                       runSpacing: 8,
                       children: [
                         for (final s in listStatuses)
-                          FocusOutline(
-                            child: ChoiceChip(
-                              label: Text(listStatusLabel(s)),
-                              selected: status == s,
-                              showCheckmark: false,
-                              materialTapTargetSize: MaterialTapTargetSize.padded,
-                              onSelected: saving ? null : (_) => _setStatus(s),
-                            ),
+                          FlatTag(
+                            listStatusLabel(s),
+                            selected: status == s,
+                            onTap: saving ? null : () => _setStatus(s),
                           ),
                       ],
                     ),

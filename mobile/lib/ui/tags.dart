@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../platform.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
@@ -31,13 +32,20 @@ class FlatTag extends StatelessWidget {
       ),
     );
     if (onTap == null) return tag;
+    // Touch screens get a finger-sized target around the small label.
+    final target = isDesktop
+        ? tag
+        : ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 40),
+            child: Align(widthFactor: 1, heightFactor: 1, child: tag),
+          );
     return Semantics(
       button: true,
       selected: selected,
       child: FocusOutline(
         child: Material(
           type: MaterialType.transparency,
-          child: InkWell(onTap: onTap, borderRadius: radius, child: tag),
+          child: InkWell(onTap: onTap, borderRadius: radius, child: target),
         ),
       ),
     );

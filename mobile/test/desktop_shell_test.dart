@@ -79,4 +79,13 @@ void main() {
     await pumpRoot(tester, desktop: false, size: const Size(390, 844));
     expect(find.byType(DesktopShell), findsNothing);
   });
+
+  testWidgets('phone bar labels only the selected tab', (tester) async {
+    await pumpRoot(tester, desktop: false, size: const Size(390, 844));
+    expect(find.text('Accueil'), findsOneWidget);
+    expect(find.text('Recherche'), findsNothing);
+    final handle = tester.ensureSemantics();
+    expect(find.bySemanticsLabel('Recherche'), findsOneWidget);
+    handle.dispose();
+  });
 }

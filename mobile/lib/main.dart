@@ -134,11 +134,12 @@ class _RootScreenState extends State<RootScreen> {
       );
     }
     final pages = IndexedStack(index: tab, children: children);
-    Widget item(int i, {required bool vertical}) => _NavItem(
+    Widget item(int i, {required bool vertical, bool showLabel = true}) => _NavItem(
       icon: tab == i ? items[i].$2 : items[i].$1,
       label: items[i].$3,
       selected: tab == i,
       vertical: vertical,
+      showLabel: showLabel,
       onTap: () => setState(() => tab = i),
     );
     // Wide windows (tablet landscape, desktop) get a side rail so the
@@ -175,7 +176,11 @@ class _RootScreenState extends State<RootScreen> {
           top: false,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Row(children: [for (var i = 0; i < items.length; i++) Expanded(child: item(i, vertical: true))]),
+            child: Row(
+              children: [
+                for (var i = 0; i < items.length; i++) Expanded(child: item(i, vertical: true, showLabel: tab == i)),
+              ],
+            ),
           ),
         ),
       ),
@@ -192,12 +197,16 @@ class _NavItem extends StatelessWidget {
     required this.selected,
     required this.vertical,
     required this.onTap,
+    this.showLabel = true,
   });
   final IconData icon;
   final String label;
   final bool selected;
   final bool vertical;
   final VoidCallback onTap;
+
+  /// The phone bar names only the current tab; the others keep their name for screen readers and as a tooltip.
+  final bool showLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -206,6 +215,7 @@ class _NavItem extends StatelessWidget {
       child: Semantics(
         selected: selected,
         button: true,
+        label: showLabel ? null : label,
         child: InkWell(
           borderRadius: BorderRadius.circular(Nami.radiusButton),
           onTap: onTap,
@@ -217,19 +227,21 @@ class _NavItem extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(icon, color: color, size: 24),
-                  const SizedBox(height: 4),
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: Nami.sans,
-                      fontSize: 12,
-                      color: color,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  Icon(icon, color: color, size: showLabel ? 24 : 22),
+                  if (showLabel) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: Nami.sans,
+                        fontSize: 12,
+                        color: color,
+                        fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

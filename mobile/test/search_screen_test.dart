@@ -47,8 +47,7 @@ Future<void> pumpRoot(WidgetTester tester, {bool desktop = true}) async {
   await tester.pump();
 }
 
-EditableText field(WidgetTester tester) =>
-    tester.widget<EditableText>(find.byType(EditableText, skipOffstage: false));
+EditableText field(WidgetTester tester) => tester.widget<EditableText>(find.byType(EditableText, skipOffstage: false));
 
 Future<void> goToSearch(WidgetTester tester) async {
   await tester.tap(find.byTooltip('Recherche'));
