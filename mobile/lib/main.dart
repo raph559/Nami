@@ -9,6 +9,8 @@ import 'package:media_kit/media_kit.dart';
 import 'anilist.dart';
 import 'engine.dart';
 import 'extensions.dart';
+import 'player_center.dart';
+import 'screens/player.dart';
 import 'screens/home.dart';
 import 'screens/search.dart';
 import 'screens/settings_screen.dart';
@@ -45,6 +47,10 @@ class NamiApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         // Dark by design: Nami is a viewing room (DESIGN.md), so there is no light theme.
         theme: Nami.theme(),
+        navigatorKey: PlayerCenter.instance.navigatorKey,
+        // The mini-player floats above every page, so browsing keeps it on screen.
+        // Overlay.wrap gives its tooltips an overlay above the navigator.
+        builder: (context, child) => Overlay.wrap(child: Stack(children: [child!, const MiniPlayerHost()])),
         home: const RootScreen(),
       ),
     );

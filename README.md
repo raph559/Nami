@@ -43,10 +43,14 @@ Both play through mpv, talk to AniList and run the same Hayase-format extensions
   adjustable size and delay.
 - **French and English** interface, and a choice of romaji, English or Japanese titles.
 
-iPhone only: fill the screen with a pinch (subtitles keep their size), a mini-player when you
-swipe the player down, and settings that survive a reinstall in LiveContainer.
-Windows only: keyboard shortcuts in the player (Space/K play, ←/→ 10 s, S skip,
-Z/X subtitle delay, Esc close).
+- **Fill the screen** with a pinch or the fill button: the video is cropped, the subtitles keep
+  their size.
+- **Mini-player**: swipe the player down (or press Back) to keep watching above the navigation
+  while you browse; a card in the corner on a wide window.
+
+iPhone only: settings that survive a reinstall in LiveContainer.
+Windows only: keyboard shortcuts in the player (Space/K play, ←/→ 10 s, S skip, F fill,
+Z/X subtitle delay, Esc minimize).
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for what is coming next.
 

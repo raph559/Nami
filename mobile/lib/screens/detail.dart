@@ -2,37 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../anilist.dart';
 import '../mappings.dart';
+import '../player_center.dart';
 import '../settings.dart';
 import '../theme.dart';
 import '../widgets.dart';
-import 'player.dart';
-import 'sources.dart';
 
-/// Picks a source for [episode], plays it, and keeps going while the player
-/// asks for the next episode. Returns when the user stops.
-Future<void> startWatching(BuildContext context, Media media, int episode) async {
-  final navigator = Navigator.of(context);
-  var ep = episode;
-  PlayerExit? previous;
-  while (navigator.mounted) {
-    // A season pack that holds the next episode is played again; otherwise
-    // the sheet opens, and after a countdown it plays its recommendation.
-    final result =
-        previous?.reuse ??
-        // navigator.mounted is checked by the loop condition.
-        // ignore: use_build_context_synchronously
-        await pickSource(navigator.context, media, ep, autoPick: previous?.auto ?? false);
-    if (result == null || !navigator.mounted) return;
-    previous = await navigator.push<PlayerExit>(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => PlayerScreen(media: media, episode: ep, result: result),
-      ),
-    );
-    if (previous == null) return;
-    ep++;
-  }
-}
+/// Opens the sources for [episode]; the player then runs above the app and
+/// moves on to the next episodes by itself.
+void startWatching(BuildContext context, Media media, int episode) => PlayerCenter.instance.openSources(media, episode);
 
 class DetailScreen extends StatefulWidget {
   const DetailScreen({super.key, required this.media});
@@ -50,10 +27,26 @@ class _DetailScreenState extends State<DetailScreen> {
   @override
   void initState() {
     super.initState();
+    // The player may have moved the AniList progress.
+    PlayerCenter.instance.addListener(_onPlayer);
     _refresh();
     Mappings.load(media.id).then((m) {
       if (mounted) setState(() => mappings = m);
     });
+  }
+
+  int _finished = PlayerCenter.instance.finished;
+
+  void _onPlayer() {
+    if (PlayerCenter.instance.finished == _finished) return;
+    _finished = PlayerCenter.instance.finished;
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    PlayerCenter.instance.removeListener(_onPlayer);
+    super.dispose();
   }
 
   Future<void> _refresh() async {
@@ -68,10 +61,7 @@ class _DetailScreenState extends State<DetailScreen> {
     return (media.progress + 1).clamp(1, total);
   }
 
-  Future<void> _watch(int episode) async {
-    await startWatching(context, media, episode);
-    await _refresh();
-  }
+  void _watch(int episode) => startWatching(context, media, episode);
 
   String get metaLine {
     final parts = <String>[

@@ -21,7 +21,8 @@
 - [x] Resume where you stopped, per episode.
 - [x] Skip intros and endings automatically (AniSkip).
 - [x] Autoplay the next episode with a countdown.
-- [x] Mini-player when you swipe the player down (iPhone).
+- [x] Mini-player when you swipe the player down.
+- [x] Fill the screen without enlarging the subtitles.
 - [ ] Picture-in-Picture.
 
 ## Subtitles
