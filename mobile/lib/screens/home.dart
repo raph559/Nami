@@ -1,26 +1,111 @@
 import 'package:flutter/material.dart';
 
 import '../anilist.dart';
-import '../mappings.dart';
+import '../home_feed.dart';
+import '../platform.dart';
 import '../settings.dart';
 import '../theme.dart';
+import '../ui/airing_row.dart';
+import '../ui/hero_carousel.dart';
 import '../widgets.dart';
-import 'detail.dart';
+
+/// Where the home gets its data; tests pass a fake.
+abstract class HomeApi {
+  Future<List<WatchingEntry>> watching();
+  Future<List<Media>> seasonal();
+  Future<List<Media>> trending();
+  Future<List<Media>> topRated();
+  Future<List<AiringItem>> airingToday();
+  Future<Map<String, List<LibraryEntry>>> library();
+  Future<List<Media>> recommendationsFor(int id);
+}
+
+class AniListHomeApi implements HomeApi {
+  const AniListHomeApi();
+  AniList get _a => AniList.instance;
+  @override
+  Future<List<WatchingEntry>> watching() => _a.watching();
+  @override
+  Future<List<Media>> seasonal() => _a.seasonal();
+  @override
+  Future<List<Media>> trending() => _a.trending();
+  @override
+  Future<List<Media>> topRated() => _a.topRated();
+  @override
+  Future<List<AiringItem>> airingToday() => _a.airingToday();
+  @override
+  Future<Map<String, List<LibraryEntry>>> library() => _a.library();
+  @override
+  Future<List<Media>> recommendationsFor(int id) => _a.recommendationsFor(id);
+}
+
+/// Fetches every section at once; a source that fails only empties its own section.
+/// Returns null when every source failed.
+Future<HomeFeed?> loadHomeFeed(HomeApi api, {required bool loggedIn}) async {
+  var failures = 0, attempts = 0;
+  Future<T> safe<T>(Future<T> Function() f, T empty) async {
+    attempts++;
+    try {
+      return await f();
+    } catch (_) {
+      failures++;
+      return empty;
+    }
+  }
+
+  final watchingF = loggedIn ? safe(api.watching, <WatchingEntry>[]) : Future.value(<WatchingEntry>[]);
+  final libraryF = loggedIn
+      ? safe(api.library, <String, List<LibraryEntry>>{})
+      : Future.value(<String, List<LibraryEntry>>{});
+  final seasonF = safe(api.seasonal, <Media>[]);
+  final trendingF = safe(api.trending, <Media>[]);
+  final topF = safe(api.topRated, <Media>[]);
+  final todayF = safe(api.airingToday, <AiringItem>[]);
+  final watching = await watchingF;
+  // Suggestions from the anime you watched most recently.
+  final source = watching.isEmpty ? null : watching.first.media;
+  final recs = source == null ? <Media>[] : await safe(() => api.recommendationsFor(source.id), <Media>[]);
+  final library = await libraryF;
+  final today = await todayF, season = await seasonF, trending = await trendingF, top = await topF;
+  if (failures == attempts) return null;
+  return HomeFeed.build(
+    loggedIn: loggedIn,
+    watching: watching,
+    planning: library['PLANNING'] ?? const [],
+    recommendations: recs,
+    recommendationSource: source,
+    today: today,
+    season: season,
+    trending: trending,
+    topRated: top,
+    resumeFraction: AppSettings.instance.resumeFraction,
+    listIds: {
+      for (final list in library.values)
+        for (final e in list) e.media.id,
+      for (final w in watching) w.media.id,
+    },
+  );
+}
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.api = const AniListHomeApi()});
+  final HomeApi api;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
+
+  static String seasonName(String s) => switch (s) {
+    'WINTER' => t('Hiver', 'Winter'),
+    'SPRING' => t('Printemps', 'Spring'),
+    'SUMMER' => t('Été', 'Summer'),
+    _ => t('Automne', 'Fall'),
+  };
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<WatchingEntry> watching = [];
-  List<Media> seasonal = [];
-  List<Media> trending = [];
-  EpisodeInfo? heroEpisode;
+  HomeFeed? feed;
   bool loading = true;
-  Object? error;
+  bool failed = false;
   int? _loadedFor;
   int _revision = AniList.instance.listRevision;
 
@@ -39,68 +124,27 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onAccount() {
     final anilist = AniList.instance;
-    if (anilist.viewer?.id != _loadedFor) {
-      _load();
-    } else if (anilist.listRevision != _revision) {
-      // The list changed (edited, or an episode watched): refresh "Continue" only.
-      _revision = anilist.listRevision;
-      anilist.watching().then((w) {
-        if (mounted) setState(() => watching = w);
-      }, onError: (_) {});
-    }
+    if (anilist.viewer?.id != _loadedFor || anilist.listRevision != _revision) _load();
   }
 
   Future<void> _load() async {
     final anilist = AniList.instance;
     _loadedFor = anilist.viewer?.id;
+    _revision = anilist.listRevision;
+    setState(() => loading = feed == null);
+    final loaded = await loadHomeFeed(widget.api, loggedIn: anilist.isLoggedIn);
+    if (!mounted) return;
     setState(() {
-      loading = true;
-      error = null;
+      loading = false;
+      failed = loaded == null && feed == null;
+      if (loaded != null) feed = loaded;
     });
-    try {
-      final results = await Future.wait([anilist.watching(), anilist.seasonal(), anilist.trending()]);
-      if (!mounted) return;
-      setState(() {
-        watching = results[0] as List<WatchingEntry>;
-        seasonal = results[1] as List<Media>;
-        trending = results[2] as List<Media>;
-        loading = false;
-      });
-      final (media, episode) = _hero;
-      if (media != null) {
-        final maps = await Mappings.load(media.id);
-        if (mounted) setState(() => heroEpisode = maps?.episode(episode));
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          error = e;
-          loading = false;
-        });
-      }
-    }
   }
-
-  /// The anime to resume (first in the list with an aired, unwatched
-  /// episode), else the top trending one.
-  (Media?, int) get _hero {
-    for (final w in watching) {
-      if (w.hasNewEpisode) return (w.media, w.progress + 1);
-    }
-    if (trending.isNotEmpty) return (trending.first, 1);
-    return (null, 1);
-  }
-
-  static String seasonName(String s) => switch (s) {
-    'WINTER' => t('Hiver', 'Winter'),
-    'SPRING' => t('Printemps', 'Spring'),
-    'SUMMER' => t('Été', 'Summer'),
-    _ => t('Automne', 'Fall'),
-  };
 
   @override
   Widget build(BuildContext context) {
-    if (loading && trending.isEmpty) {
+    final feed = this.feed;
+    if (loading && feed == null) {
       // The page's shape while it loads, so nothing jumps when it arrives.
       return Scaffold(
         body: Semantics(
@@ -110,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
-    if (error != null && trending.isEmpty) {
+    if (feed == null) {
       return Scaffold(
         body: Center(
           child: StateMessage(
@@ -123,27 +167,29 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
     final (season, year) = AniList.currentSeason();
-    final (heroMedia, heroEp) = _hero;
-    final rest = [
-      for (final w in watching)
-        if (w.media != heroMedia) w,
-    ];
+    final loggedIn = AniList.instance.isLoggedIn;
     // Without AniList, the anime played on this device that still have an episode to go.
     final local = [
       for (final e in AppSettings.instance.recent)
         if (Media(e.media) case final m when e.episode <= (m.isMovie ? 1 : m.availableEpisodes)) (m, e.episode),
     ];
+    final continueItems = feed.continueWatching;
+    final because = feed.because;
+    final listIds = {for (final c in continueItems) c.media.id, for (final m in feed.planning) m.id};
+    const gap = SizedBox(height: 28);
     return Scaffold(
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            if (heroMedia != null)
-              _Hero(media: heroMedia, episode: heroEp, info: heroEpisode, resuming: watching.isNotEmpty),
-            if (!AniList.instance.isLoggedIn)
+            if (feed.hero.isNotEmpty)
+              HeroCarousel(items: feed.hero, onOpen: (item) => openMedia(context, item.media))
+            else
+              SizedBox(height: MediaQuery.paddingOf(context).top + 24),
+            if (!loggedIn)
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                padding: EdgeInsets.fromLTRB(_side(context), 4, 20, 0),
                 child: Text(
                   t(
                     'Connecte AniList dans Réglages pour reprendre là où tu en es.',
@@ -152,29 +198,30 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: Nami.meta,
                 ),
               ),
-            if (rest.isNotEmpty) ...[
-              const SizedBox(height: 22),
+            if (continueItems.isNotEmpty) ...[
+              gap,
               MediaRow(
                 title: t('Continuer', 'Continue watching'),
-                items: [for (final w in rest) w.media],
+                items: [for (final c in continueItems) c.media],
                 // How far into the next episode you are, else how far into the series.
                 progress: (m) {
-                  final w = rest.firstWhere((w) => w.media == m);
-                  final inEpisode = AppSettings.instance.resumeFraction(m.id, w.progress + 1);
-                  if (inEpisode != null) return inEpisode;
+                  final c = continueItems.firstWhere((c) => c.media == m);
+                  if (c.fraction != null) return c.fraction;
                   final total = m.episodes ?? m.availableEpisodes;
-                  return total > 0 ? w.progress / total : null;
+                  return total > 0 ? (c.nextEpisode - 1) / total : null;
                 },
                 badge: (m) {
-                  final w = rest.firstWhere((w) => w.media == m);
-                  if (AppSettings.instance.resumeFraction(m.id, w.progress + 1) != null) {
-                    return t('Reprendre l\'épisode ${w.progress + 1}', 'Resume episode ${w.progress + 1}');
+                  final c = continueItems.firstWhere((c) => c.media == m);
+                  if (c.fraction != null) {
+                    return t("Reprendre l'épisode ${c.nextEpisode}", 'Resume episode ${c.nextEpisode}');
                   }
-                  return w.hasNewEpisode ? t('Épisode ${w.progress + 1} dispo', 'Episode ${w.progress + 1} out') : null;
+                  return c.available
+                      ? t('Épisode ${c.nextEpisode} dispo', 'Episode ${c.nextEpisode} out')
+                      : t('Épisode ${c.nextEpisode}', 'Episode ${c.nextEpisode}');
                 },
               ),
-            ] else if (!AniList.instance.isLoggedIn && local.isNotEmpty) ...[
-              const SizedBox(height: 22),
+            ] else if (!loggedIn && local.isNotEmpty) ...[
+              gap,
               MediaRow(
                 title: t('Continuer', 'Continue watching'),
                 items: [for (final e in local) e.$1],
@@ -188,18 +235,36 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
             ],
-            if (seasonal.isNotEmpty) ...[
-              const SizedBox(height: 26),
-              MediaRow(title: '${seasonName(season)} $year', items: seasonal),
+            if (feed.today.isNotEmpty) ...[
+              gap,
+              _SectionTitle(t("Aujourd'hui", 'Today')),
+              const SizedBox(height: 10),
+              AiringRow(items: feed.today, listIds: listIds),
             ],
-            if (trending.length > 1) ...[
-              const SizedBox(height: 26),
+            if (feed.planning.isNotEmpty) ...[
+              gap,
+              MediaRow(title: t('À voir dans ta liste', 'Planned in your list'), items: feed.planning),
+            ],
+            if (because != null) ...[
+              gap,
               MediaRow(
-                title: t('Tendances', 'Trending'),
-                items: trending.skip(heroMedia == trending.first ? 1 : 0).toList(),
+                title: t(
+                  'Parce que tu regardes ${because.$1.title.display}',
+                  'Because you watch ${because.$1.title.display}',
+                ),
+                items: because.$2,
               ),
             ],
-            const SizedBox(height: 24),
+            if (feed.season.isNotEmpty) ...[
+              gap,
+              MediaRow(title: '${HomeScreen.seasonName(season)} $year', items: feed.season),
+            ],
+            if (feed.trending.isNotEmpty) ...[gap, MediaRow(title: t('Tendances', 'Trending'), items: feed.trending)],
+            if (feed.topRated.isNotEmpty) ...[
+              gap,
+              MediaRow(title: t('Les mieux notés', 'Top rated'), items: feed.topRated, ranked: true),
+            ],
+            const SizedBox(height: 32),
           ],
         ),
       ),
@@ -207,8 +272,22 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+/// Left edge shared by every home section: beside the rail on desktop.
+double _side(BuildContext context) => isDesktop ? MediaQuery.paddingOf(context).left + 36 : 20;
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.symmetric(horizontal: _side(context)),
+    child: Semantics(header: true, child: Text(text, style: MediaRow.titleStyle)),
+  );
+}
+
 extension on Scaffold {
-  /// Keeps the status bar readable once the page scrolls under it.
+  /// Keeps the status bar (or the window buttons) readable once the page scrolls under it.
   Widget withStatusScrim(BuildContext context) {
     final top = MediaQuery.paddingOf(context).top;
     return Stack(
@@ -226,234 +305,17 @@ extension on Scaffold {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   stops: [0, top / (top + 16), 1],
-                  colors: [Nami.ground, Nami.ground.withValues(alpha: 0.9), Nami.ground.withValues(alpha: 0)],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _Hero extends StatelessWidget {
-  const _Hero({required this.media, required this.episode, required this.info, required this.resuming});
-  final Media media;
-  final int episode;
-  final EpisodeInfo? info;
-  final bool resuming;
-
-  @override
-  Widget build(BuildContext context) {
-    final total = media.episodes;
-    final epTitle = info?.title(AppSettings.instance.language.name);
-    final meta = [
-      if (!media.isMovie)
-        total != null
-            ? t('Épisode $episode sur $total', 'Episode $episode of $total')
-            : t('Épisode $episode', 'Episode $episode'),
-      if (epTitle != null) '« $epTitle »',
-      if (info?.runtime != null) '${info!.runtime} min',
-    ].join(' · ');
-    final top = MediaQuery.paddingOf(context).top;
-    final width = MediaQuery.sizeOf(context).width;
-    final wide = width >= 700;
-    final label = resuming ? t('À reprendre', 'Up next') : t('En tendance', 'Trending');
-    final actions = Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        FocusOutline(
-          child: FilledButton.icon(
-            onPressed: () => startWatching(context, media, episode),
-            icon: const Icon(Icons.play_arrow_rounded, size: 22),
-            label: Text(
-              media.isMovie
-                  ? t('Regarder', 'Watch')
-                  : resuming
-                  ? t("Reprendre l'épisode $episode", 'Resume episode $episode')
-                  : t("Regarder l'épisode $episode", 'Watch episode $episode'),
-            ),
-          ),
-        ),
-        FocusOutline(
-          child: OutlinedButton(
-            onPressed: () => openMedia(context, media),
-            child: Text(t('Voir la fiche', 'See details')),
-          ),
-        ),
-      ],
-    );
-    if (width >= 900) {
-      return _WideHero(media: media, label: label, meta: meta, actions: actions);
-    }
-    // The banner fills the block; the text sits on a scrim at the bottom and
-    // the block grows with it, so large text sizes never clip.
-    return Stack(
-      children: [
-        Positioned(
-          left: 0,
-          right: 0,
-          top: 0,
-          bottom: 2,
-          child: CoverImage(media.banner ?? media.cover, radius: 0, alignment: const Alignment(0.2, 0)),
-        ),
-        const Positioned.fill(child: GroundFade(from: 0.6)),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(20, top + 8, 20, 0),
-              child: Semantics(
-                header: true,
-                child: const Text(
-                  'Nami',
-                  style: TextStyle(fontFamily: Nami.sans, fontSize: 22, fontWeight: FontWeight.w700, color: Nami.text),
-                ),
-              ),
-            ),
-            SizedBox(height: wide ? 220 : 170),
-            TextScrim(
-              // Left-aligned with the logo and the rows; capped so lines stay readable.
-              child: ContentWidth(
-                maxWidth: 760,
-                alignment: Alignment.topLeft,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 22),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(label, style: Nami.caption.copyWith(fontSize: 13)),
-                      const SizedBox(height: 8),
-                      Semantics(
-                        header: true,
-                        child: Text(
-                          media.title.display,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: Nami.heroTitle,
-                        ),
-                      ),
-                      if (meta.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text(meta, maxLines: 4, overflow: TextOverflow.ellipsis, style: Nami.meta),
-                      ],
-                      const SizedBox(height: 16),
-                      actions,
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-/// Banner for wide windows: the artwork fills the width and the text sits on
-/// the left, where a dark fade from the left keeps it readable (at least 85 %
-/// black under the text column, so 4.5:1 holds over a white pixel). The
-/// bottom fades into the ground, so the page has no edge under the banner.
-class _WideHero extends StatelessWidget {
-  const _WideHero({required this.media, required this.label, required this.meta, required this.actions});
-  final Media media;
-  final String label;
-  final String meta;
-  final Widget actions;
-
-  @override
-  Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    final height = (width * 0.42).clamp(440.0, 620.0);
-    return ConstrainedBox(
-      constraints: BoxConstraints(minHeight: height),
-      child: Stack(
-        children: [
-          // Stops short of the bottom: rounding could leave one row of the image under the fade.
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 0,
-            bottom: 2,
-            child: CoverImage(media.banner ?? media.cover, radius: 0, alignment: const Alignment(0.6, -0.2)),
-          ),
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  stops: const [0, 0.45, 0.75],
                   colors: [
-                    Nami.ground.withValues(alpha: 0.92),
-                    Nami.ground.withValues(alpha: 0.85),
+                    Nami.ground.withValues(alpha: isDesktop ? 0.6 : 1),
+                    Nami.ground.withValues(alpha: isDesktop ? 0.4 : 0.9),
                     Nami.ground.withValues(alpha: 0),
                   ],
                 ),
               ),
             ),
           ),
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  // Solid ground over the last pixels, so no seam shows under the banner.
-                  stops: const [0, 0.18, 0.6, 0.96],
-                  colors: [
-                    Nami.ground.withValues(alpha: 0.5),
-                    Nami.ground.withValues(alpha: 0),
-                    Nami.ground.withValues(alpha: 0),
-                    Nami.ground,
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Container(
-            constraints: BoxConstraints(minHeight: height),
-            alignment: Alignment.bottomLeft,
-            padding: const EdgeInsets.fromLTRB(48, 32, 48, 36),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: Nami.caption.copyWith(fontSize: 14)),
-                  const SizedBox(height: 10),
-                  Semantics(
-                    header: true,
-                    child: Text(
-                      media.title.display,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: Nami.heroTitle.copyWith(fontSize: 48, height: 1.05),
-                    ),
-                  ),
-                  if (meta.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(meta, maxLines: 3, overflow: TextOverflow.ellipsis, style: Nami.meta.copyWith(fontSize: 15)),
-                  ],
-                  if (media.plainDescription.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      media.plainDescription,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: Nami.body.copyWith(fontSize: 14, color: Nami.textSecondary),
-                    ),
-                  ],
-                  const SizedBox(height: 22),
-                  actions,
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

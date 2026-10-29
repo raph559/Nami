@@ -181,10 +181,13 @@ void openMedia(BuildContext context, Media media, {String? heroTag}) {
 /// and genres; a long press (touch) opens a short sheet with the same facts
 /// and the two actions. Opening it, the cover grows into the anime page.
 class MediaCard extends StatefulWidget {
-  const MediaCard(this.media, {super.key, this.badge, this.width = 108, this.progress, this.heroTag});
+  const MediaCard(this.media, {super.key, this.badge, this.width = 108, this.progress, this.heroTag, this.rank});
   final Media media;
   final String? badge;
   final double width;
+
+  /// Position in a "top" list, drawn on the cover.
+  final int? rank;
 
   /// Watched fraction, drawn as a thin line under the cover.
   final double? progress;
@@ -337,6 +340,29 @@ class _MediaCardState extends State<MediaCard> {
                               fit: StackFit.expand,
                               children: [
                                 cover,
+                                if (widget.rank != null)
+                                  Positioned(
+                                    left: 6,
+                                    top: 6,
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        color: Nami.text,
+                                        borderRadius: BorderRadius.circular(Nami.radiusImage),
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                        child: Text(
+                                          '${widget.rank}',
+                                          style: const TextStyle(
+                                            fontFamily: Nami.sans,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w800,
+                                            color: Nami.ground,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 // Score and genres on hover, on a scrim so they stay readable
                                 // (touch screens with a mouse; desktop shows the hover card).
                                 if (hovered && !isDesktop && facts.isNotEmpty)
@@ -505,11 +531,17 @@ class ProgressLine extends StatelessWidget {
 /// A titled row of covers. On a mouse, arrows appear on hover to page through
 /// it and the row can be dragged; on touch it scrolls as usual.
 class MediaRow extends StatefulWidget {
-  const MediaRow({super.key, required this.title, required this.items, this.badge, this.progress});
+  const MediaRow({super.key, required this.title, required this.items, this.badge, this.progress, this.ranked = false});
   final String title;
   final List<Media> items;
   final String? Function(Media)? badge;
   final double? Function(Media)? progress;
+
+  /// Numbers the covers (1, 2, 3…), for "top" lists.
+  final bool ranked;
+
+  /// Section titles: 15 px bold on desktop, the phone section size otherwise.
+  static TextStyle get titleStyle => isDesktop ? Nami.section.copyWith(fontSize: 15) : Nami.section;
 
   @override
   State<MediaRow> createState() => _MediaRowState();
@@ -538,8 +570,9 @@ class _MediaRowState extends State<MediaRow> {
     // Covers widen with the text size so titles break between words, not inside them.
     final screen = MediaQuery.sizeOf(context).width;
     final textFactor = (MediaQuery.textScalerOf(context).scale(10) / 10).clamp(1.0, 1.6);
-    final width = (screen >= 700 ? 140.0 : 108.0) * textFactor;
-    final side = screen >= 900 ? 48.0 : 20.0;
+    final width = (isDesktop ? 120.0 : (screen >= 700 ? 140.0 : 108.0)) * textFactor;
+    // Desktop rows line up with the page text, beside the rail.
+    final side = isDesktop ? MediaQuery.paddingOf(context).left + 36 : (screen >= 900 ? 48.0 : 20.0);
     final height = MediaCard.heightFor(
       context,
       width,
@@ -563,6 +596,7 @@ class _MediaRowState extends State<MediaRow> {
             width: width,
             badge: widget.badge?.call(m),
             progress: widget.progress?.call(m),
+            rank: widget.ranked ? i + 1 : null,
             heroTag: 'row-${widget.title}-${m.id}',
           );
         },
@@ -573,7 +607,7 @@ class _MediaRowState extends State<MediaRow> {
       children: [
         Padding(
           padding: EdgeInsets.symmetric(horizontal: side),
-          child: Semantics(header: true, child: Text(widget.title, style: Nami.section)),
+          child: Semantics(header: true, child: Text(widget.title, style: MediaRow.titleStyle)),
         ),
         const SizedBox(height: 10),
         SizedBox(
