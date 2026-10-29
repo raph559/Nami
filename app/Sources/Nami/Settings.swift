@@ -35,20 +35,17 @@ struct SettingsView: View {
                 }
 
                 Section(t("Langue", "Language")) {
-                    Picker(t("Langue de l'app", "App language"), selection: $appLanguage) {
-                        ForEach(AppLanguage.allCases) { Text($0.label).tag($0.rawValue) }
-                    }
-                    Picker(t("Titres des animes", "Anime titles"), selection: $titleLanguage) {
-                        ForEach(TitleLanguage.allCases) { Text($0.label).tag($0.rawValue) }
-                    }
+                    // Every option visible at once, as on Android and Windows.
+                    SegmentedSetting(label: t("Langue de l'app", "App language"), selection: $appLanguage,
+                                     options: AppLanguage.allCases.map { ($0.rawValue, $0.label) })
+                    SegmentedSetting(label: t("Titres des animes", "Anime titles"), selection: $titleLanguage,
+                                     options: TitleLanguage.allCases.map { ($0.rawValue, $0.label) })
                 }
 
                 Section(t("Lecture", "Playback")) {
-                    Picker(t("Qualité préférée", "Preferred quality"), selection: $resolution) {
-                        Text("1080p").tag("1080")
-                        Text("720p").tag("720")
-                        Text("480p").tag("480")
-                    }
+                    SegmentedSetting(label: t("Qualité préférée", "Preferred quality"),
+                                     detail: t("La source recommandée la privilégie.", "The recommended source favours it."),
+                                     selection: $resolution, options: [("1080", "1080p"), ("720", "720p"), ("480", "480p")])
                     Toggle(isOn: $autoSkip) {
                         VStack(alignment: .leading) {
                             Text(t("Passer l'intro et le générique", "Skip openings and endings"))
@@ -63,15 +60,14 @@ struct SettingsView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    Picker(t("Sous-titres", "Subtitles"), selection: $subtitleLanguage) {
-                        ForEach(SubtitleLanguage.allCases) { Text($0.label).tag($0.rawValue) }
+                    SegmentedSetting(label: t("Sous-titres", "Subtitles"),
+                                     detail: t("Langue choisie au début de chaque épisode.", "Language picked when an episode starts."),
+                                     selection: $subtitleLanguage, options: SubtitleLanguage.allCases.map { ($0.rawValue, $0.label) })
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(t("Taille des sous-titres", "Subtitle size"))
+                        SubtitleSizeChoice(selection: $subtitleSize)
                     }
-                    Picker(t("Taille des sous-titres", "Subtitle size"), selection: $subtitleSize) {
-                        Text(t("Petite", "Small")).tag(80)
-                        Text(t("Normale", "Normal")).tag(100)
-                        Text(t("Grande", "Large")).tag(125)
-                        Text(t("Très grande", "Extra large")).tag(150)
-                    }
+                    .padding(.vertical, 4)
                 }
 
                 Section {
@@ -177,5 +173,55 @@ struct RepoView: View {
                 set: { extensions.setOption(ext, key: key, value: opt.type == "number" ? .number(Double($0) ?? 0) : .string($0)) }
             ))
         }
+    }
+}
+
+/// A setting whose options all show at once: name, what it does, then the choice.
+struct SegmentedSetting: View {
+    let label: String
+    var detail: String?
+    @Binding var selection: String
+    let options: [(value: String, label: String)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label)
+            if let detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
+            Picker(label, selection: $selection) {
+                ForEach(options, id: \.value) { Text($0.label).tag($0.value) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Subtitle sizes shown at their size, so the right one is picked at a glance.
+struct SubtitleSizeChoice: View {
+    @Binding var selection: Int
+
+    private let sizes: [(value: Int, font: CGFloat, label: String)] = [
+        (80, 12, t("Petite", "Small")), (100, 15, t("Normale", "Normal")),
+        (125, 18, t("Grande", "Large")), (150, 21, t("Très grande", "Extra large")),
+    ]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(sizes, id: \.value) { s in
+                Button { selection = s.value } label: {
+                    Text("Aa").font(.system(size: s.font, weight: .semibold))
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .foregroundStyle(selection == s.value ? Nami.ground : Nami.text)
+                        .background(selection == s.value ? Nami.text : .clear)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(s.label)
+                .accessibilityAddTraits(selection == s.value ? .isSelected : [])
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Nami.border))
     }
 }

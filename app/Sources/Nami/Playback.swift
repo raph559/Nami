@@ -9,7 +9,7 @@ enum SubtitleLanguage: String, CaseIterable, Identifiable {
         switch self {
         case .fr: "Français"
         case .en: "English"
-        case .file: t("Celle du fichier", "The file's default")
+        case .file: t("Du fichier", "From file")
         }
     }
 
@@ -39,9 +39,45 @@ enum Playback {
         (UserDefaults.standard.object(forKey: "resume:\(media):\(episode)") as? Int).map { Int32($0) }
     }
 
-    static func setResume(media: Int, episode: Int, ms: Int32?) {
-        let key = "resume:\(media):\(episode)"
-        if let ms { UserDefaults.standard.set(Int(ms), forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
+    /// `lengthMs` lets screens draw how far into the episode you are; the anime
+    /// also goes to the recent list, the "Continue" row of people not logged in.
+    static func setResume(media: Media, episode: Int, ms: Int32?, lengthMs: Int32? = nil) {
+        let d = UserDefaults.standard
+        let key = "resume:\(media.id):\(episode)"
+        if let ms {
+            d.set(Int(ms), forKey: key)
+            if let lengthMs, lengthMs > 0 { d.set(Int(lengthMs), forKey: "resumeLen:\(media.id):\(episode)") }
+        } else {
+            d.removeObject(forKey: key)
+            d.removeObject(forKey: "resumeLen:\(media.id):\(episode)")
+        }
+        touchRecent(media, episode: ms == nil ? episode + 1 : episode)
+    }
+
+    /// How far into `episode` you stopped, from 0 to 1; nil if not started.
+    static func resumeFraction(media: Int, episode: Int) -> Double? {
+        let d = UserDefaults.standard
+        guard let at = d.object(forKey: "resume:\(media):\(episode)") as? Int,
+              let length = d.object(forKey: "resumeLen:\(media):\(episode)") as? Int, length > 0 else { return nil }
+        return min(max(Double(at) / Double(length), 0), 1)
+    }
+
+    struct Recent: Codable {
+        var media: Media
+        var episode: Int
+    }
+
+    /// Anime played on this device, most recent first, with the episode to go on with.
+    static var recent: [Recent] {
+        guard let data = UserDefaults.standard.data(forKey: "recent"),
+              let list = try? JSONDecoder().decode([Recent].self, from: data) else { return [] }
+        return list
+    }
+
+    private static func touchRecent(_ media: Media, episode: Int) {
+        var list = recent.filter { $0.media.id != media.id }
+        list.insert(Recent(media: media, episode: episode), at: 0)
+        UserDefaults.standard.set(try? JSONEncoder().encode(Array(list.prefix(20))), forKey: "recent")
     }
 }
 

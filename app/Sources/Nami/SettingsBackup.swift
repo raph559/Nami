@@ -11,7 +11,7 @@ enum SettingsBackup {
     private static let keys = [
         "extensionRepos", "installedExtensions", "anilistToken",
         "appLanguage", "titleLanguage", "resolution",
-        "autoSkip", "autoNext", "subtitleLanguage", "subtitleSize",
+        "autoSkip", "autoNext", "subtitleLanguage", "subtitleSize", "recent",
     ]
 
     private static var file: URL {

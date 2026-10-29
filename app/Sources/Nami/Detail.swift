@@ -5,6 +5,8 @@ struct MediaDetailView: View {
     @State var media: Media
     @State private var mappings: Mappings?
     @State private var expanded = false
+    /// Once the main button has scrolled away, the top bar offers it instead.
+    @State private var showBarButton = false
     @EnvironmentObject private var center: PlayerCenter
 
     private var progress: Int { media.mediaListEntry?.progress ?? 0 }
@@ -13,19 +15,31 @@ struct MediaDetailView: View {
         return min(progress + 1, total)
     }
 
+    private var canWatch: Bool { media.isMovie || media.availableEpisodes > 0 }
+
+    private var watchLabel: String {
+        if media.isMovie { return t("Regarder", "Watch") }
+        if Playback.resumeFraction(media: media.id, episode: nextEpisode) != nil {
+            return t("Reprendre l'épisode \(nextEpisode)", "Resume episode \(nextEpisode)")
+        }
+        return t("Regarder l'épisode \(nextEpisode)", "Watch episode \(nextEpisode)")
+    }
+
+    private func watch() { center.openSources(media, episode: media.isMovie ? 1 : nextEpisode) }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
                 VStack(alignment: .leading, spacing: 14) {
-                    Button { center.openSources(media, episode: media.isMovie ? 1 : nextEpisode) } label: {
-                        Label(media.isMovie ? t("Regarder", "Watch") : t("Regarder l'épisode \(nextEpisode)", "Watch episode \(nextEpisode)"),
-                              systemImage: "play.fill")
+                    Button(action: watch) {
+                        Label(watchLabel, systemImage: "play.fill")
                             .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(media.accent)
-                    .disabled(media.availableEpisodes == 0 && !media.isMovie)
+                    .tint(Nami.accent(media.coverImage?.color))
+                    .foregroundStyle(Nami.ground)
+                    .disabled(!canWatch)
 
                     if let genres = media.genres, !genres.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -50,6 +64,17 @@ struct MediaDetailView: View {
         }
         .ignoresSafeArea(edges: .top)
         .navigationBarTitleDisplayMode(.inline)
+        .onScrolledPast(300) { showBarButton = $0 }
+        .toolbar {
+            if showBarButton && canWatch {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: watch) {
+                        Label(media.isMovie ? t("Regarder", "Watch") : t("Épisode \(nextEpisode)", "Episode \(nextEpisode)"),
+                              systemImage: "play.fill")
+                    }
+                }
+            }
+        }
         .task {
             if let fresh = try? await anilist.media(id: media.id) { media = fresh }
             mappings = await Mappings.load(anilistID: media.id)
@@ -117,6 +142,8 @@ struct MediaDetailView: View {
 
     private func episodeRow(_ n: Int) -> some View {
         let ep = mappings?.episode(n)
+        let resume = n > progress ? Playback.resumeFraction(media: media.id, episode: n) : nil
+        let accent = Nami.accent(media.coverImage?.color)
         return Button { center.openSources(media, episode: n) } label: {
             HStack(spacing: 12) {
                 CoverImageView(url: ep?.image ?? media.bannerImage ?? media.coverImage?.large, corner: 8)
@@ -127,8 +154,13 @@ struct MediaDetailView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                     }
+                    // How far into a started episode you are.
+                    .overlay(alignment: .bottom) {
+                        if let resume { ProgressLine(value: resume, color: accent).clipShape(RoundedRectangle(cornerRadius: 1)) }
+                    }
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(t("Épisode \(n)", "Episode \(n)")).font(.caption.bold()).foregroundStyle(media.accent)
+                    Text(resume != nil ? t("Épisode \(n) · En cours", "Episode \(n) · In progress") : t("Épisode \(n)", "Episode \(n)"))
+                        .font(.caption.bold()).foregroundStyle(accent)
                     Text(ep?.displayTitle(AppLanguage.current.rawValue) ?? "").font(.subheadline).lineLimit(2)
                     if let len = ep?.runtime ?? ep?.length { Text("\(len) min").font(.caption2).foregroundStyle(.secondary) }
                 }
@@ -378,6 +410,21 @@ struct FlowLayout: Layout {
             v.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(s))
             x += s.width + spacing
             row = max(row, s.height)
+        }
+    }
+}
+
+extension View {
+    /// Tells when the page has scrolled past `offset` points (iOS 18; earlier
+    /// versions keep the button in the page only).
+    @ViewBuilder
+    func onScrolledPast(_ offset: CGFloat, _ action: @escaping (Bool) -> Void) -> some View {
+        if #available(iOS 18.0, *) {
+            onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y + $0.contentInsets.top > offset } action: { _, past in
+                withAnimation(.easeInOut(duration: 0.2)) { action(past) }
+            }
+        } else {
+            self
         }
     }
 }

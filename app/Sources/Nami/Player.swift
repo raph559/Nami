@@ -198,7 +198,7 @@ struct PlayerView: View {
         guard !markedWatched, model.lengthMs > 0 else { return }
         if force || Double(model.timeMs) / Double(model.lengthMs) >= 0.85 {
             markedWatched = true
-            Playback.setResume(media: media.id, episode: episode, ms: nil)
+            Playback.setResume(media: media, episode: episode, ms: nil)
             Task { try? await AniList.shared.setProgress(media: media, episode: episode) }
         }
     }
@@ -243,7 +243,7 @@ struct PlayerView: View {
     private func saveResume() {
         guard !markedWatched, lengthSeen else { return }
         lastSaved = model.timeMs
-        if model.timeMs > 30_000 { Playback.setResume(media: media.id, episode: episode, ms: model.timeMs) }
+        if model.timeMs > 30_000 { Playback.setResume(media: media, episode: episode, ms: model.timeMs, lengthMs: model.lengthMs) }
     }
 
     private func show(_ n: Notice) {
