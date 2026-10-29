@@ -1,14 +1,34 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../anilist.dart';
+import '../platform.dart';
 import '../settings.dart';
 import '../theme.dart';
+import '../ui/tags.dart';
 import '../widgets.dart';
 
+typedef SearchFunction = Future<List<Media>> Function(String text, {List<String> genres});
+
+/// Hands the search field's focus node down from the root, so Ctrl+K and "/"
+/// can focus it from any page.
+class SearchFocus extends InheritedWidget {
+  const SearchFocus({super.key, required this.node, required super.child});
+  final FocusNode node;
+
+  static FocusNode? maybeOf(BuildContext context) => context.dependOnInheritedWidgetOfExactType<SearchFocus>()?.node;
+
+  @override
+  bool updateShouldNotify(SearchFocus old) => old.node != node;
+}
+
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key});
+  const SearchScreen({super.key, this.search});
+
+  /// Replaces the AniList search in tests.
+  final SearchFunction? search;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -35,12 +55,15 @@ class _SearchScreenState extends State<SearchScreen> {
   ];
 
   final _controller = TextEditingController();
-  String? genre;
+  FocusNode? _ownFocus;
+  final selected = <String>{};
   List<Media> results = [];
   bool loading = false;
   bool failed = false;
   Timer? _debounce;
   int _request = 0;
+
+  FocusNode get _focus => SearchFocus.maybeOf(context) ?? (_ownFocus ??= FocusNode());
 
   @override
   void initState() {
@@ -52,6 +75,7 @@ class _SearchScreenState extends State<SearchScreen> {
   void dispose() {
     _debounce?.cancel();
     _controller.dispose();
+    _ownFocus?.dispose();
     super.dispose();
   }
 
@@ -60,13 +84,29 @@ class _SearchScreenState extends State<SearchScreen> {
     _debounce = Timer(const Duration(milliseconds: 350), _search);
   }
 
+  void _toggle(String genre) {
+    setState(() => selected.contains(genre) ? selected.remove(genre) : selected.add(genre));
+    _search();
+  }
+
+  void _clear() {
+    if (_controller.text.isEmpty) return;
+    _controller.clear();
+    _onText('');
+  }
+
   Future<void> _search() async {
     final q = _controller.text.trim();
     if (q.length == 1) return;
     final request = ++_request;
     setState(() => loading = true);
     try {
-      final found = await AniList.instance.search(q, genres: [?genre]);
+      // Kept in the order of the list, so the same choice always sends the same request.
+      final picked = [
+        for (final g in genres)
+          if (selected.contains(g)) g,
+      ];
+      final found = await (widget.search ?? AniList.instance.search)(q, genres: picked);
       if (mounted && request == _request) {
         setState(() {
           results = found;
@@ -86,60 +126,73 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   String get heading {
-    if (_controller.text.trim().isNotEmpty) return t('Résultats', 'Results');
-    return genre == null ? t('Les plus populaires', 'Most popular') : genreLabel(genre!);
+    final base = _controller.text.trim().isNotEmpty
+        ? t('Résultats', 'Results')
+        : selected.isEmpty
+        ? t('Les plus populaires', 'Most popular')
+        : selected.map(genreLabel).join(', ');
+    if (loading || results.isEmpty) return base;
+    final n = results.length;
+    return '$base · ${n == 1 ? '1 anime' : t('$n animes', '$n anime')}';
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: TextField(
-          controller: _controller,
-          onChanged: _onText,
-          textInputAction: TextInputAction.search,
-          decoration: InputDecoration(
-            hintText: t("Titre d'un anime", 'Anime title'),
-            border: InputBorder.none,
-            prefixIcon: const Icon(Icons.search),
-          ),
+    final desktop = isDesktop;
+    final side = desktop ? MediaQuery.paddingOf(context).left + 36 : 16.0;
+    final field = CallbackShortcuts(
+      bindings: {const SingleActivator(LogicalKeyboardKey.escape): _clear},
+      child: TextField(
+        controller: _controller,
+        focusNode: _focus,
+        onChanged: _onText,
+        textInputAction: TextInputAction.search,
+        style: Nami.body.copyWith(fontSize: desktop ? 16 : 15),
+        decoration: InputDecoration(
+          hintText: t('Rechercher un anime', 'Search for an anime'),
+          prefixIcon: const Icon(Icons.search),
+          suffixText: desktop ? t('Ctrl K', 'Ctrl K') : null,
+          suffixStyle: Nami.caption.copyWith(color: Nami.textMuted),
+          filled: desktop,
+          fillColor: Nami.text.withValues(alpha: 0.08),
+          border: desktop
+              ? OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none)
+              : InputBorder.none,
+          contentPadding: desktop ? const EdgeInsets.symmetric(vertical: 13) : null,
         ),
       ),
+    );
+    return Scaffold(
+      appBar: desktop ? null : AppBar(title: field),
       body: CustomScrollView(
         slivers: [
-          SliverToBoxAdapter(
-            child: SizedBox(
-              // Chips keep a 48 px touch area and grow with the text size.
-              height: 64 + MediaQuery.textScalerOf(context).scale(13) - 13,
-              child: ListView.separated(
-                clipBehavior: Clip.none,
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                itemCount: genres.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
-                itemBuilder: (_, i) => FocusOutline(
-                  child: FilterChip(
-                    label: Text(genreLabel(genres[i])),
-                    selected: genre == genres[i],
-                    materialTapTargetSize: MaterialTapTargetSize.padded,
-                    onSelected: (on) {
-                      setState(() => genre = on ? genres[i] : null);
-                      _search();
-                    },
-                  ),
-                ),
+          if (desktop)
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(side, MediaQuery.paddingOf(context).top + 12, 40, 0),
+              sliver: SliverToBoxAdapter(child: field),
+            ),
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(side, desktop ? 14 : 8, desktop ? 40 : 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final g in genres)
+                    FlatTag(genreLabel(g), selected: selected.contains(g), onTap: () => _toggle(g)),
+                ],
               ),
             ),
           ),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            padding: EdgeInsets.fromLTRB(side, 20, 16, 8),
             sliver: SliverToBoxAdapter(
-              child: Semantics(header: true, child: Text(heading, style: Nami.section)),
+              child: Semantics(header: true, child: Text(heading, style: MediaRow.titleStyle)),
             ),
           ),
           if (loading && results.isEmpty)
             SliverPadding(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.fromLTRB(side, 16, 16, 16),
               sliver: SliverToBoxAdapter(
                 child: Semantics(label: t('Recherche…', 'Searching…'), liveRegion: true, child: const SkeletonGrid()),
               ),
@@ -158,19 +211,19 @@ class _SearchScreenState extends State<SearchScreen> {
               child: StateMessage(
                 title: t('Aucun anime trouvé', 'No anime found'),
                 body: t(
-                  "Vérifie l'orthographe ou essaie le titre japonais.",
-                  'Check the spelling or try the Japanese title.',
+                  "Vérifie l'orthographe, essaie le titre japonais ou retire un genre.",
+                  'Check the spelling, try the Japanese title or remove a genre.',
                 ),
               ),
             ),
           SliverPadding(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.fromLTRB(side, 8, desktop ? 40 : 16, 24),
             sliver: SliverLayoutBuilder(
               builder: (context, c) {
-                // Columns of about 130 px (3 on a phone, more on wider screens);
-                // the cell height follows the text size so titles never clip.
+                // Columns of about 120-130 px; the cell height follows the text size so titles never clip.
                 final available = c.crossAxisExtent;
-                final columns = ((available + 12) / (130 + 12)).ceil().clamp(2, 10);
+                final target = desktop ? 120.0 : 130.0;
+                final columns = ((available + 12) / (target + 12)).ceil().clamp(2, 12);
                 final cell = (available - 12 * (columns - 1)) / columns;
                 return SliverGrid(
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(

@@ -83,6 +83,31 @@ class RootScreen extends StatefulWidget {
 
 class _RootScreenState extends State<RootScreen> {
   int tab = 0;
+  final _searchFocus = FocusNode(debugLabel: 'search field');
+
+  @override
+  void dispose() {
+    _searchFocus.dispose();
+    super.dispose();
+  }
+
+  void _openSearch() {
+    setState(() => tab = 1);
+    // After the frame: the field must be visible before it can take focus.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _searchFocus.requestFocus());
+  }
+
+  /// Ctrl+K anywhere, or "/" when no text field is being edited, opens the search.
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final keys = HardwareKeyboard.instance;
+    final ctrlK = event.logicalKey == LogicalKeyboardKey.keyK && (keys.isControlPressed || keys.isMetaPressed);
+    final editing = FocusManager.instance.primaryFocus?.context?.widget is EditableText;
+    final slash = event.logicalKey == LogicalKeyboardKey.slash && !editing;
+    if (!ctrlK && !slash) return KeyEventResult.ignored;
+    _openSearch();
+    return KeyEventResult.handled;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -94,7 +119,7 @@ class _RootScreenState extends State<RootScreen> {
     ];
     final children = widget.pages ?? const [HomeScreen(), SearchScreen(), LibraryScreen(), SettingsScreen()];
     if (isDesktop) {
-      return DesktopShell(
+      final shell = DesktopShell(
         items: [for (final i in items) (icon: i.$1, selectedIcon: i.$2, label: i.$3)],
         index: tab,
         onSelect: (i) => setState(() => tab = i),
@@ -102,6 +127,10 @@ class _RootScreenState extends State<RootScreen> {
         onAccount: () => AniList.instance.isLoggedIn
             ? setState(() => tab = 2)
             : Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginScreen())),
+      );
+      return SearchFocus(
+        node: _searchFocus,
+        child: Focus(autofocus: true, onKeyEvent: _onKey, child: shell),
       );
     }
     final pages = IndexedStack(index: tab, children: children);
