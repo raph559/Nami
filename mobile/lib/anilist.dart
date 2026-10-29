@@ -88,6 +88,10 @@ class Media {
   String? get status => json['status'];
   int? get seasonYear => json['seasonYear'];
   int? get averageScore => json['averageScore'];
+  String? get studio {
+    final nodes = json['studios']?['nodes'] as List?;
+    return nodes == null || nodes.isEmpty ? null : nodes.first['name'] as String?;
+  }
   List<String> get genres => List<String>.from(json['genres'] ?? const []);
   List<String> get synonyms => List<String>.from(json['synonyms'] ?? const []);
   int? get nextEpisode => json['nextAiringEpisode']?['episode'];
@@ -143,6 +147,50 @@ class LibraryEntry {
   final ListEntry entry;
 }
 
+/// Orders for the viewer's list. [activity] is AniList's order (last updated first).
+enum LibrarySort { activity, title, score, progress }
+
+extension LibrarySortLabel on LibrarySort {
+  String get label => switch (this) {
+    LibrarySort.activity => t('Dernière activité', 'Last activity'),
+    LibrarySort.title => t('Titre', 'Title'),
+    LibrarySort.score => t('Note', 'Score'),
+    LibrarySort.progress => t('Progression', 'Progress'),
+  };
+}
+
+/// A sorted copy of [entries]: unrated anime and unknown totals go last.
+List<LibraryEntry> sortLibrary(List<LibraryEntry> entries, LibrarySort sort) {
+  double fraction(LibraryEntry e) {
+    final total = e.media.episodes ?? 0;
+    return total > 0 ? (e.entry.progress ?? 0) / total : -1;
+  }
+
+  final sorted = [...entries];
+  switch (sort) {
+    case LibrarySort.activity:
+      break;
+    case LibrarySort.title:
+      sorted.sort((a, b) => a.media.title.display.toLowerCase().compareTo(b.media.title.display.toLowerCase()));
+    case LibrarySort.score:
+      sorted.sort((a, b) => (b.entry.score ?? 0).compareTo(a.entry.score ?? 0));
+    case LibrarySort.progress:
+      sorted.sort((a, b) => fraction(b).compareTo(fraction(a)));
+  }
+  return sorted;
+}
+
+/// An episode that airs (or aired) today.
+class AiringItem {
+  AiringItem(this.media, this.episode, this.airingAt);
+  final Media media;
+  final int episode;
+  final DateTime airingAt;
+
+  bool airedAt(DateTime now) => !airingAt.isAfter(now);
+  bool get aired => airedAt(DateTime.now());
+}
+
 class WatchingEntry {
   WatchingEntry(this.media, this.progress);
   final Media media;
@@ -159,7 +207,7 @@ class AniListException implements Exception {
 
 const mediaFields = '''
 id idMal title { romaji english native userPreferred } coverImage { extraLarge large color }
-bannerImage description(asHtml: false) episodes duration format status season seasonYear
+bannerImage description(asHtml: false) episodes duration format status season seasonYear studios(isMain: true) { nodes { name } }
 averageScore genres synonyms nextAiringEpisode { episode airingAt } startDate { year month day }
 mediaListEntry { id progress status score(format: POINT_100) }
 ''';
@@ -215,20 +263,62 @@ class AniList extends ChangeNotifier {
     );
   }
 
-  /// Searches by text and/or genre; with neither, returns the most popular.
-  Future<List<Media>> search(String text, {String? genre}) async {
+  /// Searches by text and/or genres (all of them); with neither, returns the most popular.
+  Future<List<Media>> search(String text, {List<String> genres = const []}) async {
     final vars = <String, dynamic>{
       'sort': [text.isEmpty ? 'POPULARITY_DESC' : 'SEARCH_MATCH'],
       if (text.isNotEmpty) 'q': text,
-      'g': ?genre,
+      if (genres.isNotEmpty) 'g': genres,
     };
     return _page(
       await query(
-        r'query($q: String, $g: String, $sort: [MediaSort]) { Page(perPage: 40) { media(type: ANIME, search: $q, genre: $g, sort: $sort, isAdult: false) { '
+        r'query($q: String, $g: [String], $sort: [MediaSort]) { Page(perPage: 40) { media(type: ANIME, search: $q, genre_in: $g, sort: $sort, isAdult: false) { '
         '$mediaFields } } }',
         vars,
       ),
     );
+  }
+
+  Future<List<Media>> topRated() async => _page(
+    await query('query { Page(perPage: 30) { media(type: ANIME, sort: SCORE_DESC, isAdult: false) { $mediaFields } } }'),
+  );
+
+  /// Local midnight to the next one.
+  static (DateTime, DateTime) dayBounds(DateTime now) {
+    final start = DateTime(now.year, now.month, now.day);
+    return (start, DateTime(now.year, now.month, now.day + 1));
+  }
+
+  /// Episodes airing during the local day, in time order.
+  Future<List<AiringItem>> airingToday({DateTime? now}) async {
+    final (start, end) = dayBounds(now ?? DateTime.now());
+    final d = await query(
+      r'query($a: Int, $b: Int) { Page(perPage: 50) { airingSchedules(airingAt_greater: $a, airingAt_lesser: $b, sort: TIME) { episode airingAt media { isAdult '
+      '$mediaFields } } } }',
+      {'a': start.millisecondsSinceEpoch ~/ 1000 - 1, 'b': end.millisecondsSinceEpoch ~/ 1000},
+    );
+    return [
+      for (final s in d['Page']['airingSchedules'] as List)
+        if (s['media']?['isAdult'] != true)
+          AiringItem(
+            Media(s['media']),
+            s['episode'],
+            DateTime.fromMillisecondsSinceEpoch((s['airingAt'] as int) * 1000),
+          ),
+    ];
+  }
+
+  /// AniList's best-rated recommendations for an anime.
+  Future<List<Media>> recommendationsFor(int mediaId) async {
+    final d = await query(
+      r'query($id: Int) { Media(id: $id) { recommendations(sort: RATING_DESC, perPage: 15) { nodes { mediaRecommendation { '
+      '$mediaFields } } } } }',
+      {'id': mediaId},
+    );
+    return [
+      for (final n in d['Media']['recommendations']['nodes'] as List)
+        if (n['mediaRecommendation'] != null) Media(n['mediaRecommendation']),
+    ];
   }
 
   Future<Media> media(int id) async => Media(

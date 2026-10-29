@@ -66,7 +66,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final request = ++_request;
     setState(() => loading = true);
     try {
-      final found = await AniList.instance.search(q, genre: genre);
+      final found = await AniList.instance.search(q, genres: [?genre]);
       if (mounted && request == _request) {
         setState(() {
           results = found;
