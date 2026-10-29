@@ -383,8 +383,19 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-force_load",
+					"\"$(PROJECT_DIR)/engine/libnami.a\"",
+					"-framework",
+					CoreFoundation,
+					"-framework",
+					Security,
+					"-lresolv",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.raphr.nami;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRIP_STYLE = "non-global";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
@@ -564,8 +575,19 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-force_load",
+					"\"$(PROJECT_DIR)/engine/libnami.a\"",
+					"-framework",
+					CoreFoundation,
+					"-framework",
+					Security,
+					"-lresolv",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.raphr.nami;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRIP_STYLE = "non-global";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -586,8 +608,19 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-force_load",
+					"\"$(PROJECT_DIR)/engine/libnami.a\"",
+					"-framework",
+					CoreFoundation,
+					"-framework",
+					Security,
+					"-lresolv",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.raphr.nami;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRIP_STYLE = "non-global";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";

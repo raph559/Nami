@@ -9,7 +9,8 @@ app/Vendor/MobileVLCKit.xcframework/
 *.p12
 *.mobiledevicepairing
 
-# Engine binaries built by engine/build-shared.sh
+# Engine binaries built by engine/build-shared.sh and the release workflow
 mobile/android/app/src/main/jniLibs/
 mobile/windows/engine/
 mobile/android/build/
+mobile/ios/engine/
