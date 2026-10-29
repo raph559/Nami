@@ -2,7 +2,7 @@
 
 Nami is licensed under GPL-3.0. It includes the components below, each under its own license.
 
-## Flutter app
+## Android and Windows app (Flutter, `mobile/`)
 
 Direct dependencies of `mobile/` (versions in `mobile/pubspec.lock`).
 
@@ -17,7 +17,7 @@ Direct dependencies of `mobile/` (versions in `mobile/pubspec.lock`).
 | [device_preview](https://pub.dev/packages/device_preview) | MIT | Only active in Windows debug builds |
 | [Hanken Grotesk](https://github.com/marcologous/hanken-grotesk) font | OFL-1.1 | `mobile/assets/fonts/OFL-HankenGrotesk.txt` |
 
-## SwiftUI app (`app/`, earlier iOS version)
+## iPhone app (SwiftUI, `app/`)
 
 | Component | License | Notes |
 |---|---|---|

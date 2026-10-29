@@ -12,11 +12,17 @@
 <p align="center">
   <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue"></a>
   <img alt="iOS, Android, Windows" src="https://img.shields.io/badge/iOS%20%C2%B7%20Android%20%C2%B7%20Windows-black">
-  <img alt="Flutter" src="https://img.shields.io/badge/app-Flutter-02569B">
   <img alt="Go" src="https://img.shields.io/badge/engine-Go-00ADD8">
 </p>
 
 ---
+
+Nami is two apps around one torrent engine:
+
+- **iPhone**: a native SwiftUI app with a VLC player, in [`app/`](app).
+- **Android and Windows**: a Flutter app with an mpv player, in [`mobile/`](mobile).
+
+Both talk to AniList and run the same Hayase-format extensions.
 
 ## Features
 
@@ -25,23 +31,28 @@
 - **Extensions**: sources come from extension repositories in the same format as
   [Hayase](https://hayase.watch) extensions. Nami ships with **no** sources; add the
   repositories you want in Settings.
-- **Source picker**: release names are read (group, quality, codec, audio, full season) and
-  one source is recommended, based on seeders, your preferred quality and original audio.
 - **Torrent engine on the device**: playback starts while the torrent downloads,
   with pieces fetched around the playback position. Nothing is kept after you close the player.
-- **mpv player**: MKV, HEVC, ASS subtitles, audio and subtitle track selection,
-  10 s seeking, an 85 s intro skip and a next-episode button. Keyboard shortcuts on desktop.
+- **Player**: MKV, HEVC, ASS subtitles, audio and subtitle track selection,
+  10 s seeking, an 85 s intro skip and a next-episode button.
 - **French and English** interface, and a choice of romaji, English or Japanese titles.
+
+Android and Windows only, for now:
+
+- **Source picker**: release names are read (group, quality, codec, audio, full season) and
+  one source is recommended, based on seeders, your preferred quality and original audio.
+- **Keyboard shortcuts** in the player on Windows.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for what is coming next.
 
 ## Install
 
-Take the file for your device from [Releases](../../releases):
+Take the file for your device from [Releases](../../releases). The iPhone app has its own
+version number: the latest IPA is attached to the most recent release that has one.
 
 | Device | File | Notes |
 |---|---|---|
-| iPhone, iPad | `Nami-<version>.ipa` | Unsigned. Sideload it with LiveContainer, SideStore, AltStore or xtool. With a free Apple account, sideloaded apps must be re-signed every 7 days. |
+| iPhone | `Nami-<version>.ipa` | Unsigned, iOS 17 or later. Sideload it with LiveContainer, SideStore, AltStore or xtool. With a free Apple account, sideloaded apps must be re-signed every 7 days. |
 | Android phone | `Nami-<version>-arm64.apk` | Allow installs from your browser or file manager when asked. |
 | Android emulator, x86_64 | `Nami-<version>-x86_64.apk` | |
 | Windows 10/11, x64 | `Nami-<version>-windows.zip` | Unzip and run `nami.exe`. Windows may ask to allow network access for the torrent engine. |
@@ -56,34 +67,64 @@ Take the file for your device from [Releases](../../releases):
 ## How it works
 
 ```
-┌────────────────────────── Nami (Flutter) ──────────────────────────┐
-│ AniList GraphQL ──────── browse, list, progress sync               │
-│ api.ani.zip ──────────── AniDB / TVDB / TMDB ids, episode metadata │
-│ headless WebView ─────── runs extension modules, fetch() via Dart  │
-│ media_kit (mpv) ──────── plays http://127.0.0.1:<port>/stream/...  │
-└─────────────────────────────────┬──────────────────────────────────┘
-                                  │ dart:ffi + local HTTP
-┌─────────────────────────────────▼──────────────────────────────────┐
-│ Go engine ── anacrolix/torrent                                     │
-│ libnami.a (iOS) · libnami_engine.so (Android) · nami_engine.dll    │
-│ POST /add   GET /stream/{hash}/{file} (HTTP ranges)                │
-│ GET /stats/{hash}   POST /drop/{hash}                              │
-└────────────────────────────────────────────────────────────────────┘
+┌──── iPhone app (SwiftUI) ────┐   ┌──── Android / Windows (Flutter) ────┐
+│ AniList GraphQL, ani.zip     │   │ AniList GraphQL, ani.zip            │
+│ WKWebView runs extensions    │   │ headless WebView runs extensions    │
+│ MobileVLCKit plays the file  │   │ media_kit (mpv) plays the file      │
+└──────────────┬───────────────┘   └──────────────────┬──────────────────┘
+               │ C call + local HTTP                  │ dart:ffi + local HTTP
+┌──────────────▼──────────────────────────────────────▼──────────────────┐
+│ Go engine ── anacrolix/torrent                                         │
+│ libnami.a (iOS) · libnami_engine.so (Android) · nami_engine.dll        │
+│ POST /add   GET /stream/{hash}/{file} (HTTP ranges)                    │
+│ GET /stats/{hash}   POST /drop/{hash}                                  │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 | Path | What it is |
 |---|---|
-| [`mobile/`](mobile) | The Flutter app (`lib/`), with its Android, iOS and Windows projects |
+| [`app/`](app) | iPhone app (SwiftUI): `Sources/Nami/` for the app, `Sources/NamiEngine/` for the engine header |
+| [`mobile/`](mobile) | Android and Windows app (Flutter): `lib/` for the app |
 | [`engine/`](engine) | Go torrent engine, with an end-to-end test that streams Sintel (CC-BY) |
-| [`app/`](app) | The first SwiftUI version for iOS, kept for reference |
 | [`tools/`](tools) | Build, device and maintenance scripts |
 
 ## Building
 
-**Requirements**: Flutter 3.47, Go 1.27+, and a C compiler for the engine's export glue
-(MSYS2 UCRT64 gcc on Windows, the Android NDK for Android, Xcode for iOS).
+### iPhone app
 
-**Android and Windows** (from Git Bash on Windows):
+The iOS app is built on Linux (or WSL) with [xtool](https://github.com/xtool-org/xtool),
+which replaces Xcode for SwiftPM apps. A Mac with Xcode works too
+(`xtool dev generate-xcode-project`).
+
+**Requirements**
+- xtool with the Darwin SDK (`xtool setup`), Swift 6
+- Go 1.27+ (`env.sh` expects it in `~/.local/go-sdk`; adjust if needed)
+- MobileVLCKit 3.7.4, which is not in the repository:
+
+```bash
+mkdir -p vendor && cd vendor
+curl -LO https://download.videolan.org/pub/cocoapods/prod/MobileVLCKit-3.0-20260922-1512.tar.xz
+echo "c649c4c47bd065b3a5511746361b5a9066a34033f2df9cbc9454409c0f363b52  MobileVLCKit-3.0-20260922-1512.tar.xz" | sha256sum -c
+tar xf MobileVLCKit-3.0-20260922-1512.tar.xz
+cp -r MobileVLCKit-binary/MobileVLCKit.xcframework ../app/Vendor/
+cd .. && python3 tools/thin.py app/Vendor/MobileVLCKit.xcframework/ios-arm64_armv7_armv7s/MobileVLCKit.framework/MobileVLCKit
+```
+
+**Build**
+
+```bash
+tools/wsl-run.sh          # build engine + app, install and launch on a USB-connected iPhone
+tools/wsl-run.sh build    # app/xtool/Nami.app
+tools/wsl-run.sh ipa      # app/xtool/Nami.ipa
+```
+
+On WSL, the iPhone can be reached through the Windows Apple Mobile Device Service by setting
+`USBMUXD_SOCKET_ADDRESS=127.0.0.1:27015` (run scripts with `bash -li` so it is loaded).
+
+### Android and Windows app
+
+**Requirements**: Flutter 3.47, Go 1.27+, MSYS2 UCRT64 gcc (Windows engine) and the Android NDK.
+From Git Bash on Windows:
 
 ```bash
 engine/build-shared.sh all        # nami_engine.dll and libnami_engine.so
@@ -95,12 +136,7 @@ flutter build windows --release
 Release APKs are signed with the key named in `mobile/android/key.properties`
 (not in the repository); without it they use the debug key.
 
-**iOS** needs a Mac. The [Release workflow](.github/workflows/release.yml) builds the engine as a
-static archive in `mobile/ios/engine/libnami.a`, then runs
-`flutter build ios --release --no-codesign` and packages an unsigned IPA.
-It runs on every `v*` tag and can be started by hand from the Actions tab.
-
-**Test the engine**
+### Test the engine
 
 ```bash
 cd engine && go test -tags nosqlite ./...
@@ -142,8 +178,9 @@ Nami is free software under the [GNU General Public License v3.0](LICENSE).
 
 Third-party components keep their own licenses, listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md): notably
-[anacrolix/torrent](https://github.com/anacrolix/torrent) (MPL-2.0) and
+[anacrolix/torrent](https://github.com/anacrolix/torrent) (MPL-2.0),
+[MobileVLCKit](https://code.videolan.org/videolan/VLCKit) on iPhone and
 [mpv](https://mpv.io) with FFmpeg through [media_kit](https://github.com/media-kit/media-kit)
-(LGPL-2.1, dynamically linked).
+on Android and Windows (both LGPL-2.1, dynamically linked).
 Anime data comes from [AniList](https://anilist.co) and [ani.zip](https://api.ani.zip).
 Nami is not affiliated with AniList, Hayase, mpv or VideoLAN.

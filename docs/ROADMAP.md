@@ -35,3 +35,8 @@
 - [ ] Airing calendar for your list.
 - [ ] Notifications when a new episode of an anime on your list airs.
 - [ ] Offline downloads.
+
+## iPhone app
+
+- [ ] Bring the Android and Windows source picker to the SwiftUI app: recommended source,
+      release facts as tags, seeder levels.

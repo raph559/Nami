@@ -64,9 +64,7 @@ class Engine {
 
   static DynamicLibrary _open() {
     if (Platform.isWindows) return DynamicLibrary.open('nami_engine.dll');
-    if (Platform.isAndroid) return DynamicLibrary.open('libnami_engine.so');
-    // iOS links the engine statically into the app.
-    return DynamicLibrary.process();
+    return DynamicLibrary.open('libnami_engine.so');
   }
 
   Future<int> start() {
