@@ -194,6 +194,7 @@ class _Slide extends StatelessWidget {
     final size = MediaQuery.sizeOf(context);
     final height = desktop ? (size.height * 0.58).clamp(380.0, 620.0) : 440.0 + pad.top;
     final left = desktop ? pad.left + 36 : 20.0;
+    final textEnd = ((left + 560) / size.width).clamp(0.0, 1.0);
     final accent = Nami.accentOf(media.color);
     final status = media.listEntry?.status;
     final watch = item.reason == HeroReason.resume
@@ -251,7 +252,8 @@ class _Slide extends StatelessWidget {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  stops: desktop ? const [0, 0.4, 0.7] : const [0, 0.0, 0.0],
+                  // Dark (82 % or more) until the end of the text column, whatever the window width.
+                  stops: desktop ? [0, textEnd, (textEnd + 0.3).clamp(0.0, 1.0)] : const [0, 0.0, 0.0],
                   colors: [
                     Nami.ground.withValues(alpha: desktop ? 0.9 : 0),
                     Nami.ground.withValues(alpha: desktop ? 0.82 : 0),
@@ -281,45 +283,48 @@ class _Slide extends StatelessWidget {
           Container(
             constraints: BoxConstraints(minHeight: height),
             alignment: Alignment.bottomLeft,
-            padding: EdgeInsets.fromLTRB(left, pad.top + 24, desktop ? 200 : 20, desktop ? 40 : 20),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    kicker,
-                    style: TextStyle(fontFamily: Nami.sans, fontSize: 13, fontWeight: FontWeight.w600, color: accent),
-                  ),
-                  const SizedBox(height: 8),
-                  Semantics(
-                    header: true,
-                    child: Text(
-                      media.title.display,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: Nami.heroTitle.copyWith(fontSize: desktop ? 40 : 28, height: 1.05),
-                    ),
-                  ),
-                  if (meta.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(meta, maxLines: 2, overflow: TextOverflow.ellipsis, style: Nami.meta.copyWith(fontSize: 13)),
-                  ],
-                  if (desktop && media.plainDescription.isNotEmpty) ...[
-                    const SizedBox(height: 10),
+            padding: desktop ? EdgeInsets.fromLTRB(left, pad.top + 24, 200, 40) : EdgeInsets.only(top: pad.top + 24),
+            child: _onScrim(
+              desktop,
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      media.plainDescription,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Nami.meta.copyWith(fontSize: 13),
+                      kicker,
+                      style: TextStyle(fontFamily: Nami.sans, fontSize: 13, fontWeight: FontWeight.w600, color: accent),
                     ),
+                    const SizedBox(height: 8),
+                    Semantics(
+                      header: true,
+                      child: Text(
+                        media.title.display,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: Nami.heroTitle.copyWith(fontSize: desktop ? 40 : 28, height: 1.05),
+                      ),
+                    ),
+                    if (meta.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(meta, maxLines: 2, overflow: TextOverflow.ellipsis, style: Nami.meta.copyWith(fontSize: 13)),
+                    ],
+                    if (desktop && media.plainDescription.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        media.plainDescription,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Nami.meta.copyWith(fontSize: 13),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    actions,
+                    const SizedBox(height: 18),
+                    bars,
                   ],
-                  const SizedBox(height: 16),
-                  actions,
-                  const SizedBox(height: 18),
-                  bars,
-                ],
+                ),
               ),
             ),
           ),
@@ -327,4 +332,12 @@ class _Slide extends StatelessWidget {
       ),
     );
   }
+
+  /// Phones put the text on [TextScrim] (80 % ground or more, 4.5:1 over any picture);
+  /// the desktop relies on the side fade, which covers the text column.
+  Widget _onScrim(bool desktop, Widget text) => desktop
+      ? text
+      : TextScrim(
+          child: Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 20), child: text),
+        );
 }

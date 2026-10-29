@@ -8,6 +8,7 @@ import 'package:nami/settings.dart';
 import 'package:nami/theme.dart';
 import 'package:nami/ui/airing_row.dart';
 import 'package:nami/ui/hero_carousel.dart';
+import 'package:nami/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Media anime(int id) => Media({
@@ -118,5 +119,41 @@ void main() {
     expect(find.text('Dans ta liste'), findsOneWidget);
     expect(find.textContaining('sorti'), findsOneWidget);
     expect(find.text('Épisode 8'), findsOneWidget);
+  });
+
+  testWidgets('phone banner text sits on the dark scrim', (tester) async {
+    await pumpHero(tester, reduceMotion: true, desktop: false);
+    expect(find.ancestor(of: find.text('Anime 1'), matching: find.byType(TextScrim)), findsOneWidget);
+  });
+
+  testWidgets('desktop side fade covers the text column in a small window', (tester) async {
+    debugDesktopOverride = true;
+    addTearDown(() => debugDesktopOverride = null);
+    tester.view.physicalSize = const Size(720, 480);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: Nami.desktopTheme(),
+        home: Scaffold(
+          body: ListView(
+            children: [HeroCarousel(items: items, onOpen: (_) {})],
+          ),
+        ),
+      ),
+    );
+    final text = tester.getRect(find.text('Anime 1'));
+    final fades = tester
+        .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+        .map((b) => b.decoration)
+        .whereType<BoxDecoration>()
+        .map((d) => d.gradient)
+        .whereType<LinearGradient>()
+        .where((g) => g.begin == Alignment.centerLeft);
+    final side = fades.first;
+    // Where the fade starts thinning, as a share of the width: past the text column.
+    final heroWidth = tester.getSize(find.byType(HeroCarousel)).width;
+    expect(side.stops![1] * heroWidth, greaterThanOrEqualTo(text.right));
+    expect(side.colors[1].a, greaterThanOrEqualTo(0.8));
   });
 }
