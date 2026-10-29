@@ -30,6 +30,10 @@ Both play through mpv, talk to AniList and run the same Hayase-format extensions
   search with genre filters. Episodes are marked as watched on AniList after 85 % of an episode.
   Add an anime to your list, change its status, progress and score, and browse your list by
   status in the "My list" tab.
+- **Home**: the anime to resume and new episodes in a rotating banner, today's episodes, what you
+  planned to watch, suggestions from what you watch, the season, trending and top rated anime.
+- **Windows**: a desktop layout with a slim icon rail, a details card on hover, sources in a side
+  panel, Ctrl+K to search and settings in two panes.
 - **Extensions**: sources come from extension repositories in the same format as
   [Hayase](https://hayase.watch) extensions. Nami ships with **no** sources; add the
   repositories you want in Settings.

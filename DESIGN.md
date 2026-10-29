@@ -67,12 +67,39 @@ Measured with the WCAG 2.x formula; keep them when adding screens.
   overlay is 1.5:1 on black. Wrap every new focusable row, card and button in it.
 - Layouts grow with the text size (tested at 200 %): no fixed heights around text, cover widths
   follow the text scale, rows wrap instead of clipping.
-- Widths: bottom bar under 900 px, side rail above; reading width capped at 760 px.
+- Widths (touch screens): bottom bar under 900 px, side rail above; reading width capped at 760 px.
+
+## Desktop (Windows)
+
+The desktop layout follows the input device, not the width: Windows (and Linux, macOS) always get
+it, from the 720 × 480 minimum window up. Phones and tablets keep the touch layout.
+
+- Window: no system title bar. Artwork runs to the top edge, under a 32 px transparent strip that
+  holds the window buttons and drags the window; plain pages start below it.
+- Rail: 60 px on the left, icons only (40 × 40, the name in a tooltip), the "n" wordmark on top and
+  the AniList avatar at the bottom. The selected item has a filled icon and a soft background. No
+  divider: the rail fades from 94 % to 60 % ground so banners show faintly behind it. Page content
+  starts 36 px after the rail.
+- Mouse sizes: buttons 34 px high, body 13-14, captions 11-12, section titles 15 bold, page titles
+  28-38, the home banner title 40. Mouse targets at least 32 px.
+- Covers: one card everywhere. Hovering (or focusing) a cover for 400 ms opens a card beside it with
+  the banner, facts, summary, Watch and My list. No shadow: the card surface `#1B1B1E` and a 1 px line
+  set it apart.
+- Sources slide in as a 440 px panel on the right over a 55 % ground scrim; Escape, ✕ or a click beside
+  it closes it.
+- Tabs are text with a count; the chosen one is bold with a 2 px bar 10 px under the text, on a 1 px
+  line. Filters are flat tags (text at 7 %, the chosen one off-white with black text). No outlined
+  Material chips, on desktop or on phones.
+- Settings: sections on the left, one section at a time on the right (rows on lines, no cards).
+- Keyboard: Ctrl+K or "/" opens Search; Escape clears it. The player shortcuts are listed in Settings.
+- The app font has no star or arrow glyphs: use icons or words, never "★" or "←".
 
 ## Screens
 
-- Home: a full-bleed "À reprendre" banner for the anime you are watching (or the top trending one
-  when logged out), then horizontal rows. One focal point: the resume button.
+- Home: a banner that cycles through up to five anime (the one to resume, new episodes, then
+  trending), then rows: Continue, Today, Planned in your list, Because you watch…, the season,
+  Trending, Top rated. Empty sections are hidden. The banner moves every 8 s, holds still under the
+  pointer or the focus, and never moves by itself with reduced motion.
 - Anime page: banner fading into black, serif title, progress line in the anime's color,
   one off-white "Regarder l'épisode N" button, episode list with the next episode outlined.
 - Player: black, controls appear on tap and hide after 4 s.
