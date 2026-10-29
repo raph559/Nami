@@ -82,4 +82,30 @@ void main() {
     expect(AiringItem(m, 5, DateTime(2026, 10, 29, 11)).airedAt(now), isTrue);
     expect(AiringItem(m, 5, DateTime(2026, 10, 29, 13)).airedAt(now), isFalse);
   });
+
+  test('a schedule entry without anime is skipped, not fatal', () {
+    final items = AniList.parseAiring([
+      {'episode': 3, 'airingAt': 1793300000, 'media': null},
+      {
+        'episode': 5,
+        'airingAt': 1793303600,
+        'media': {
+          'id': 9,
+          'isAdult': false,
+          'title': <String, dynamic>{'romaji': 'Ok'},
+        },
+      },
+      {
+        'episode': 1,
+        'airingAt': 1793307200,
+        'media': {
+          'id': 10,
+          'isAdult': true,
+          'title': <String, dynamic>{'romaji': 'Adult'},
+        },
+      },
+    ]);
+    expect([for (final i in items) i.media.id], [9]);
+    expect(items.single.episode, 5);
+  });
 }

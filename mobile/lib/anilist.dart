@@ -300,16 +300,15 @@ class AniList extends ChangeNotifier {
       '$mediaFields } } } }',
       {'a': start.millisecondsSinceEpoch ~/ 1000 - 1, 'b': end.millisecondsSinceEpoch ~/ 1000},
     );
-    return [
-      for (final s in d['Page']['airingSchedules'] as List)
-        if (s['media']?['isAdult'] != true)
-          AiringItem(
-            Media(s['media']),
-            s['episode'],
-            DateTime.fromMillisecondsSinceEpoch((s['airingAt'] as int) * 1000),
-          ),
-    ];
+    return parseAiring(d['Page']['airingSchedules'] as List);
   }
+
+  /// Today's schedule entries, without adult anime and without entries AniList sent without an anime.
+  static List<AiringItem> parseAiring(List schedules) => [
+    for (final s in schedules)
+      if (s['media'] case final Map<String, dynamic> m when m['isAdult'] != true)
+        AiringItem(Media(m), s['episode'], DateTime.fromMillisecondsSinceEpoch((s['airingAt'] as int) * 1000)),
+  ];
 
   /// AniList's best-rated recommendations for an anime.
   Future<List<Media>> recommendationsFor(int mediaId) async {
