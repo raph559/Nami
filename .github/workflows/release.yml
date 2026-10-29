@@ -11,8 +11,8 @@ jobs:
   ios:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: engine/go.mod
           cache-dependency-path: engine/go.sum
@@ -37,8 +37,12 @@ jobs:
         working-directory: mobile
         run: flutter build ios --release --no-codesign
 
+      # Dart finds the engine with DynamicLibrary.process(), so NamiStart must stay exported.
       - name: Check the engine symbol survived linking
-        run: nm -gU mobile/build/ios/iphoneos/Runner.app/Runner | grep -q _NamiStart
+        run: |
+          bin=mobile/build/ios/iphoneos/Runner.app/Runner
+          ls -la "$bin"
+          nm -gU "$bin" | grep -i nami || { echo "NamiStart missing"; nm -gU "$bin" | head -20; exit 1; }
 
       - name: Package the IPA
         run: |
