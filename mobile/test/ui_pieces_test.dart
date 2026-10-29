@@ -20,7 +20,9 @@ Widget host(Widget child, {double width = 1000, double textScale = 1}) => Materi
   ),
 );
 
-Color? textColor(WidgetTester tester, String text) => tester.widget<Text>(find.text(text)).style?.color;
+Color? textColor(WidgetTester tester, String text) =>
+    tester.widget<Text>(find.text(text)).style?.color ??
+    DefaultTextStyle.of(tester.element(find.text(text))).style.color;
 
 void main() {
   setUp(() async {

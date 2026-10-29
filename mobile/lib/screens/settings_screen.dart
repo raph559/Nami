@@ -10,6 +10,7 @@ import '../extensions.dart';
 import '../platform.dart';
 import '../settings.dart';
 import '../theme.dart';
+import '../ui/motion.dart';
 import '../widgets.dart';
 
 const sourceUrl = 'https://github.com/raph559/Nami';
@@ -733,25 +734,31 @@ class _NavEntry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final motion = Motion.of(context);
     return Semantics(
       selected: selected,
       button: true,
       child: FocusOutline(
         child: Material(
-          color: selected ? Nami.text.withValues(alpha: 0.08) : Colors.transparent,
-          borderRadius: BorderRadius.circular(Nami.radiusButton),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(Nami.radiusButton),
+          type: MaterialType.transparency,
+          child: QuietTap(
             onTap: onTap,
-            child: Padding(
+            builder: (context, hovered) => AnimatedContainer(
+              duration: motion.fast,
+              curve: Motion.curve,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-              child: Text(
-                label,
+              decoration: BoxDecoration(
+                color: Nami.text.withValues(alpha: selected ? 0.08 : (hovered ? 0.04 : 0)),
+                borderRadius: BorderRadius.circular(Nami.radiusButton),
+              ),
+              child: AnimatedDefaultTextStyle(
+                duration: motion.fast,
                 style: Nami.body.copyWith(
                   fontSize: 14,
                   fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                  color: selected ? Nami.text : Nami.textSecondary,
+                  color: selected || hovered ? Nami.text : Nami.textSecondary,
                 ),
+                child: Text(label),
               ),
             ),
           ),

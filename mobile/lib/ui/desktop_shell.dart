@@ -4,6 +4,7 @@ import '../anilist.dart';
 import '../settings.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'motion.dart';
 
 /// One destination of the rail.
 typedef RailItem = ({IconData icon, IconData selectedIcon, String label});
@@ -101,20 +102,42 @@ class _RailButton extends StatelessWidget {
       child: Semantics(
         selected: selected,
         child: FocusOutline(
-          child: IconButton(
-            tooltip: item.label,
-            onPressed: onTap,
-            style: IconButton.styleFrom(
-              fixedSize: const Size(40, 40),
-              minimumSize: const Size(40, 40),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              backgroundColor: selected ? Nami.text.withValues(alpha: 0.10) : Colors.transparent,
-            ),
-            icon: Icon(
-              selected ? item.selectedIcon : item.icon,
-              size: 20,
-              color: selected ? Nami.text : Nami.textMuted,
-            ),
+          child: Hoverable(
+            builder: (context, hovered) {
+              final motion = Motion.of(context);
+              // The background and the icon ease between rest, hover and chosen.
+              return AnimatedContainer(
+                duration: motion.fast,
+                curve: Motion.curve,
+                decoration: BoxDecoration(
+                  color: Nami.text.withValues(alpha: selected ? 0.10 : (hovered ? 0.06 : 0)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: IconButton(
+                  tooltip: item.label,
+                  onPressed: onTap,
+                  style: IconButton.styleFrom(
+                    fixedSize: const Size(40, 40),
+                    minimumSize: const Size(40, 40),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    overlayColor: Colors.transparent,
+                  ),
+                  icon: TweenAnimationBuilder<Color?>(
+                    tween: ColorTween(end: selected || hovered ? Nami.text : Nami.textMuted),
+                    duration: motion.fast,
+                    builder: (context, color, _) => AnimatedSwitcher(
+                      duration: motion.fast,
+                      child: Icon(
+                        selected ? item.selectedIcon : item.icon,
+                        key: ValueKey(selected),
+                        size: 20,
+                        color: color,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ),

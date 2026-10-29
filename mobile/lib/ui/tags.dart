@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../platform.dart';
 import '../theme.dart';
+import 'motion.dart';
 import '../widgets.dart';
 
 /// A small flat label (genre, fact). With [onTap] it is a toggle; the
@@ -16,8 +17,38 @@ class FlatTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(Nami.radiusButton);
-    final tag = DecoratedBox(
-      decoration: BoxDecoration(color: selected ? Nami.text : Nami.text.withValues(alpha: 0.07), borderRadius: radius),
+    if (onTap != null) {
+      return Semantics(
+        button: true,
+        selected: selected,
+        child: FocusOutline(
+          child: Material(
+            type: MaterialType.transparency,
+            child: QuietTap(onTap: onTap, builder: (context, hovered) => _target(_tag(context, radius, hovered))),
+          ),
+        ),
+      );
+    }
+    return _tag(context, radius, false);
+  }
+
+  /// Touch screens get a finger-sized target around the small label.
+  Widget _target(Widget tag) => isDesktop
+      ? tag
+      : ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 40),
+          child: Align(widthFactor: 1, heightFactor: 1, child: tag),
+        );
+
+  Widget _tag(BuildContext context, BorderRadius radius, bool hovered) {
+    final motion = Motion.of(context);
+    return AnimatedContainer(
+      duration: motion.fast,
+      curve: Motion.curve,
+      decoration: BoxDecoration(
+        color: selected ? Nami.text : Nami.text.withValues(alpha: hovered ? 0.14 : 0.07),
+        borderRadius: radius,
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
         child: Text(
@@ -28,24 +59,6 @@ class FlatTag extends StatelessWidget {
             fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
             color: selected ? Nami.ground : Nami.textSecondary,
           ),
-        ),
-      ),
-    );
-    if (onTap == null) return tag;
-    // Touch screens get a finger-sized target around the small label.
-    final target = isDesktop
-        ? tag
-        : ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 40),
-            child: Align(widthFactor: 1, heightFactor: 1, child: tag),
-          );
-    return Semantics(
-      button: true,
-      selected: selected,
-      child: FocusOutline(
-        child: Material(
-          type: MaterialType.transparency,
-          child: InkWell(onTap: onTap, borderRadius: radius, child: target),
         ),
       ),
     );

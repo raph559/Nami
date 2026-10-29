@@ -183,6 +183,10 @@ abstract final class Nami {
     return base.copyWith(
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.compact,
+      // A mouse gets a faint highlight, not the touch ripple.
+      splashFactory: NoSplash.splashFactory,
+      hoverColor: text.withValues(alpha: 0.05),
+      highlightColor: text.withValues(alpha: 0.08),
       filledButtonTheme: FilledButtonThemeData(
         style: base.filledButtonTheme.style!.copyWith(
           minimumSize: const WidgetStatePropertyAll(Size(32, 34)),
