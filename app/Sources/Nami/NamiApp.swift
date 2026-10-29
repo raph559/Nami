@@ -62,6 +62,8 @@ struct RootView: View {
                 .tabItem { Label(t("Accueil", "Home"), systemImage: "house.fill") }
             SearchView()
                 .tabItem { Label(t("Recherche", "Search"), systemImage: "magnifyingglass") }
+            LibraryView()
+                .tabItem { Label(t("Ma liste", "My list"), systemImage: "bookmark.fill") }
             SettingsView()
                 .tabItem { Label(t("Réglages", "Settings"), systemImage: "gearshape.fill") }
         }

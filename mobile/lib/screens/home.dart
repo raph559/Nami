@@ -22,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool loading = true;
   Object? error;
   int? _loadedFor;
+  int _revision = AniList.instance.listRevision;
 
   @override
   void initState() {
@@ -37,7 +38,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onAccount() {
-    if (AniList.instance.viewer?.id != _loadedFor) _load();
+    final anilist = AniList.instance;
+    if (anilist.viewer?.id != _loadedFor) {
+      _load();
+    } else if (anilist.listRevision != _revision) {
+      // The list changed (edited, or an episode watched): refresh "Continue" only.
+      _revision = anilist.listRevision;
+      anilist.watching().then((w) {
+        if (mounted) setState(() => watching = w);
+      }, onError: (_) {});
+    }
   }
 
   Future<void> _load() async {

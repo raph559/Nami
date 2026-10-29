@@ -130,13 +130,20 @@ struct ProgressLine: View {
 /// Grid cell that sizes its cover from the column width.
 struct MediaGridCell: View {
     let media: Media
+    var badge: String?
+    var progress: Double?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             CoverImageView(url: media.coverImage?.large ?? media.coverImage?.extraLarge, corner: 6)
                 .aspectRatio(1 / 1.45, contentMode: .fit)
+            if let progress { ProgressLine(value: progress, color: Nami.accent(media.coverImage?.color)) }
             Text(media.title.display).font(.caption.weight(.semibold)).lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if let badge {
+                Text(badge).font(.caption2).foregroundStyle(Nami.textSecondary).lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 }
@@ -307,6 +314,10 @@ struct HomeView: View {
             }
             .refreshable { await load() }
             .task(id: anilist.viewer?.id) { await load() }
+            // The list changed (edited, or an episode watched): refresh "Continue" only.
+            .onChange(of: anilist.listRevision) { _, _ in
+                Task { if let w = try? await anilist.watching() { watching = w } }
+            }
         }
     }
 

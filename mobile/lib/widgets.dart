@@ -536,15 +536,25 @@ class _RowArrow extends StatelessWidget {
 
 /// Keeps reading width comfortable on tablets and desktops.
 class ContentWidth extends StatelessWidget {
-  const ContentWidth({super.key, required this.child, this.maxWidth = 760, this.alignment = Alignment.topCenter});
+  const ContentWidth({
+    super.key,
+    required this.child,
+    this.maxWidth = 760,
+    this.alignment = Alignment.topCenter,
+    this.shrinkWrap = false,
+  });
   final Widget child;
   final double maxWidth;
   final Alignment alignment;
+
+  /// Only as tall as [child], for sheets and dialogs.
+  final bool shrinkWrap;
 
   @override
   Widget build(BuildContext context) {
     return Align(
       alignment: alignment,
+      heightFactor: shrinkWrap ? 1 : null,
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxWidth),
         child: child,

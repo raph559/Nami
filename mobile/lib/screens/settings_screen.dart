@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -436,8 +438,32 @@ class RepoScreen extends StatelessWidget {
 
 /// AniList login in an embedded browser; the implicit-grant redirect to
 /// nami://auth is intercepted here, so it works the same on every platform.
-class LoginScreen extends StatelessWidget {
+/// WebView2 on Windows only reports network requests to
+/// shouldOverrideUrlLoading, so the redirect is also caught when the page
+/// starts loading or fails to.
+class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  bool _handled = false;
+
+  /// True when [url] is the redirect; logs in and closes the screen once.
+  bool _catch(Uri? url) {
+    if (url == null || url.scheme != 'nami') return false;
+    if (_handled) return true;
+    _handled = true;
+    AniList.instance.completeLogin(url).then((ok) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.pop(context);
+      if (!ok) messenger.showSnackBar(SnackBar(content: Text(t('Connexion refusée', 'Login refused'))));
+    });
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -445,22 +471,14 @@ class LoginScreen extends StatelessWidget {
       appBar: AppBar(title: Text(t('Connexion AniList', 'AniList login'))),
       body: InAppWebView(
         initialUrlRequest: URLRequest(url: WebUri.uri(aniListAuthorizeUrl)),
-        initialSettings: InAppWebViewSettings(useShouldOverrideUrlLoading: true),
-        shouldOverrideUrlLoading: (controller, action) async {
-          final url = action.request.url;
-          if (url != null && url.scheme == 'nami') {
-            final ok = await AniList.instance.completeLogin(url);
-            if (context.mounted) {
-              Navigator.pop(context);
-              if (!ok) {
-                ScaffoldMessenger.of(context)
-                    .showSnackBar(SnackBar(content: Text(t('Connexion refusée', 'Login refused'))));
-              }
-            }
-            return NavigationActionPolicy.CANCEL;
-          }
-          return NavigationActionPolicy.ALLOW;
+        initialSettings: InAppWebViewSettings(useShouldOverrideUrlLoading: !Platform.isWindows),
+        shouldOverrideUrlLoading: (controller, action) async =>
+            _catch(action.request.url) ? NavigationActionPolicy.CANCEL : NavigationActionPolicy.ALLOW,
+        onLoadStart: (controller, url) {
+          if (_catch(url)) controller.stopLoading();
         },
+        onUpdateVisitedHistory: (controller, url, _) => _catch(url),
+        onReceivedError: (controller, request, error) => _catch(request.url),
       ),
     );
   }

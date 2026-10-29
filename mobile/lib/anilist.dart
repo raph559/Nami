@@ -38,16 +38,33 @@ class MediaTitle {
   List<String> get all => {romaji, english, native, userPreferred}.whereType<String>().toList();
 }
 
+/// The states of an entry in the viewer's AniList, in the order AniList shows them.
+const listStatuses = ['CURRENT', 'PLANNING', 'COMPLETED', 'REPEATING', 'PAUSED', 'DROPPED'];
+
+String listStatusLabel(String status) => switch (status) {
+  'CURRENT' => t('En cours', 'Watching'),
+  'PLANNING' => t('À voir', 'Planning'),
+  'COMPLETED' => t('Terminé', 'Completed'),
+  'REPEATING' => t('Revisionnage', 'Rewatching'),
+  'PAUSED' => t('En pause', 'Paused'),
+  'DROPPED' => t('Abandonné', 'Dropped'),
+  _ => status,
+};
+
 class ListEntry {
   ListEntry({this.id, this.progress, this.status, this.score});
 
   final int? id;
   final int? progress;
   final String? status;
+
+  /// Out of 100 (AniList's POINT_100); 0 means not rated.
   final double? score;
 
   factory ListEntry.fromJson(Map<String, dynamic> j) =>
       ListEntry(id: j['id'], progress: j['progress'], status: j['status'], score: (j['score'] as num?)?.toDouble());
+
+  Map<String, dynamic> toJson() => {'id': id, 'progress': progress, 'status': status, 'score': score};
 }
 
 class Media {
@@ -77,6 +94,9 @@ class Media {
   int? get nextAiringAt => json['nextAiringEpisode']?['airingAt'];
   bool get isMovie => format == 'MOVIE';
   int get progress => listEntry?.progress ?? 0;
+
+  /// The same anime with another list entry (null when removed from the list).
+  Media withEntry(ListEntry? entry) => Media({...json, 'mediaListEntry': entry?.toJson()});
 
   /// Episodes that can be watched now (aired so far for ongoing shows).
   int get availableEpisodes {
@@ -109,6 +129,18 @@ class Viewer {
   int get id => json['id'];
   String get name => json['name'];
   String? get avatar => json['avatar']?['large'];
+  String? get banner => json['bannerImage'];
+  Map<String, dynamic>? get _stats => json['statistics']?['anime'];
+  int get animeCount => _stats?['count'] ?? 0;
+  int get episodesWatched => _stats?['episodesWatched'] ?? 0;
+  int get minutesWatched => _stats?['minutesWatched'] ?? 0;
+}
+
+/// One anime of the viewer's list with its entry.
+class LibraryEntry {
+  LibraryEntry(this.media, this.entry);
+  final Media media;
+  final ListEntry entry;
 }
 
 class WatchingEntry {
@@ -137,6 +169,9 @@ class AniList extends ChangeNotifier {
   static final instance = AniList._();
 
   Viewer? viewer;
+
+  /// Goes up each time Nami changes the viewer's list, so screens showing it reload.
+  int listRevision = 0;
 
   String get _token => AppSettings.instance.prefs.getString('anilistToken') ?? '';
   bool get isLoggedIn => _token.isNotEmpty;
@@ -220,7 +255,11 @@ class AniList extends ChangeNotifier {
       viewer = null;
     } else {
       try {
-        viewer = Viewer((await query('query { Viewer { id name avatar { large } } }'))['Viewer']);
+        viewer = Viewer(
+          (await query(
+            'query { Viewer { id name avatar { large } bannerImage statistics { anime { count episodesWatched minutesWatched } } } }',
+          ))['Viewer'],
+        );
       } catch (_) {
         viewer = null;
       }
@@ -250,6 +289,53 @@ class AniList extends ChangeNotifier {
       r'mutation($id: Int, $p: Int, $s: MediaListStatus) { SaveMediaListEntry(mediaId: $id, progress: $p, status: $s) { progress } }',
       {'id': media.id, 'p': episode, 's': status},
     );
+    _listChanged();
+  }
+
+  /// The viewer's whole anime list, grouped by status (custom lists left out).
+  Future<Map<String, List<LibraryEntry>>> library() async {
+    final v = viewer;
+    if (v == null) return {};
+    final d = await query(
+      r'query($u: Int) { MediaListCollection(userId: $u, type: ANIME, sort: UPDATED_TIME_DESC) { lists { isCustomList entries { id progress status score(format: POINT_100) media { '
+      '$mediaFields } } } } }',
+      {'u': v.id},
+    );
+    final byStatus = <String, List<LibraryEntry>>{};
+    for (final list in d['MediaListCollection']['lists'] as List) {
+      if (list['isCustomList'] == true) continue;
+      for (final e in list['entries'] as List) {
+        final entry = ListEntry.fromJson(e);
+        (byStatus[entry.status ?? 'CURRENT'] ??= []).add(LibraryEntry(Media(e['media']), entry));
+      }
+    }
+    return byStatus;
+  }
+
+  /// Adds or updates the viewer's entry for [media]. [score] is out of 100, 0 for none.
+  Future<ListEntry> saveEntry(
+    Media media, {
+    required String status,
+    required int progress,
+    required double score,
+  }) async {
+    final d = await query(
+      r'mutation($id: Int, $s: MediaListStatus, $p: Int, $r: Int) { SaveMediaListEntry(mediaId: $id, status: $s, progress: $p, scoreRaw: $r) { id progress status score(format: POINT_100) } }',
+      {'id': media.id, 's': status, 'p': progress, 'r': score.round()},
+    );
+    _listChanged();
+    return ListEntry.fromJson(d['SaveMediaListEntry']);
+  }
+
+  Future<void> deleteEntry(int entryId) async {
+    await query(r'mutation($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }', {'id': entryId});
+    _listChanged();
+  }
+
+  void _listChanged() {
+    listRevision++;
+    // Episode and anime counts change with the list.
+    loadViewer();
   }
 
   /// Stores the token from an implicit-grant callback (nami://auth#access_token=...).

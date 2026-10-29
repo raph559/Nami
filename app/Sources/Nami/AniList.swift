@@ -67,8 +67,9 @@ struct ListEntry: Codable, Hashable {
     var completedAt: FuzzyDate?
 }
 
+/// The states of an entry in the viewer's list, in the order AniList shows them.
 enum ListStatus: String, CaseIterable, Identifiable {
-    case CURRENT, PLANNING, COMPLETED, PAUSED, DROPPED, REPEATING
+    case CURRENT, PLANNING, COMPLETED, REPEATING, PAUSED, DROPPED
     var id: String { rawValue }
 
     var label: String {
@@ -165,6 +166,13 @@ struct Viewer: Codable, Hashable {
     var statistics: Statistics?
 }
 
+/// One anime of the viewer's list with its entry.
+struct LibraryEntry: Identifiable, Hashable {
+    var media: Media
+    var entry: ListEntry
+    var id: Int { media.id }
+}
+
 struct WatchingEntry: Identifiable, Hashable {
     var media: Media
     var progress: Int
@@ -198,6 +206,8 @@ final class AniList: ObservableObject {
     /// AniList API client registered for Nami (redirect URL nami://auth).
     private let clientID = "55284"
     @Published var viewer: Viewer?
+    /// Goes up each time Nami changes the viewer's list, so screens showing it reload.
+    @Published var listRevision = 0
 
     var isLoggedIn: Bool { !token.isEmpty }
 
@@ -306,6 +316,54 @@ final class AniList: ObservableObject {
         _ = try await query("""
         mutation($id: Int, $p: Int, $s: MediaListStatus) { SaveMediaListEntry(mediaId: $id, progress: $p, status: $s) { progress } }
         """, ["id": media.id, "p": episode, "s": status], as: D.self)
+        listChanged()
+    }
+
+    /// The viewer's whole anime list, grouped by status (custom lists left out).
+    func library() async throws -> [ListStatus: [LibraryEntry]] {
+        guard let viewer else { return [:] }
+        struct D: Decodable {
+            struct Collection: Decodable { var lists: [List] }
+            struct List: Decodable { var isCustomList: Bool?; var entries: [Entry] }
+            struct Entry: Decodable {
+                var id: Int?; var progress: Int?; var status: String?; var score: Double?
+                var media: Media
+            }
+            var MediaListCollection: Collection
+        }
+        let d = try await query("""
+        query($u: Int) { MediaListCollection(userId: $u, type: ANIME, sort: UPDATED_TIME_DESC) { lists { isCustomList entries { id progress status score(format: POINT_100) media { \(mediaFields) } } } } }
+        """, ["u": viewer.id], as: D.self)
+        var byStatus: [ListStatus: [LibraryEntry]] = [:]
+        for list in d.MediaListCollection.lists where list.isCustomList != true {
+            for e in list.entries {
+                let entry = ListEntry(id: e.id, progress: e.progress, status: e.status, score: e.score)
+                byStatus[ListStatus(rawValue: e.status ?? "") ?? .CURRENT, default: []].append(LibraryEntry(media: e.media, entry: entry))
+            }
+        }
+        return byStatus
+    }
+
+    /// Adds or updates the viewer's entry for a media. `score` is out of 100, 0 for none.
+    func saveEntry(media: Media, status: ListStatus, progress: Int, score: Double) async throws -> ListEntry {
+        struct D: Decodable { var SaveMediaListEntry: ListEntry }
+        let d = try await query("""
+        mutation($id: Int, $s: MediaListStatus, $p: Int, $r: Int) { SaveMediaListEntry(mediaId: $id, status: $s, progress: $p, scoreRaw: $r) { \(entryFields) } }
+        """, ["id": media.id, "s": status.rawValue, "p": progress, "r": Int(score.rounded())], as: D.self)
+        listChanged()
+        return d.SaveMediaListEntry
+    }
+
+    func deleteEntry(id: Int) async throws {
+        struct D: Decodable { struct R: Decodable { var deleted: Bool? }; var DeleteMediaListEntry: R }
+        _ = try await query("mutation($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }", ["id": id], as: D.self)
+        listChanged()
+    }
+
+    private func listChanged() {
+        listRevision += 1
+        // Episode and anime counts change with the list.
+        Task { await loadViewer() }
     }
 
     func login() async throws {

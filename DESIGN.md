@@ -1,7 +1,6 @@
 # Design direction: Salle obscure
 
-Chosen by the project owner on 2026-10-29 from two mockups ("Salle obscure" and "Vague").
-The mockups and the reasoning below were proposed by the agent; the owner picked this one.
+Chosen on 2026-10-29 from two mockups ("Salle obscure" and "Vague").
 
 ## Identity
 

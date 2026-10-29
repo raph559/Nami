@@ -6,6 +6,7 @@ import '../player_center.dart';
 import '../settings.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'list_editor.dart';
 
 /// Opens the sources for [episode]; the player then runs above the app and
 /// moves on to the next episodes by itself.
@@ -119,6 +120,39 @@ class _DetailScreenState extends State<DetailScreen> {
     ),
   );
 
+  Future<void> _editList() async {
+    final updated = await showListEditor(context, media);
+    if (updated != null && mounted) setState(() => media = updated);
+  }
+
+  /// Opens the list editor; its label is where the anime stands in the list.
+  Widget get _listButton {
+    final status = media.listEntry?.status;
+    return FocusOutline(
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(minimumSize: const Size(0, 50)),
+        onPressed: _editList,
+        icon: Icon(status == null ? Icons.bookmark_add_outlined : Icons.bookmark, size: 20),
+        label: Text(status == null ? t('Ma liste', 'My list') : listStatusLabel(status)),
+      ),
+    );
+  }
+
+  /// The watch button, with the list button beside it when logged in.
+  Widget _actions({required bool wide}) {
+    if (!AniList.instance.isLoggedIn) {
+      return wide ? Align(alignment: Alignment.centerLeft, child: _watchButton) : _watchButton;
+    }
+    if (wide) return Wrap(spacing: 12, runSpacing: 12, children: [_watchButton, _listButton]);
+    return Row(
+      children: [
+        Expanded(child: _watchButton),
+        const SizedBox(width: 10),
+        _listButton,
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 900;
@@ -200,7 +234,7 @@ class _DetailScreenState extends State<DetailScreen> {
           ),
         ],
         const SizedBox(height: 16),
-        wide ? Align(alignment: Alignment.centerLeft, child: _watchButton) : _watchButton,
+        _actions(wide: wide),
         if (media.plainDescription.isNotEmpty) ...[
           const SizedBox(height: 16),
           // About 80 characters a line at most, even on a wide window.

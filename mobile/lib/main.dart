@@ -14,6 +14,7 @@ import 'extensions.dart';
 import 'player_center.dart';
 import 'screens/player.dart';
 import 'screens/home.dart';
+import 'screens/library.dart';
 import 'screens/search.dart';
 import 'screens/settings_screen.dart';
 import 'settings.dart';
@@ -82,9 +83,10 @@ class _RootScreenState extends State<RootScreen> {
     final items = [
       (Icons.home_outlined, Icons.home, t('Accueil', 'Home')),
       (Icons.search, Icons.search, t('Recherche', 'Search')),
+      (Icons.bookmark_border, Icons.bookmark, t('Ma liste', 'My list')),
       (Icons.tune_outlined, Icons.tune, t('Réglages', 'Settings')),
     ];
-    final pages = IndexedStack(index: tab, children: const [HomeScreen(), SearchScreen(), SettingsScreen()]);
+    final pages = IndexedStack(index: tab, children: const [HomeScreen(), SearchScreen(), LibraryScreen(), SettingsScreen()]);
     Widget item(int i, {required bool vertical}) => _NavItem(
       icon: tab == i ? items[i].$2 : items[i].$1,
       label: items[i].$3,

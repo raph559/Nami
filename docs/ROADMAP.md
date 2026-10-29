@@ -2,10 +2,11 @@
 
 ## Your list and profile
 
-- [ ] Edit your AniList entry from the app: status, progress (−/+), score, rewatches,
-      start/finish dates, notes, remove from list.
+- [x] Edit your AniList entry from the app: status, progress (−/+), score, remove from list.
+- [ ] More entry fields: rewatches, start/finish dates, notes.
 - [ ] Long-press an episode: "watched up to here" / "mark as unwatched".
-- [ ] Profile page with banner, avatar and stats (episodes, time watched, mean score).
+- [x] Profile page with banner, avatar, stats and your list by status ("My list" tab).
+- [ ] Mean score in the profile stats.
 - [ ] Edit your profile: bio, profile color, title language, score format, adult content.
       Avatar and username can only be changed on anilist.co, so Nami links there.
 

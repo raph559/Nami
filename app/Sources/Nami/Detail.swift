@@ -7,6 +7,7 @@ struct MediaDetailView: View {
     @State private var expanded = false
     /// Once the main button has scrolled away, the top bar offers it instead.
     @State private var showBarButton = false
+    @State private var editingList = false
     @EnvironmentObject private var center: PlayerCenter
 
     private var progress: Int { media.mediaListEntry?.progress ?? 0 }
@@ -32,14 +33,17 @@ struct MediaDetailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header
                 VStack(alignment: .leading, spacing: 14) {
-                    Button(action: watch) {
-                        Label(watchLabel, systemImage: "play.fill")
-                            .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
+                    HStack(spacing: 10) {
+                        Button(action: watch) {
+                            Label(watchLabel, systemImage: "play.fill")
+                                .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Nami.accent(media.coverImage?.color))
+                        .foregroundStyle(Nami.ground)
+                        .disabled(!canWatch)
+                        if anilist.isLoggedIn { listButton }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Nami.accent(media.coverImage?.color))
-                    .foregroundStyle(Nami.ground)
-                    .disabled(!canWatch)
 
                     if let genres = media.genres, !genres.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -75,6 +79,9 @@ struct MediaDetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $editingList) {
+            ListEditorSheet(media: media) { media = $0 }
+        }
         .task {
             if let fresh = try? await anilist.media(id: media.id) { media = fresh }
             mappings = await Mappings.load(anilistID: media.id)
@@ -83,6 +90,18 @@ struct MediaDetailView: View {
         .onChange(of: center.finished) { _, _ in
             Task { if let fresh = try? await anilist.media(id: media.id) { media = fresh } }
         }
+    }
+
+    /// Opens the list editor; its label is where the anime stands in the list.
+    private var listButton: some View {
+        let status = ListStatus(rawValue: media.mediaListEntry?.status ?? "")
+        return Button { editingList = true } label: {
+            Label(status?.label ?? t("Ma liste", "My list"), systemImage: status == nil ? "bookmark" : "bookmark.fill")
+                .font(.headline).padding(.vertical, 6)
+        }
+        .buttonStyle(.bordered)
+        .tint(Nami.text)
+        .fixedSize()
     }
 
     private var header: some View {
