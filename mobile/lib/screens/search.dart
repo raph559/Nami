@@ -138,7 +138,12 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
           if (loading && results.isEmpty)
-            SliverToBoxAdapter(child: StateMessage(loading: true, title: t('Recherche…', 'Searching…'))),
+            SliverPadding(
+              padding: const EdgeInsets.all(16),
+              sliver: SliverToBoxAdapter(
+                child: Semantics(label: t('Recherche…', 'Searching…'), liveRegion: true, child: const SkeletonGrid()),
+              ),
+            ),
           if (!loading && failed)
             SliverToBoxAdapter(
               child: StateMessage(
@@ -175,7 +180,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     mainAxisSpacing: 16,
                   ),
                   delegate: SliverChildBuilderDelegate(
-                    (_, i) => MediaCard(results[i], width: cell),
+                    (_, i) => MediaCard(results[i], width: cell, heroTag: 'search-${results[i].id}'),
                     childCount: results.length,
                   ),
                 );

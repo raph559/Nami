@@ -12,8 +12,11 @@ import '../widgets.dart';
 void startWatching(BuildContext context, Media media, int episode) => PlayerCenter.instance.openSources(media, episode);
 
 class DetailScreen extends StatefulWidget {
-  const DetailScreen({super.key, required this.media});
+  const DetailScreen({super.key, required this.media, this.heroTag});
   final Media media;
+
+  /// Tag of the cover that was tapped, so it grows into this page's cover.
+  final String? heroTag;
 
   @override
   State<DetailScreen> createState() => _DetailScreenState();
@@ -23,12 +26,20 @@ class _DetailScreenState extends State<DetailScreen> {
   late Media media = widget.media;
   Mappings? mappings;
   bool expanded = false;
+  final scroll = ScrollController();
+
+  /// Once the main button has scrolled away, the top bar offers it instead.
+  bool showBarButton = false;
 
   @override
   void initState() {
     super.initState();
     // The player may have moved the AniList progress.
     PlayerCenter.instance.addListener(_onPlayer);
+    scroll.addListener(() {
+      final show = scroll.offset > 360;
+      if (show != showBarButton) setState(() => showBarButton = show);
+    });
     _refresh();
     Mappings.load(media.id).then((m) {
       if (mounted) setState(() => mappings = m);
@@ -46,6 +57,7 @@ class _DetailScreenState extends State<DetailScreen> {
   @override
   void dispose() {
     PlayerCenter.instance.removeListener(_onPlayer);
+    scroll.dispose();
     super.dispose();
   }
 
@@ -61,13 +73,22 @@ class _DetailScreenState extends State<DetailScreen> {
     return (media.progress + 1).clamp(1, total);
   }
 
+  bool get canWatch => media.isMovie || media.availableEpisodes > 0;
+
   void _watch(int episode) => startWatching(context, media, episode);
+
+  String get watchLabel => media.isMovie
+      ? t('Regarder', 'Watch')
+      : AppSettings.instance.resumeFraction(media.id, nextEpisode) != null
+      ? t("Reprendre l'épisode $nextEpisode", 'Resume episode $nextEpisode')
+      : t("Regarder l'épisode $nextEpisode", 'Watch episode $nextEpisode');
 
   String get metaLine {
     final parts = <String>[
       if (media.format != null) media.format!.replaceAll('_', ' '),
       if (media.seasonYear != null) '${media.seasonYear}',
       if (media.episodes != null) t('${media.episodes} épisodes', '${media.episodes} episodes'),
+      if (media.averageScore != null) '${media.averageScore} %',
       if (media.genres.isNotEmpty) media.genres.take(3).map(genreLabel).join(', '),
     ];
     return parts.join(' · ');
@@ -83,26 +104,41 @@ class _DetailScreenState extends State<DetailScreen> {
     return t('Épisode ${media.nextEpisode} $when', 'Episode ${media.nextEpisode} $when');
   }
 
+  Widget _cover(double width) {
+    Widget c = SizedBox(width: width, height: width * 1.45, child: CoverImage(media.cover));
+    if (widget.heroTag != null) c = Hero(tag: widget.heroTag!, child: c);
+    return c;
+  }
+
+  Widget get _watchButton => FocusOutline(
+    child: FilledButton.icon(
+      style: FilledButton.styleFrom(minimumSize: const Size(0, 50)),
+      onPressed: canWatch ? () => _watch(media.isMovie ? 1 : nextEpisode) : null,
+      icon: const Icon(Icons.play_arrow_rounded, size: 22),
+      label: Text(watchLabel),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
-    final accent = Nami.accentOf(media.color);
-    final canWatch = media.isMovie || media.availableEpisodes > 0;
-    final total = media.episodes ?? media.availableEpisodes;
-    final top = MediaQuery.paddingOf(context).top;
+    final wide = MediaQuery.sizeOf(context).width >= 900;
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: showBarButton ? Nami.ground.withValues(alpha: 0.94) : Colors.transparent,
         // Keeps the status bar and back button readable once the page scrolls under them.
-        flexibleSpace: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Nami.ground.withValues(alpha: 0.85), Nami.ground.withValues(alpha: 0)],
-            ),
-          ),
-        ),
+        flexibleSpace: showBarButton
+            ? null
+            : DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Nami.ground.withValues(alpha: 0.85), Nami.ground.withValues(alpha: 0)],
+                  ),
+                ),
+              ),
+        title: showBarButton ? Text(media.title.display, maxLines: 1, overflow: TextOverflow.ellipsis) : null,
         leading: Padding(
           padding: const EdgeInsets.only(left: 8),
           child: IconButton(
@@ -112,104 +148,288 @@ class _DetailScreenState extends State<DetailScreen> {
             onPressed: () => Navigator.maybePop(context),
           ),
         ),
+        actions: [
+          if (showBarButton && canWatch)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: FocusOutline(
+                child: FilledButton.icon(
+                  onPressed: () => _watch(media.isMovie ? 1 : nextEpisode),
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: Text(
+                    media.isMovie ? t('Regarder', 'Watch') : t('Épisode $nextEpisode', 'Episode $nextEpisode'),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
       body: ListView(
+        controller: scroll,
         padding: EdgeInsets.zero,
-        children: [
-          SizedBox(
-            height: 300 + top,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [CoverImage(media.banner ?? media.cover, radius: 0), const GroundFade(from: 0.3)],
-            ),
+        children: [wide ? _wideHeader() : _phoneHeader(), _episodes(wide)],
+      ),
+    );
+  }
+
+  Widget _info({required bool wide}) {
+    final accent = Nami.accentOf(media.color);
+    final total = media.episodes ?? media.availableEpisodes;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          header: true,
+          child: Text(media.title.display, style: wide ? Nami.pageTitle.copyWith(fontSize: 38) : Nami.pageTitle),
+        ),
+        const SizedBox(height: 10),
+        Text(metaLine, style: Nami.meta),
+        if (airingLine != null) ...[const SizedBox(height: 4), Text(airingLine!, style: Nami.meta)],
+        if (AniList.instance.isLoggedIn && !media.isMovie && total > 0) ...[
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Text(t('Ta progression', 'Your progress'), style: Nami.caption.copyWith(fontSize: 13)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ProgressLine(value: media.progress / total, color: accent),
+              ),
+              const SizedBox(width: 10),
+              Text('${media.progress} / $total', style: Nami.caption.copyWith(fontSize: 13)),
+            ],
           ),
-          Transform.translate(
-            offset: const Offset(0, -84),
-            child: ContentWidth(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Semantics(header: true, child: Text(media.title.display, style: Nami.pageTitle)),
-                    const SizedBox(height: 10),
-                    Text(metaLine, style: Nami.meta),
-                    if (airingLine != null) ...[const SizedBox(height: 4), Text(airingLine!, style: Nami.meta)],
-                    if (AniList.instance.isLoggedIn && !media.isMovie && total > 0) ...[
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Text(t('Ta progression', 'Your progress'), style: Nami.caption.copyWith(fontSize: 13)),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: ProgressLine(value: media.progress / total, color: accent),
-                          ),
-                          const SizedBox(width: 10),
-                          Text('${media.progress} / $total', style: Nami.caption.copyWith(fontSize: 13)),
-                        ],
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    FocusOutline(
-                      child: FilledButton.icon(
-                        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
-                        onPressed: canWatch ? () => _watch(media.isMovie ? 1 : nextEpisode) : null,
-                        icon: const Icon(Icons.play_arrow_rounded, size: 22),
-                        label: Text(
-                          media.isMovie
-                              ? t('Regarder', 'Watch')
-                              : t("Regarder l'épisode $nextEpisode", 'Watch episode $nextEpisode'),
-                        ),
-                      ),
-                    ),
-                    if (media.plainDescription.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      FocusOutline(
-                        radius: Nami.radiusImage,
-                        child: InkWell(
-                          onTap: () => setState(() => expanded = !expanded),
-                          child: Text(
-                            media.plainDescription,
-                            maxLines: expanded ? null : 4,
-                            overflow: expanded ? null : TextOverflow.ellipsis,
-                            style: Nami.body.copyWith(fontSize: 14, color: Nami.textSecondary),
-                            semanticsLabel: media.plainDescription,
-                          ),
-                        ),
-                      ),
-                      if (!expanded)
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton(
-                            onPressed: () => setState(() => expanded = true),
-                            child: Text(t('Lire la suite', 'Read more')),
-                          ),
-                        ),
-                    ],
-                    if (!media.isMovie) ...[
-                      const SizedBox(height: 26),
-                      Semantics(header: true, child: Text(t('Épisodes', 'Episodes'), style: Nami.section)),
-                      const SizedBox(height: 12),
-                      if (media.availableEpisodes == 0)
-                        Text(t("Aucun épisode diffusé pour l'instant.", 'No episode has aired yet.'), style: Nami.meta),
-                      for (var n = 1; n <= media.availableEpisodes; n++) _episodeRow(n, accent),
-                    ],
-                  ],
+        ],
+        const SizedBox(height: 16),
+        wide ? Align(alignment: Alignment.centerLeft, child: _watchButton) : _watchButton,
+        if (media.plainDescription.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          // About 80 characters a line at most, even on a wide window.
+          ContentWidth(
+            maxWidth: 680,
+            alignment: Alignment.topLeft,
+            child: FocusOutline(
+              radius: Nami.radiusImage,
+              child: InkWell(
+                onTap: () => setState(() => expanded = !expanded),
+                child: Text(
+                  media.plainDescription,
+                  maxLines: expanded ? null : 4,
+                  overflow: expanded ? null : TextOverflow.ellipsis,
+                  style: Nami.body.copyWith(fontSize: 14, color: Nami.textSecondary),
+                  semanticsLabel: media.plainDescription,
                 ),
               ),
             ),
           ),
+          if (!expanded)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () => setState(() => expanded = true),
+                child: Text(t('Lire la suite', 'Read more')),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
+  /// Phone: the banner, then the cover beside the title, overlapping it.
+  Widget _phoneHeader() {
+    final top = MediaQuery.paddingOf(context).top;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 240 + top,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: CoverImage(media.banner ?? media.cover, radius: 0),
+              ),
+              const GroundFade(from: 0.3),
+            ],
+          ),
+        ),
+        Transform.translate(
+          offset: const Offset(0, -70),
+          child: ContentWidth(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Align(alignment: Alignment.centerLeft, child: _cover(104)),
+                  const SizedBox(height: 16),
+                  _info(wide: false),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Wide window: a tall banner fading into the ground, the cover and the
+  /// information side by side over its lower part.
+  Widget _wideHeader() {
+    return Stack(
+      children: [
+        SizedBox(
+          height: 420,
+          width: double.infinity,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: CoverImage(media.banner ?? media.cover, radius: 0, alignment: const Alignment(0.4, -0.3)),
+              ),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: const [0, 0.25, 0.55, 0.96],
+                    colors: [
+                      Nami.ground.withValues(alpha: 0.5),
+                      Nami.ground.withValues(alpha: 0.1),
+                      Nami.ground.withValues(alpha: 0.6),
+                      Nami.ground,
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(48, 250, 48, 0),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1100),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _cover(210),
+                const SizedBox(width: 32),
+                // Text starts below the banner's bright part, on the faded ground.
+                Expanded(
+                  child: Padding(padding: const EdgeInsets.only(top: 110), child: _info(wide: true)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _episodes(bool wide) {
+    if (media.isMovie) return const SizedBox(height: 32);
+    final accent = Nami.accentOf(media.color);
+    final side = wide ? 48.0 : 20.0;
+    final header = Padding(
+      padding: EdgeInsets.fromLTRB(side, wide ? 32 : 0, side, 12),
+      child: Semantics(header: true, child: Text(t('Épisodes', 'Episodes'), style: Nami.section)),
+    );
+    if (media.availableEpisodes == 0) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          header,
+          Padding(
+            padding: EdgeInsets.fromLTRB(side, 0, side, 32),
+            child: Text(t("Aucun épisode diffusé pour l'instant.", 'No episode has aired yet.'), style: Nami.meta),
+          ),
+        ],
+      );
+    }
+    final numbers = [for (var n = 1; n <= media.availableEpisodes; n++) n];
+    if (!wide) {
+      return Transform.translate(
+        offset: const Offset(0, -50),
+        child: ContentWidth(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              header,
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: side),
+                child: Column(children: [for (final n in numbers) _episodeRow(n, accent)]),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    // A grid of pictures on wide windows: more episodes at a glance.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        header,
+        Padding(
+          padding: EdgeInsets.fromLTRB(side, 0, side, 40),
+          child: LayoutBuilder(
+            builder: (context, box) {
+              final columns = (box.maxWidth / 280).floor().clamp(2, 6);
+              final cardWidth = (box.maxWidth - (columns - 1) * 16) / columns;
+              return Wrap(
+                spacing: 16,
+                runSpacing: 20,
+                children: [for (final n in numbers) SizedBox(width: cardWidth, child: _episodeCard(n, accent))],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  ({EpisodeInfo? ep, bool watched, bool isNext, String? state, double? resume}) _episode(int n) {
+    final watched = n <= media.progress;
+    final isNext = n == nextEpisode && !watched && (AniList.instance.isLoggedIn || n > 1);
+    final resume = AppSettings.instance.resumeFraction(media.id, n);
+    final state = watched
+        ? t('Vu', 'Watched')
+        : resume != null
+        ? t('En cours', 'In progress')
+        : (isNext ? t('À voir', 'Up next') : null);
+    return (ep: mappings?.episode(n), watched: watched, isNext: isNext, state: state, resume: resume);
+  }
+
+  /// Picture with the watched dimming, the "up next" ring and how far you got.
+  Widget _thumb(int n, Color accent, double? width, double height) {
+    final e = _episode(n);
+    return Container(
+      width: width,
+      height: height,
+      padding: EdgeInsets.all(e.isNext ? 2 : 0),
+      decoration: e.isNext
+          ? BoxDecoration(
+              border: Border.all(color: accent, width: 2),
+              borderRadius: BorderRadius.circular(Nami.radiusImage + 2),
+            )
+          : null,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Watched episodes dim their picture only: dimmed text would drop under 4.5:1.
+          Opacity(opacity: e.watched ? 0.45 : 1, child: CoverImage(e.ep?.image ?? media.banner ?? media.coverSmall)),
+          if (e.resume != null)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: ProgressLine(value: e.resume!, color: accent),
+            ),
         ],
       ),
     );
   }
 
   Widget _episodeRow(int n, Color accent) {
-    final ep = mappings?.episode(n);
-    final watched = n <= media.progress;
-    final isNext = AniList.instance.isLoggedIn && n == nextEpisode && !watched;
-    final state = watched ? t('Vu', 'Watched') : (isNext ? t('À voir', 'Up next') : null);
-    // Watched episodes dim their picture only: dimmed text would drop under 4.5:1.
+    final e = _episode(n);
     return FocusOutline(
       radius: Nami.radiusImage,
       child: InkWell(
@@ -219,45 +439,56 @@ class _DetailScreenState extends State<DetailScreen> {
           padding: const EdgeInsets.symmetric(vertical: 7),
           child: Row(
             children: [
-              Container(
-                width: 120,
-                height: 68,
-                padding: EdgeInsets.all(isNext ? 2 : 0),
-                decoration: isNext
-                    ? BoxDecoration(
-                        border: Border.all(color: accent, width: 2),
-                        borderRadius: BorderRadius.circular(Nami.radiusImage + 2),
-                      )
-                    : null,
-                child: Opacity(
-                  opacity: watched ? 0.45 : 1,
-                  child: CoverImage(ep?.image ?? media.banner ?? media.coverSmall),
-                ),
-              ),
+              _thumb(n, accent, 120, 68),
               const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      ['$n', ?state].join(' · '),
-                      style: Nami.caption.copyWith(color: isNext ? accent : Nami.textSecondary),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      ep?.title(AppSettings.instance.language.name) ?? t('Épisode $n', 'Episode $n'),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Nami.body.copyWith(color: watched ? Nami.textSecondary : Nami.text),
-                    ),
-                    if (ep?.runtime != null) Text('${ep!.runtime} min', style: Nami.caption),
-                  ],
-                ),
-              ),
+              Expanded(child: _episodeText(n, e, accent)),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _episodeCard(int n, Color accent) {
+    final e = _episode(n);
+    return FocusOutline(
+      radius: Nami.radiusImage,
+      child: InkWell(
+        onTap: () => _watch(n),
+        borderRadius: BorderRadius.circular(Nami.radiusImage),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AspectRatio(aspectRatio: 16 / 9, child: _thumb(n, accent, null, double.infinity)),
+            const SizedBox(height: 8),
+            _episodeText(n, e, accent),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _episodeText(
+    int n,
+    ({EpisodeInfo? ep, bool watched, bool isNext, String? state, double? resume}) e,
+    Color accent,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          ['$n', ?e.state].join(' · '),
+          style: Nami.caption.copyWith(color: e.isNext || e.resume != null ? accent : Nami.textSecondary),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          e.ep?.title(AppSettings.instance.language.name) ?? t('Épisode $n', 'Episode $n'),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Nami.body.copyWith(color: e.watched ? Nami.textSecondary : Nami.text),
+        ),
+        if (e.ep?.runtime != null) Text('${e.ep!.runtime} min', style: Nami.caption),
+      ],
     );
   }
 }

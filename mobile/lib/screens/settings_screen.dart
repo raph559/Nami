@@ -81,134 +81,190 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return t('$on sur ${exts.length} activées : $names', '$on of ${exts.length} on: $names');
   }
 
-  Widget _header(String text) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
-    child: Semantics(header: true, child: Text(text, style: Nami.section.copyWith(fontSize: 18))),
-  );
-
   @override
   Widget build(BuildContext context) {
     final settings = AppSettings.instance;
     final anilist = AniList.instance;
     final store = ExtensionStore.instance;
+    final top = MediaQuery.paddingOf(context).top;
     return Scaffold(
-      appBar: AppBar(title: Text(t('Réglages', 'Settings'))),
       body: ListenableBuilder(
         listenable: Listenable.merge([anilist, store, settings]),
-        builder: (context, _) => ContentWidth(
-          child: ListView(
+        builder: (context, _) {
+          final wide = MediaQuery.sizeOf(context).width >= 900;
+          final account = _Section(
+            title: 'AniList',
             children: [
-              _header('AniList'),
               if (anilist.viewer != null)
-                ListTile(
-                  leading: SizedBox(width: 40, height: 40, child: CoverImage(anilist.viewer!.avatar, radius: 20)),
-                  title: Text(anilist.viewer!.name),
-                  trailing: FocusOutline(
-                    child: TextButton(onPressed: anilist.logout, child: Text(t('Se déconnecter', 'Log out'))),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      SizedBox(width: 52, height: 52, child: CoverImage(anilist.viewer!.avatar, radius: 26)),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(anilist.viewer!.name, style: Nami.body.copyWith(fontWeight: FontWeight.w700)),
+                            Text(t('Connecté', 'Logged in'), style: Nami.caption),
+                          ],
+                        ),
+                      ),
+                      FocusOutline(
+                        child: OutlinedButton(onPressed: anilist.logout, child: Text(t('Se déconnecter', 'Log out'))),
+                      ),
+                    ],
                   ),
                 )
               else
-                FocusOutline(
-                  radius: 0,
-                  gap: -2,
-                  child: ListTile(
-                    leading: const Icon(Icons.login),
-                    title: Text(t('Se connecter à AniList', 'Log in to AniList')),
-                    subtitle: Text(
-                      t(
-                        'Pour reprendre tes animes et cocher les épisodes vus.',
-                        'To resume your anime and tick off watched episodes.',
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        t(
+                          'Connecte ton compte pour reprendre tes animes et cocher les épisodes vus.',
+                          'Log in to resume your anime and tick off watched episodes.',
+                        ),
+                        style: Nami.meta,
                       ),
-                    ),
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginScreen())),
+                      const SizedBox(height: 12),
+                      FocusOutline(
+                        child: FilledButton.icon(
+                          onPressed: () =>
+                              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginScreen())),
+                          icon: const Icon(Icons.login),
+                          label: Text(t('Se connecter à AniList', 'Log in to AniList')),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              _header(t('Langue', 'Language')),
-              _Choice<AppLanguage>(
+            ],
+          );
+          final language = _Section(
+            title: t('Langue', 'Language'),
+            children: [
+              _Setting(
                 label: t("Langue de l'app", 'App language'),
-                value: settings.language,
-                onChanged: (v) => settings.language = v,
-                items: {for (final l in AppLanguage.values) l: l.label},
+                control: _Segments<AppLanguage>(
+                  value: settings.language,
+                  onChanged: (v) => settings.language = v,
+                  items: {for (final l in AppLanguage.values) l: Text(l.label)},
+                ),
               ),
-              _Choice<TitleLanguage>(
+              _Setting(
                 label: t('Titres des animes', 'Anime titles'),
-                value: settings.titleLanguage,
-                onChanged: (v) => settings.titleLanguage = v,
-                items: {for (final l in TitleLanguage.values) l: l.label},
+                control: _Segments<TitleLanguage>(
+                  value: settings.titleLanguage,
+                  onChanged: (v) => settings.titleLanguage = v,
+                  items: {for (final l in TitleLanguage.values) l: Text(l.label)},
+                ),
               ),
-              _header(t('Lecture', 'Playback')),
-              _Choice<String>(
+            ],
+          );
+          final playback = _Section(
+            title: t('Lecture', 'Playback'),
+            children: [
+              _Setting(
                 label: t('Qualité préférée', 'Preferred quality'),
-                value: settings.resolution,
-                onChanged: (v) => settings.resolution = v,
-                items: {
-                  for (final r in ['1080', '720', '480']) r: '${r}p',
-                },
+                detail: t('La source recommandée la privilégie.', 'The recommended source favours it.'),
+                control: _Segments<String>(
+                  value: settings.resolution,
+                  onChanged: (v) => settings.resolution = v,
+                  items: {
+                    for (final r in ['1080', '720', '480']) r: Text('${r}p'),
+                  },
+                ),
               ),
-              _Toggle(
+              _Setting(
                 label: t("Passer l'intro et le générique", 'Skip openings and endings'),
                 detail: t(
                   'Automatiquement, quand AniSkip connaît leurs horaires.',
                   'Automatically, when AniSkip knows where they are.',
                 ),
-                value: settings.autoSkip,
-                onChanged: (v) => settings.autoSkip = v,
+                control: Switch(value: settings.autoSkip, onChanged: (v) => settings.autoSkip = v),
+                inline: true,
               ),
-              _Toggle(
+              _Setting(
                 label: t("Enchaîner l'épisode suivant", 'Play the next episode'),
                 detail: t('Après un compte à rebours de 10 secondes.', 'After a 10 second countdown.'),
-                value: settings.autoNext,
-                onChanged: (v) => settings.autoNext = v,
+                control: Switch(value: settings.autoNext, onChanged: (v) => settings.autoNext = v),
+                inline: true,
               ),
-              _Choice<SubtitleLanguage>(
+              _Setting(
                 label: t('Sous-titres', 'Subtitles'),
-                value: settings.subtitleLanguage,
-                onChanged: (v) => settings.subtitleLanguage = v,
-                items: {for (final l in SubtitleLanguage.values) l: l.label},
+                detail: t('Langue choisie au début de chaque épisode.', 'Language picked when an episode starts.'),
+                control: _Segments<SubtitleLanguage>(
+                  value: settings.subtitleLanguage,
+                  onChanged: (v) => settings.subtitleLanguage = v,
+                  items: {for (final l in SubtitleLanguage.values) l: Text(l.label)},
+                ),
               ),
-              _Choice<int>(
+              _Setting(
                 label: t('Taille des sous-titres', 'Subtitle size'),
-                value: settings.subtitleSize,
-                onChanged: (v) => settings.subtitleSize = v,
-                items: {
-                  80: t('Petite', 'Small'),
-                  100: t('Normale', 'Normal'),
-                  125: t('Grande', 'Large'),
-                  150: t('Très grande', 'Extra large'),
-                },
-              ),
-              _header('Extensions'),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                // Field on its own line so the URL stays readable at any text size.
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    TextField(
-                      controller: _repo,
-                      keyboardType: TextInputType.url,
-                      autocorrect: false,
-                      textInputAction: TextInputAction.done,
-                      scrollPadding: const EdgeInsets.only(bottom: 120),
-                      decoration: InputDecoration(
-                        labelText: t('URL du dépôt', 'Repository URL'),
-                        hintText: 'https://…/index.json',
+                // Each choice shows its size, so the right one is picked at a glance.
+                control: _Segments<int>(
+                  value: settings.subtitleSize,
+                  onChanged: (v) => settings.subtitleSize = v,
+                  items: {
+                    for (final (size, font, label) in [
+                      (80, 12.0, t('Petite', 'Small')),
+                      (100, 15.0, t('Normale', 'Normal')),
+                      (125, 18.0, t('Grande', 'Large')),
+                      (150, 21.0, t('Très grande', 'Extra large')),
+                    ])
+                      size: Semantics(
+                        label: label,
+                        excludeSemantics: true,
+                        child: Text(
+                          'Aa',
+                          style: TextStyle(fontSize: font, fontWeight: FontWeight.w600),
+                        ),
                       ),
-                      onSubmitted: (_) => _addRepo(),
+                  },
+                ),
+              ),
+            ],
+          );
+          final extensions = _Section(
+            title: 'Extensions',
+            footer: t(
+              "Même format que les extensions Hayase : colle l'URL de l'index.json du dépôt.",
+              "Same format as Hayase extensions: paste the repository's index.json URL.",
+            ),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _repo,
+                        keyboardType: TextInputType.url,
+                        autocorrect: false,
+                        textInputAction: TextInputAction.done,
+                        scrollPadding: const EdgeInsets.only(bottom: 120),
+                        decoration: InputDecoration(
+                          labelText: t('URL du dépôt', 'Repository URL'),
+                          hintText: 'https://…/index.json',
+                        ),
+                        onSubmitted: (_) => _addRepo(),
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
+                    const SizedBox(width: 12),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
                       child: busy
                           ? const Padding(
                               padding: EdgeInsets.all(12),
                               child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)),
                             )
                           : FocusOutline(
-                              child: OutlinedButton(
-                                onPressed: _addRepo,
-                                child: Text(t('Ajouter le dépôt', 'Add repository')),
-                              ),
+                              child: FilledButton(onPressed: _addRepo, child: Text(t('Ajouter', 'Add'))),
                             ),
                     ),
                   ],
@@ -219,6 +275,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   radius: 0,
                   gap: -2,
                   child: ListTile(
+                    leading: const Icon(Icons.extension_outlined),
                     title: Text(ExtensionStore.repoLabel(repo)),
                     subtitle: Text(_repoSummary(store, repo), maxLines: 2, overflow: TextOverflow.ellipsis),
                     trailing: IconButton(
@@ -229,22 +286,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => RepoScreen(repo: repo))),
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Text(
-                  t(
-                    "Même format que les extensions Hayase : colle l'URL de l'index.json du dépôt.",
-                    "Same format as Hayase extensions: paste the repository's index.json URL.",
-                  ),
-                  style: Nami.caption,
+              if (store.repos.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Text(t('Aucun dépôt pour le moment.', 'No repository yet.'), style: Nami.meta),
                 ),
-              ),
-              _header('Nami'),
-              ListTile(title: const Text('Version'), trailing: Text(version)),
-              const SizedBox(height: 24),
             ],
-          ),
-        ),
+          );
+          final about = _Section(
+            title: 'Nami',
+            children: [
+              ListTile(
+                title: const Text('Version'),
+                trailing: Text(version, style: Nami.meta),
+              ),
+              ListTile(
+                title: Text(t('Licence', 'License')),
+                trailing: Text('GPL-3.0', style: Nami.meta),
+              ),
+            ],
+          );
+          final side = wide ? 48.0 : 20.0;
+          return ListView(
+            padding: EdgeInsets.fromLTRB(side, top + (wide ? 32 : 20), side, 32),
+            children: [
+              Semantics(header: true, child: Text(t('Réglages', 'Settings'), style: Nami.pageTitle)),
+              const SizedBox(height: 8),
+              if (wide)
+                // Two columns on a wide window: account and preferences, then sources and app.
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1180),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: Column(children: [account, language, playback])),
+                        const SizedBox(width: 32),
+                        Expanded(child: Column(children: [extensions, about])),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                ContentWidth(child: Column(children: [account, language, playback, extensions, about])),
+            ],
+          );
+        },
       ),
     );
   }
@@ -337,50 +425,132 @@ class LoginScreen extends StatelessWidget {
 }
 
 /// A labelled dropdown that wraps under its label when the text is large.
-class _Choice<T> extends StatelessWidget {
-  const _Choice({super.key, required this.label, required this.value, required this.onChanged, required this.items});
-  final String label;
-  final T value;
-  final ValueChanged<T> onChanged;
-  final Map<T, String> items;
+/// A titled group of settings on its own card.
+class _Section extends StatelessWidget {
+  const _Section({required this.title, required this.children, this.footer});
+  final String title;
+  final List<Widget> children;
+  final String? footer;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 16,
+      padding: const EdgeInsets.only(top: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(label, style: Nami.body),
-          FocusOutline(
-            child: DropdownButton<T>(
-              value: value,
-              underline: Container(height: 1, color: Nami.border),
-              onChanged: (v) {
-                if (v != null) onChanged(v);
-              },
-              items: [for (final e in items.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 10),
+            child: Semantics(header: true, child: Text(title, style: Nami.section.copyWith(fontSize: 17))),
+          ),
+          // A Material surface, so the rows' touch ripples show on the card.
+          Material(
+            color: const Color(0xFF131315),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Nami.line),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < children.length; i++) ...[
+                  if (i > 0) Divider(height: 1, thickness: 1, color: Nami.line),
+                  children[i],
+                ],
+              ],
             ),
           ),
+          if (footer != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+              child: Text(footer!, style: Nami.caption),
+            ),
         ],
       ),
     );
   }
 }
 
-class _Toggle extends StatelessWidget {
-  const _Toggle({required this.label, required this.detail, required this.value, required this.onChanged});
+/// One setting: its name and what it does, then its control. Choices go
+/// under the text when the card is narrow, beside it when there is room;
+/// switches always sit at the end of the line.
+class _Setting extends StatelessWidget {
+  const _Setting({required this.label, required this.control, this.detail, this.inline = false});
   final String label;
-  final String detail;
-  final bool value;
-  final ValueChanged<bool> onChanged;
+  final String? detail;
+  final Widget control;
+  final bool inline;
 
   @override
-  Widget build(BuildContext context) => FocusOutline(
-    radius: 0,
-    gap: -2,
-    child: SwitchListTile(value: value, onChanged: onChanged, title: Text(label), subtitle: Text(detail)),
-  );
+  Widget build(BuildContext context) {
+    final text = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Nami.body),
+        if (detail != null) ...[const SizedBox(height: 2), Text(detail!, style: Nami.caption)],
+      ],
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: LayoutBuilder(
+        builder: (context, box) {
+          if (inline) {
+            return Row(
+              children: [
+                Expanded(child: text),
+                const SizedBox(width: 12),
+                control,
+              ],
+            );
+          }
+          if (box.maxWidth >= 560) {
+            return Row(
+              children: [
+                Expanded(child: text),
+                const SizedBox(width: 16),
+                control,
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [text, const SizedBox(height: 10), control],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Segmented choice: every option visible at once, the chosen one filled.
+class _Segments<T> extends StatelessWidget {
+  const _Segments({required this.value, required this.onChanged, required this.items});
+  final T value;
+  final ValueChanged<T> onChanged;
+  final Map<T, Widget> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return FocusOutline(
+      child: SegmentedButton<T>(
+        showSelectedIcon: false,
+        segments: [for (final e in items.entries) ButtonSegment(value: e.key, label: e.value)],
+        selected: {value},
+        onSelectionChanged: (s) => onChanged(s.first),
+        style: ButtonStyle(
+          visualDensity: VisualDensity.standard,
+          shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(Nami.radiusButton))),
+          side: WidgetStatePropertyAll(BorderSide(color: Nami.border)),
+          backgroundColor: WidgetStateProperty.resolveWith(
+            (s) => s.contains(WidgetState.selected) ? Nami.text : Colors.transparent,
+          ),
+          foregroundColor: WidgetStateProperty.resolveWith(
+            (s) => s.contains(WidgetState.selected) ? Nami.ground : Nami.text,
+          ),
+          textStyle: const WidgetStatePropertyAll(TextStyle(fontFamily: Nami.sans, fontSize: 14)),
+        ),
+      ),
+    );
+  }
 }

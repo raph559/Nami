@@ -5,6 +5,7 @@ import 'package:device_preview/presets.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'anilist.dart';
 import 'engine.dart';
@@ -25,6 +26,11 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (preview) DevicePreview.maybeController?.applyPreset(DevicePresets.iPhone16);
   MediaKit.ensureInitialized();
+  if (Platform.isWindows && !preview) {
+    // Nami draws its own transparent title bar (see WindowChrome).
+    await windowManager.ensureInitialized();
+    await windowManager.setTitleBarStyle(TitleBarStyle.hidden, windowButtonVisibility: false);
+  }
   await AppSettings.load();
   Engine.instance.start().catchError((_) => 0);
   AniList.instance.loadViewer();
@@ -50,7 +56,9 @@ class NamiApp extends StatelessWidget {
         navigatorKey: PlayerCenter.instance.navigatorKey,
         // The mini-player floats above every page, so browsing keeps it on screen.
         // Overlay.wrap gives its tooltips an overlay above the navigator.
-        builder: (context, child) => Overlay.wrap(child: Stack(children: [child!, const MiniPlayerHost()])),
+        builder: (context, child) => Overlay.wrap(
+          child: WindowChrome(child: Stack(children: [child!, const MiniPlayerHost()])),
+        ),
         home: const RootScreen(),
       ),
     );
@@ -177,6 +185,51 @@ class _NavItem extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// On Windows the system title bar is hidden: the pages run to the top edge
+/// and the window buttons sit on a transparent strip that also moves the
+/// window. Pages get the strip's height as top padding, like a status bar.
+class WindowChrome extends StatelessWidget {
+  const WindowChrome({super.key, required this.child});
+  final Widget child;
+
+  static const height = 32.0;
+
+  @override
+  Widget build(BuildContext context) {
+    // Debug builds show the app in a phone frame (DevicePreview) and keep the system bar.
+    if (!Platform.isWindows || kDebugMode) return child;
+    final media = MediaQuery.of(context);
+    return Stack(
+      children: [
+        MediaQuery(
+          data: media.copyWith(
+            padding: media.padding.copyWith(top: height),
+            viewPadding: media.viewPadding.copyWith(top: height),
+          ),
+          child: child,
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: height,
+          child: ValueListenableBuilder(
+            valueListenable: windowChromeVisible,
+            builder: (context, show, _) => AnimatedOpacity(
+              opacity: show ? 1 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: IgnorePointer(
+                ignoring: !show,
+                child: const WindowCaption(backgroundColor: Colors.transparent, brightness: Brightness.dark),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

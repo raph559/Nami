@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -71,9 +73,51 @@ class AppSettings extends ChangeNotifier {
     return s == null ? null : Duration(seconds: s);
   }
 
-  void setResume(int mediaId, int episode, Duration? at) {
+  /// [length] lets screens draw how far into the episode you are; [media] puts
+  /// it in the recent list, the "Continue" row of people not logged in.
+  void setResume(int mediaId, int episode, Duration? at, {Duration? length, Map<String, dynamic>? media}) {
     final key = 'resume:$mediaId:$episode';
-    at == null ? _prefs.remove(key) : _prefs.setInt(key, at.inSeconds);
+    if (at == null) {
+      _prefs.remove(key);
+      _prefs.remove('resumeLen:$mediaId:$episode');
+    } else {
+      _prefs.setInt(key, at.inSeconds);
+      if (length != null) _prefs.setInt('resumeLen:$mediaId:$episode', length.inSeconds);
+    }
+    if (media != null) _touchRecent(media, at == null ? episode + 1 : episode);
+  }
+
+  /// How far into [episode] you stopped, from 0 to 1; null if not started.
+  double? resumeFraction(int mediaId, int episode) {
+    final at = _prefs.getInt('resume:$mediaId:$episode');
+    final length = _prefs.getInt('resumeLen:$mediaId:$episode');
+    if (at == null || length == null || length <= 0) return null;
+    return (at / length).clamp(0.0, 1.0);
+  }
+
+  /// Anime played on this device, most recent first, with the episode to go on with.
+  List<({Map<String, dynamic> media, int episode})> get recent {
+    final raw = _prefs.getString('recent');
+    if (raw == null) return [];
+    try {
+      return [
+        for (final e in jsonDecode(raw) as List)
+          (media: Map<String, dynamic>.from(e['media'] as Map), episode: e['episode'] as int),
+      ];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  void _touchRecent(Map<String, dynamic> media, int episode) {
+    final list = recent.where((e) => e.media['id'] != media['id']).toList();
+    list.insert(0, (media: media, episode: episode));
+    _prefs.setString(
+      'recent',
+      jsonEncode([
+        for (final e in list.take(20)) {'media': e.media, 'episode': e.episode},
+      ]),
+    );
   }
 }
 
@@ -84,7 +128,7 @@ extension SubtitleLanguageLabel on SubtitleLanguage {
   String get label => switch (this) {
     SubtitleLanguage.fr => 'Français',
     SubtitleLanguage.en => 'English',
-    SubtitleLanguage.file => t('Celle du fichier', "The file's default"),
+    SubtitleLanguage.file => t('Du fichier', 'From file'),
   };
 }
 

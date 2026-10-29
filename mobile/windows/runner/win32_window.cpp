@@ -18,14 +18,6 @@ namespace {
 
 constexpr const wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
 
-/// Registry key for app theme preference.
-///
-/// A value of 0 indicates apps should use dark mode. A non-zero or missing
-/// value indicates apps should use light mode.
-constexpr const wchar_t kGetPreferredBrightnessRegKey[] =
-  L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
-constexpr const wchar_t kGetPreferredBrightnessRegValue[] = L"AppsUseLightTheme";
-
 // The number of Win32Window objects that currently exist.
 static int g_active_window_count = 0;
 
@@ -149,7 +141,39 @@ bool Win32Window::Create(const std::wstring& title,
   return OnCreate();
 }
 
+namespace {
+
+// Where the window was last time, so Nami reopens at the same size and place.
+constexpr const wchar_t kPlacementKey[] = L"Software\\Nami";
+constexpr const wchar_t kPlacementValue[] = L"WindowPlacement";
+
+void SavePlacement(HWND window) {
+  WINDOWPLACEMENT placement{sizeof(placement)};
+  if (!GetWindowPlacement(window, &placement)) return;
+  RegSetKeyValue(HKEY_CURRENT_USER, kPlacementKey, kPlacementValue, REG_BINARY,
+                 &placement, sizeof(placement));
+}
+
+bool RestorePlacement(HWND window) {
+  WINDOWPLACEMENT placement{};
+  DWORD size = sizeof(placement);
+  if (RegGetValue(HKEY_CURRENT_USER, kPlacementKey, kPlacementValue,
+                  RRF_RT_REG_BINARY, nullptr, &placement, &size) != ERROR_SUCCESS ||
+      size != sizeof(placement) || placement.length != sizeof(placement)) {
+    return false;
+  }
+  // Skip it if that place is on a screen that is no longer connected.
+  if (!MonitorFromRect(&placement.rcNormalPosition, MONITOR_DEFAULTTONULL)) {
+    return false;
+  }
+  if (placement.showCmd != SW_SHOWMAXIMIZED) placement.showCmd = SW_SHOWNORMAL;
+  return SetWindowPlacement(window, &placement);
+}
+
+}  // namespace
+
 bool Win32Window::Show() {
+  if (RestorePlacement(window_handle_)) return true;
   return ShowWindow(window_handle_, SW_SHOWNORMAL);
 }
 
@@ -179,6 +203,19 @@ Win32Window::MessageHandler(HWND hwnd,
                             WPARAM const wparam,
                             LPARAM const lparam) noexcept {
   switch (message) {
+    case WM_CLOSE:
+      SavePlacement(hwnd);
+      break;
+
+    case WM_GETMINMAXINFO: {
+      // Below this the side rail and a row of covers no longer fit.
+      auto info = reinterpret_cast<MINMAXINFO*>(lparam);
+      const double scale = GetDpiForWindow(hwnd) / 96.0;
+      info->ptMinTrackSize.x = static_cast<LONG>(720 * scale);
+      info->ptMinTrackSize.y = static_cast<LONG>(480 * scale);
+      return 0;
+    }
+
     case WM_DESTROY:
       window_handle_ = nullptr;
       Destroy();
@@ -273,16 +310,14 @@ void Win32Window::OnDestroy() {
 }
 
 void Win32Window::UpdateTheme(HWND const window) {
-  DWORD light_mode;
-  DWORD light_mode_size = sizeof(light_mode);
-  LSTATUS result = RegGetValue(HKEY_CURRENT_USER, kGetPreferredBrightnessRegKey,
-                               kGetPreferredBrightnessRegValue,
-                               RRF_RT_REG_DWORD, nullptr, &light_mode,
-                               &light_mode_size);
-
-  if (result == ERROR_SUCCESS) {
-    BOOL enable_dark_mode = light_mode == 0;
-    DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
-                          &enable_dark_mode, sizeof(enable_dark_mode));
-  }
+  // Nami is dark by design (DESIGN.md), whatever the Windows theme: the title
+  // bar takes the app's ground and text colors (Windows 11; older versions
+  // keep the dark caption).
+  BOOL enable_dark_mode = TRUE;
+  DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                        &enable_dark_mode, sizeof(enable_dark_mode));
+  const COLORREF caption = RGB(0x0A, 0x0A, 0x0B);
+  const COLORREF text = RGB(0xED, 0xEA, 0xE4);
+  DwmSetWindowAttribute(window, 35 /* DWMWA_CAPTION_COLOR */, &caption, sizeof(caption));
+  DwmSetWindowAttribute(window, 36 /* DWMWA_TEXT_COLOR */, &text, sizeof(text));
 }

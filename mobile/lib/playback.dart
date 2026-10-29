@@ -177,7 +177,7 @@ class PlaybackSession extends ChangeNotifier {
     if (markedWatched || duration <= 0) return;
     if (force || player.state.position.inMilliseconds / duration >= 0.85) {
       markedWatched = true;
-      AppSettings.instance.setResume(media.id, episode, null);
+      AppSettings.instance.setResume(media.id, episode, null, media: media.json);
       AniList.instance.setProgress(media, episode).catchError((_) {});
     }
   }
@@ -238,7 +238,7 @@ class PlaybackSession extends ChangeNotifier {
     final position = player.state.position;
     _lastSaved = position;
     if (position > const Duration(seconds: 30)) {
-      AppSettings.instance.setResume(media.id, episode, position);
+      AppSettings.instance.setResume(media.id, episode, position, length: player.state.duration, media: media.json);
     }
   }
 

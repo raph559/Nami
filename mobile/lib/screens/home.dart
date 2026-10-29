@@ -91,8 +91,13 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     if (loading && trending.isEmpty) {
+      // The page's shape while it loads, so nothing jumps when it arrives.
       return Scaffold(
-        body: Center(child: StateMessage(loading: true, title: t('Chargement des animes…', 'Loading anime…'))),
+        body: Semantics(
+          label: t('Chargement des animes…', 'Loading anime…'),
+          liveRegion: true,
+          child: const HomeSkeleton(),
+        ),
       );
     }
     if (error != null && trending.isEmpty) {
@@ -112,6 +117,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final rest = [
       for (final w in watching)
         if (w.media != heroMedia) w,
+    ];
+    // Without AniList, the anime played on this device that still have an episode to go.
+    final local = [
+      for (final e in AppSettings.instance.recent)
+        if (Media(e.media) case final m when e.episode <= (m.isMovie ? 1 : m.availableEpisodes)) (m, e.episode),
     ];
     return Scaffold(
       body: RefreshIndicator(
@@ -137,14 +147,34 @@ class _HomeScreenState extends State<HomeScreen> {
               MediaRow(
                 title: t('Continuer', 'Continue watching'),
                 items: [for (final w in rest) w.media],
+                // How far into the next episode you are, else how far into the series.
                 progress: (m) {
                   final w = rest.firstWhere((w) => w.media == m);
+                  final inEpisode = AppSettings.instance.resumeFraction(m.id, w.progress + 1);
+                  if (inEpisode != null) return inEpisode;
                   final total = m.episodes ?? m.availableEpisodes;
                   return total > 0 ? w.progress / total : null;
                 },
                 badge: (m) {
                   final w = rest.firstWhere((w) => w.media == m);
+                  if (AppSettings.instance.resumeFraction(m.id, w.progress + 1) != null) {
+                    return t('Reprendre l\'épisode ${w.progress + 1}', 'Resume episode ${w.progress + 1}');
+                  }
                   return w.hasNewEpisode ? t('Épisode ${w.progress + 1} dispo', 'Episode ${w.progress + 1} out') : null;
+                },
+              ),
+            ] else if (!AniList.instance.isLoggedIn && local.isNotEmpty) ...[
+              const SizedBox(height: 22),
+              MediaRow(
+                title: t('Continuer', 'Continue watching'),
+                items: [for (final e in local) e.$1],
+                progress: (m) {
+                  final ep = local.firstWhere((e) => e.$1 == m).$2;
+                  return AppSettings.instance.resumeFraction(m.id, ep) ?? 0;
+                },
+                badge: (m) {
+                  final ep = local.firstWhere((e) => e.$1 == m).$2;
+                  return m.isMovie ? null : t('Épisode $ep', 'Episode $ep');
                 },
               ),
             ],
@@ -217,12 +247,48 @@ class _Hero extends StatelessWidget {
       if (info?.runtime != null) '${info!.runtime} min',
     ].join(' · ');
     final top = MediaQuery.paddingOf(context).top;
-    final wide = MediaQuery.sizeOf(context).width >= 700;
+    final width = MediaQuery.sizeOf(context).width;
+    final wide = width >= 700;
+    final label = resuming ? t('À reprendre', 'Up next') : t('En tendance', 'Trending');
+    final actions = Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        FocusOutline(
+          child: FilledButton.icon(
+            onPressed: () => startWatching(context, media, episode),
+            icon: const Icon(Icons.play_arrow_rounded, size: 22),
+            label: Text(
+              media.isMovie
+                  ? t('Regarder', 'Watch')
+                  : resuming
+                  ? t("Reprendre l'épisode $episode", 'Resume episode $episode')
+                  : t("Regarder l'épisode $episode", 'Watch episode $episode'),
+            ),
+          ),
+        ),
+        FocusOutline(
+          child: OutlinedButton(
+            onPressed: () => openMedia(context, media),
+            child: Text(t('Voir la fiche', 'See details')),
+          ),
+        ),
+      ],
+    );
+    if (width >= 900) {
+      return _WideHero(media: media, label: label, meta: meta, actions: actions);
+    }
     // The banner fills the block; the text sits on a scrim at the bottom and
     // the block grows with it, so large text sizes never clip.
     return Stack(
       children: [
-        Positioned.fill(child: CoverImage(media.banner ?? media.cover, radius: 0, alignment: const Alignment(0.2, 0))),
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 2,
+          child: CoverImage(media.banner ?? media.cover, radius: 0, alignment: const Alignment(0.2, 0)),
+        ),
         const Positioned.fill(child: GroundFade(from: 0.6)),
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -248,10 +314,7 @@ class _Hero extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        resuming ? t('À reprendre', 'Up next') : t('En tendance', 'Trending'),
-                        style: Nami.caption.copyWith(fontSize: 13),
-                      ),
+                      Text(label, style: Nami.caption.copyWith(fontSize: 13)),
                       const SizedBox(height: 8),
                       Semantics(
                         header: true,
@@ -267,31 +330,7 @@ class _Hero extends StatelessWidget {
                         Text(meta, maxLines: 4, overflow: TextOverflow.ellipsis, style: Nami.meta),
                       ],
                       const SizedBox(height: 16),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          FocusOutline(
-                            child: FilledButton.icon(
-                              onPressed: () => startWatching(context, media, episode),
-                              icon: const Icon(Icons.play_arrow_rounded, size: 22),
-                              label: Text(
-                                media.isMovie
-                                    ? t('Regarder', 'Watch')
-                                    : resuming
-                                    ? t("Reprendre l'épisode $episode", 'Resume episode $episode')
-                                    : t("Regarder l'épisode $episode", 'Watch episode $episode'),
-                              ),
-                            ),
-                          ),
-                          FocusOutline(
-                            child: OutlinedButton(
-                              onPressed: () => openMedia(context, media),
-                              child: Text(t('Voir la fiche', 'See details')),
-                            ),
-                          ),
-                        ],
-                      ),
+                      actions,
                     ],
                   ),
                 ),
@@ -300,6 +339,111 @@ class _Hero extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// Banner for wide windows: the artwork fills the width and the text sits on
+/// the left, where a dark fade from the left keeps it readable (at least 85 %
+/// black under the text column, so 4.5:1 holds over a white pixel). The
+/// bottom fades into the ground, so the page has no edge under the banner.
+class _WideHero extends StatelessWidget {
+  const _WideHero({required this.media, required this.label, required this.meta, required this.actions});
+  final Media media;
+  final String label;
+  final String meta;
+  final Widget actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final height = (width * 0.42).clamp(440.0, 620.0);
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: height),
+      child: Stack(
+        children: [
+          // Stops short of the bottom: rounding could leave one row of the image under the fade.
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: 2,
+            child: CoverImage(media.banner ?? media.cover, radius: 0, alignment: const Alignment(0.6, -0.2)),
+          ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  stops: const [0, 0.45, 0.75],
+                  colors: [
+                    Nami.ground.withValues(alpha: 0.92),
+                    Nami.ground.withValues(alpha: 0.85),
+                    Nami.ground.withValues(alpha: 0),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  // Solid ground over the last pixels, so no seam shows under the banner.
+                  stops: const [0, 0.18, 0.6, 0.96],
+                  colors: [
+                    Nami.ground.withValues(alpha: 0.5),
+                    Nami.ground.withValues(alpha: 0),
+                    Nami.ground.withValues(alpha: 0),
+                    Nami.ground,
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Container(
+            constraints: BoxConstraints(minHeight: height),
+            alignment: Alignment.bottomLeft,
+            padding: const EdgeInsets.fromLTRB(48, 32, 48, 36),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: Nami.caption.copyWith(fontSize: 14)),
+                  const SizedBox(height: 10),
+                  Semantics(
+                    header: true,
+                    child: Text(
+                      media.title.display,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: Nami.heroTitle.copyWith(fontSize: 48, height: 1.05),
+                    ),
+                  ),
+                  if (meta.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(meta, maxLines: 3, overflow: TextOverflow.ellipsis, style: Nami.meta.copyWith(fontSize: 15)),
+                  ],
+                  if (media.plainDescription.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      media.plainDescription,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: Nami.body.copyWith(fontSize: 14, color: Nami.textSecondary),
+                    ),
+                  ],
+                  const SizedBox(height: 22),
+                  actions,
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

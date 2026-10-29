@@ -14,6 +14,7 @@ Direct dependencies of `mobile/` (versions in `mobile/pubspec.lock`).
 | [flutter_inappwebview](https://github.com/pichillilorenzo/flutter_inappwebview) | Apache-2.0 | |
 | [http](https://pub.dev/packages/http), [ffi](https://pub.dev/packages/ffi), [path_provider](https://pub.dev/packages/path_provider), [shared_preferences](https://pub.dev/packages/shared_preferences) | BSD-3-Clause | |
 | [package_info_plus](https://pub.dev/packages/package_info_plus) | BSD-3-Clause | |
+| [window_manager](https://pub.dev/packages/window_manager) | MIT | Windows title bar drawn by the app |
 | [device_preview](https://pub.dev/packages/device_preview) | MIT | Only active in Windows debug builds |
 | [Hanken Grotesk](https://github.com/marcologous/hanken-grotesk) font | OFL-1.1 | `mobile/assets/fonts/OFL-HankenGrotesk.txt` |
 

@@ -6,6 +6,8 @@ flutter_launcher_icons:
   # foreground layer stays empty: any mask shape crops the waves cleanly.
   adaptive_icon_background: assets/icon/icon.png
   adaptive_icon_foreground: assets/icon/foreground-empty.png
+  # Android 13+ themed icons: the waves alone, tinted by the system.
+  adaptive_icon_monochrome: assets/icon/monochrome.png
   ios: false
   windows:
     generate: true

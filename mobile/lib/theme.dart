@@ -77,6 +77,13 @@ abstract final class Nami {
     final buttonShape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusButton));
     return base.copyWith(
       scaffoldBackgroundColor: ground,
+      // Android's back gesture previews the page underneath before you let go.
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+          TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
+        },
+      ),
       splashFactory: InkRipple.splashFactory,
       appBarTheme: const AppBarTheme(
         backgroundColor: ground,

@@ -1,4 +1,8 @@
+import 'dart:io';
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'anilist.dart';
 import 'screens/detail.dart';
@@ -163,18 +167,30 @@ class TextScrim extends StatelessWidget {
   }
 }
 
-void openMedia(BuildContext context, Media media) {
-  Navigator.of(context).push(MaterialPageRoute(builder: (_) => DetailScreen(media: media)));
+void openMedia(BuildContext context, Media media, {String? heroTag}) {
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => DetailScreen(media: media, heroTag: heroTag),
+    ),
+  );
 }
 
-class MediaCard extends StatelessWidget {
-  const MediaCard(this.media, {super.key, this.badge, this.width = 108, this.progress});
+bool get _desktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
+/// A cover with its title. On a mouse, hovering lifts it and shows the score
+/// and genres; a long press (touch) opens a short sheet with the same facts
+/// and the two actions. Opening it, the cover grows into the anime page.
+class MediaCard extends StatefulWidget {
+  const MediaCard(this.media, {super.key, this.badge, this.width = 108, this.progress, this.heroTag});
   final Media media;
   final String? badge;
   final double width;
 
   /// Watched fraction, drawn as a thin line under the cover.
   final double? progress;
+
+  /// Shared with the anime page's cover for the opening transition; unique per screen.
+  final String? heroTag;
 
   /// Height of a card of [width] at the current text size.
   static double heightFor(BuildContext context, double width, {bool withBadge = false, bool withProgress = false}) {
@@ -188,41 +204,187 @@ class MediaCard extends StatelessWidget {
   }
 
   @override
+  State<MediaCard> createState() => _MediaCardState();
+}
+
+class _MediaCardState extends State<MediaCard> {
+  bool hovered = false;
+
+  Media get media => widget.media;
+
+  String get facts => [
+    if (media.averageScore != null) '${media.averageScore} %',
+    if (media.seasonYear != null) '${media.seasonYear}',
+    ...media.genres.take(2).map(genreLabel),
+  ].join(' · ');
+
+  @override
   Widget build(BuildContext context) {
+    final width = widget.width;
+    Widget cover = CoverImage(media.coverSmall);
+    if (widget.heroTag != null) cover = Hero(tag: widget.heroTag!, child: cover);
     return FocusOutline(
       radius: Nami.radiusImage,
       child: Semantics(
         button: true,
-        label: [media.title.display, ?badge].join(', '),
+        label: [media.title.display, ?widget.badge].join(', '),
+        hint: _desktop ? null : t('Appui long pour un aperçu', 'Long press for a preview'),
         excludeSemantics: true,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(Nami.radiusImage),
-          onTap: () => openMedia(context, media),
-          child: SizedBox(
-            width: width,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(width: width, height: width * 1.45, child: CoverImage(media.coverSmall)),
-                if (progress != null) ...[
-                  const SizedBox(height: 6),
-                  ProgressLine(value: progress!, color: Nami.accentOf(media.color)),
+        child: MouseRegion(
+          onEnter: (_) => setState(() => hovered = true),
+          onExit: (_) => setState(() => hovered = false),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(Nami.radiusImage),
+            onTap: () => openMedia(context, media, heroTag: widget.heroTag),
+            onLongPress: () {
+              HapticFeedback.mediumImpact();
+              showMediaPreview(context, media);
+            },
+            child: SizedBox(
+              width: width,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AnimatedScale(
+                    scale: hovered ? 1.04 : 1,
+                    duration: const Duration(milliseconds: 160),
+                    curve: Curves.easeOut,
+                    child: SizedBox(
+                      width: width,
+                      height: width * 1.45,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          cover,
+                          // Score and genres on hover, on a scrim so they stay readable.
+                          if (hovered && facts.isNotEmpty)
+                            Align(
+                              alignment: Alignment.bottomCenter,
+                              child: ClipRRect(
+                                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(Nami.radiusImage)),
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.fromLTRB(8, 18, 8, 8),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [Nami.ground.withValues(alpha: 0), Nami.ground.withValues(alpha: 0.88)],
+                                      stops: const [0, 0.35],
+                                    ),
+                                  ),
+                                  child: Text(
+                                    facts,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Nami.caption.copyWith(color: Nami.text),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (widget.progress != null) ...[
+                    const SizedBox(height: 6),
+                    ProgressLine(value: widget.progress!, color: Nami.accentOf(media.color)),
+                  ],
+                  const SizedBox(height: 8),
+                  Text(
+                    media.title.display,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Nami.caption.copyWith(fontSize: 13, color: hovered ? Nami.text : const Color(0xFFD9D5CD)),
+                  ),
+                  if (widget.badge != null)
+                    Text(widget.badge!, maxLines: 1, overflow: TextOverflow.ellipsis, style: Nami.caption),
                 ],
-                const SizedBox(height: 8),
-                Text(
-                  media.title.display,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Nami.caption.copyWith(fontSize: 13, color: const Color(0xFFD9D5CD)),
-                ),
-                if (badge != null) Text(badge!, maxLines: 1, overflow: TextOverflow.ellipsis, style: Nami.caption),
-              ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
+}
+
+/// The long-press preview: what the anime is and the two things you can do.
+Future<void> showMediaPreview(BuildContext context, Media media) {
+  final next = media.isMovie
+      ? 1
+      : (media.progress + 1).clamp(1, media.availableEpisodes < 1 ? 1 : media.availableEpisodes);
+  final facts = [
+    if (media.format != null) media.format!.replaceAll('_', ' '),
+    if (media.seasonYear != null) '${media.seasonYear}',
+    if (media.averageScore != null) '${media.averageScore} %',
+    if (media.genres.isNotEmpty) media.genres.take(3).map(genreLabel).join(', '),
+  ].join(' · ');
+  return showModalBottomSheet<void>(
+    context: context,
+    useSafeArea: true,
+    showDragHandle: true,
+    builder: (sheet) => Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(width: 72, height: 104, child: CoverImage(media.coverSmall)),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(media.title.display, style: Nami.section.copyWith(fontSize: 18)),
+                    if (facts.isNotEmpty) ...[const SizedBox(height: 6), Text(facts, style: Nami.meta)],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (media.plainDescription.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Text(
+              media.plainDescription,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: Nami.body.copyWith(fontSize: 14, color: Nami.textSecondary),
+            ),
+          ],
+          const SizedBox(height: 18),
+          if (media.isMovie || media.availableEpisodes > 0)
+            FocusOutline(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                onPressed: () {
+                  Navigator.pop(sheet);
+                  startWatching(context, media, next);
+                },
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: Text(
+                  media.isMovie ? t('Regarder', 'Watch') : t("Regarder l'épisode $next", 'Watch episode $next'),
+                ),
+              ),
+            ),
+          const SizedBox(height: 10),
+          FocusOutline(
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              onPressed: () {
+                Navigator.pop(sheet);
+                openMedia(context, media);
+              },
+              child: Text(t('Voir la fiche', 'See details')),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class ProgressLine extends StatelessWidget {
@@ -247,7 +409,9 @@ class ProgressLine extends StatelessWidget {
   }
 }
 
-class MediaRow extends StatelessWidget {
+/// A titled row of covers. On a mouse, arrows appear on hover to page through
+/// it and the row can be dragged; on touch it scrolls as usual.
+class MediaRow extends StatefulWidget {
   const MediaRow({super.key, required this.title, required this.items, this.badge, this.progress});
   final String title;
   final List<Media> items;
@@ -255,33 +419,117 @@ class MediaRow extends StatelessWidget {
   final double? Function(Media)? progress;
 
   @override
+  State<MediaRow> createState() => _MediaRowState();
+}
+
+class _MediaRowState extends State<MediaRow> {
+  final scroll = ScrollController();
+  bool hovered = false;
+
+  @override
+  void dispose() {
+    scroll.dispose();
+    super.dispose();
+  }
+
+  void _page(int direction) {
+    if (!scroll.hasClients) return;
+    final p = scroll.position;
+    final target = (p.pixels + direction * p.viewportDimension * 0.8).clamp(p.minScrollExtent, p.maxScrollExtent);
+    scroll.animateTo(target, duration: const Duration(milliseconds: 350), curve: Curves.easeOutCubic);
+  }
+
+  @override
   Widget build(BuildContext context) {
     // Wider covers on tablets and desktops, so a row is not a strip of stamps.
     // Covers widen with the text size so titles break between words, not inside them.
+    final screen = MediaQuery.sizeOf(context).width;
     final textFactor = (MediaQuery.textScalerOf(context).scale(10) / 10).clamp(1.0, 1.6);
-    final width = (MediaQuery.sizeOf(context).width >= 700 ? 140.0 : 108.0) * textFactor;
-    final height = MediaCard.heightFor(context, width, withBadge: badge != null, withProgress: progress != null);
+    final width = (screen >= 700 ? 140.0 : 108.0) * textFactor;
+    final side = screen >= 900 ? 48.0 : 20.0;
+    final height = MediaCard.heightFor(
+      context,
+      width,
+      withBadge: widget.badge != null,
+      withProgress: widget.progress != null,
+    );
+    final list = ScrollConfiguration(
+      // Mouse drag scrolls the row too, as on a touch screen.
+      behavior: ScrollConfiguration.of(context).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+      child: ListView.separated(
+        controller: scroll,
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.fromLTRB(side, 8, side, 8),
+        clipBehavior: Clip.none,
+        itemCount: widget.items.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
+        itemBuilder: (_, i) {
+          final m = widget.items[i];
+          return MediaCard(
+            m,
+            width: width,
+            badge: widget.badge?.call(m),
+            progress: widget.progress?.call(m),
+            heroTag: 'row-${widget.title}-${m.id}',
+          );
+        },
+      ),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Semantics(header: true, child: Text(title, style: Nami.section)),
+          padding: EdgeInsets.symmetric(horizontal: side),
+          child: Semantics(header: true, child: Text(widget.title, style: Nami.section)),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 10),
         SizedBox(
-          height: height + 8,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
-            clipBehavior: Clip.none,
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 12),
-            itemBuilder: (_, i) =>
-                MediaCard(items[i], width: width, badge: badge?.call(items[i]), progress: progress?.call(items[i])),
-          ),
+          height: height + 16,
+          child: !_desktop
+              ? list
+              : MouseRegion(
+                  onEnter: (_) => setState(() => hovered = true),
+                  onExit: (_) => setState(() => hovered = false),
+                  child: Stack(
+                    children: [
+                      list,
+                      if (hovered) ...[
+                        _RowArrow(left: true, height: width * 1.45, onPressed: () => _page(-1)),
+                        _RowArrow(left: false, height: width * 1.45, onPressed: () => _page(1)),
+                      ],
+                    ],
+                  ),
+                ),
         ),
       ],
+    );
+  }
+}
+
+class _RowArrow extends StatelessWidget {
+  const _RowArrow({required this.left, required this.height, required this.onPressed});
+  final bool left;
+  final double height;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: left ? 0 : null,
+      right: left ? null : 0,
+      top: 8,
+      height: height,
+      width: 44,
+      child: Material(
+        color: Nami.ground.withValues(alpha: 0.82),
+        child: InkWell(
+          onTap: onPressed,
+          child: Tooltip(
+            message: left ? t('Précédents', 'Previous') : t('Suivants', 'Next'),
+            child: Icon(left ? Icons.chevron_left : Icons.chevron_right, color: Nami.text, size: 30),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -361,3 +609,104 @@ String networkError() => t(
   'Impossible de joindre AniList. Vérifie ta connexion, puis réessaie.',
   "Can't reach AniList. Check your connection, then try again.",
 );
+
+/// Grey shape of content that is loading. It breathes slowly (unless the
+/// system asks for reduced motion) so the page does not look frozen.
+class SkeletonBox extends StatefulWidget {
+  const SkeletonBox({super.key, this.width, this.height, this.radius = Nami.radiusImage});
+  final double? width;
+  final double? height;
+  final double radius;
+
+  @override
+  State<SkeletonBox> createState() => _SkeletonBoxState();
+}
+
+class _SkeletonBoxState extends State<SkeletonBox> with SingleTickerProviderStateMixin {
+  late final pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))
+    ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final still = MediaQuery.disableAnimationsOf(context);
+    final box = Container(
+      width: widget.width,
+      height: widget.height,
+      decoration: BoxDecoration(color: const Color(0xFF1B1B1E), borderRadius: BorderRadius.circular(widget.radius)),
+    );
+    if (still) return box;
+    return FadeTransition(opacity: Tween(begin: 0.55, end: 1.0).animate(pulse), child: box);
+  }
+}
+
+/// Home while it loads: the banner, then two rows of covers.
+class HomeSkeleton extends StatelessWidget {
+  const HomeSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final wide = size.width >= 900;
+    final side = wide ? 48.0 : 20.0;
+    final cover = size.width >= 700 ? 140.0 : 108.0;
+    Widget row() => Padding(
+      padding: EdgeInsets.fromLTRB(side, 26, 0, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SkeletonBox(width: 160, height: 20),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: cover * 1.45,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                for (var i = 0; i < 10; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: SkeletonBox(width: cover, height: cover * 1.45),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    return ListView(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.zero,
+      children: [
+        SkeletonBox(height: wide ? (size.width * 0.42).clamp(440.0, 620.0) : 420, radius: 0),
+        row(),
+        row(),
+      ],
+    );
+  }
+}
+
+/// Search results while they load.
+class SkeletonGrid extends StatelessWidget {
+  const SkeletonGrid({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, box) {
+        final columns = ((box.maxWidth + 12) / (130 + 12)).ceil().clamp(2, 10);
+        final cell = (box.maxWidth - 12 * (columns - 1)) / columns;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 16,
+          children: [for (var i = 0; i < columns * 2; i++) SkeletonBox(width: cell, height: cell * 1.45)],
+        );
+      },
+    );
+  }
+}

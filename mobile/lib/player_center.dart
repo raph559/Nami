@@ -6,6 +6,10 @@ import 'playback.dart';
 import 'screens/player.dart';
 import 'screens/sources.dart';
 
+/// Whether the Windows title-bar buttons show; the full-screen player lowers
+/// it while its controls are hidden, so nothing covers the video.
+final windowChromeVisible = ValueNotifier(true);
+
 /// What is playing and how it is shown, for the whole app. The playback lives
 /// in a [PlaybackSession]; the full-screen player is a route over the app and
 /// the mini-player sits above the navigation, so swiping the player down keeps

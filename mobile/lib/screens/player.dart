@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../aniskip.dart';
 import '../playback.dart';
@@ -33,6 +34,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
   double _pinch = 1;
   double _dragY = 0;
 
+  /// Windows: the window covers the whole screen (double-click or F11).
+  bool _windowFull = false;
+
+  bool get _desktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
   @override
   void initState() {
     super.initState();
@@ -46,6 +52,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void dispose() {
     _hideTimer?.cancel();
+    windowChromeVisible.value = true;
+    if (_windowFull) windowManager.setFullScreen(false);
     // The mini-player shows the video at its own size.
     s.setOutputSize(null);
     if (Platform.isAndroid || Platform.isIOS) {
@@ -55,16 +63,38 @@ class _PlayerScreenState extends State<PlayerScreen> {
     super.dispose();
   }
 
+  void _setControls(bool show) {
+    setState(() => controls = show);
+    // The window buttons come and go with the controls.
+    windowChromeVisible.value = show;
+  }
+
   void _toggleControls() {
-    setState(() => controls = !controls);
+    _setControls(!controls);
     if (controls) _scheduleHide();
   }
 
   void _scheduleHide() {
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted && s.player.state.playing && scrub == null) setState(() => controls = false);
+      if (mounted && s.player.state.playing && scrub == null) _setControls(false);
     });
+  }
+
+  Future<void> _toggleWindowFull() async {
+    if (!Platform.isWindows) return;
+    _windowFull = !_windowFull;
+    await windowManager.setFullScreen(_windowFull);
+    setState(() {});
+  }
+
+  /// Esc leaves the full-screen window first, then shrinks the player.
+  void _escape() {
+    if (_windowFull) {
+      _toggleWindowFull();
+    } else {
+      PlayerCenter.instance.minimize();
+    }
   }
 
   void _seekBy(int seconds) {
@@ -94,7 +124,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
           const SingleActivator(LogicalKeyboardKey.keyF): () => s.setFill(!s.fill),
           const SingleActivator(LogicalKeyboardKey.keyZ): () => s.setSubDelay(s.subDelay - 0.25),
           const SingleActivator(LogicalKeyboardKey.keyX): () => s.setSubDelay(s.subDelay + 0.25),
-          const SingleActivator(LogicalKeyboardKey.escape): center.minimize,
+          const SingleActivator(LogicalKeyboardKey.escape): _escape,
+          const SingleActivator(LogicalKeyboardKey.f11): _toggleWindowFull,
         },
         child: Focus(
           autofocus: true,
@@ -123,27 +154,37 @@ class _PlayerScreenState extends State<PlayerScreen> {
       children: [
         Video(controller: s.controller, controls: NoVideoControls, fill: Colors.black),
         // Tap for the controls, pinch to fill the screen, swipe down to shrink the player.
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _toggleControls,
-          onScaleStart: (d) {
-            _pointers = d.pointerCount;
-            _pinch = 1;
-            _dragY = 0;
+        // With a mouse: moving it shows the controls and the cursor, double-click fills the screen.
+        MouseRegion(
+          cursor: controls || !_desktop ? MouseCursor.defer : SystemMouseCursors.none,
+          onHover: (_) {
+            if (!_desktop) return;
+            if (!controls) _setControls(true);
+            _scheduleHide();
           },
-          onScaleUpdate: (d) {
-            if (d.pointerCount > _pointers) _pointers = d.pointerCount;
-            _pinch = d.scale;
-            _dragY += d.focalPointDelta.dy;
-          },
-          onScaleEnd: (_) {
-            if (_pointers >= 2) {
-              if (_pinch > 1.05) s.setFill(true);
-              if (_pinch < 0.95) s.setFill(false);
-            } else if (_dragY > 110) {
-              center.minimize();
-            }
-          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _toggleControls,
+            onDoubleTap: Platform.isWindows ? _toggleWindowFull : null,
+            onScaleStart: (d) {
+              _pointers = d.pointerCount;
+              _pinch = 1;
+              _dragY = 0;
+            },
+            onScaleUpdate: (d) {
+              if (d.pointerCount > _pointers) _pointers = d.pointerCount;
+              _pinch = d.scale;
+              _dragY += d.focalPointDelta.dy;
+            },
+            onScaleEnd: (_) {
+              if (_pointers >= 2) {
+                if (_pinch > 1.05) s.setFill(true);
+                if (_pinch < 0.95) s.setFill(false);
+              } else if (_dragY > 110) {
+                center.minimize();
+              }
+            },
+          ),
         ),
         if (s.phase == PlaybackPhase.connecting)
           _status(null, t('Connexion aux pairs…', 'Connecting to peers…'), s.result.title),
