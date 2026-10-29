@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../anilist.dart';
 import '../extensions.dart';
 import '../settings.dart';
 import '../theme.dart';
 import '../widgets.dart';
+
+const sourceUrl = 'https://github.com/raph559/Nami';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -306,12 +309,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Nami',
             children: [
               ListTile(
+                title: Text(t('Créée par', 'Made by')),
+                trailing: Text('raph559', style: Nami.body.copyWith(fontWeight: FontWeight.w700)),
+              ),
+              FocusOutline(
+                radius: 0,
+                gap: -2,
+                child: ListTile(
+                  title: Text(t('Code source', 'Source code')),
+                  subtitle: const Text('github.com/raph559/Nami'),
+                  trailing: const Icon(Icons.open_in_new, size: 20),
+                  onTap: () => launchUrl(Uri.parse(sourceUrl), mode: LaunchMode.externalApplication),
+                ),
+              ),
+              ListTile(
                 title: const Text('Version'),
                 trailing: Text(version, style: Nami.meta),
               ),
-              ListTile(
-                title: Text(t('Licence', 'License')),
-                trailing: Text('GPL-3.0', style: Nami.meta),
+              FocusOutline(
+                radius: 0,
+                gap: -2,
+                child: ListTile(
+                  title: Text(t('Licence et logiciels tiers', 'License and third-party software')),
+                  subtitle: Text(
+                    t('GPL-3.0 · mpv, FFmpeg, anacrolix/torrent…', 'GPL-3.0 · mpv, FFmpeg, anacrolix/torrent…'),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => showLicensePage(
+                    context: context,
+                    applicationName: 'Nami',
+                    applicationVersion: version,
+                    applicationLegalese: t(
+                      '© raph559 · Logiciel libre sous GPL-3.0\n$sourceUrl',
+                      '© raph559 · Free software under GPL-3.0\n$sourceUrl',
+                    ),
+                  ),
+                ),
               ),
             ],
           );

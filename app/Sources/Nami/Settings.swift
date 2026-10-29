@@ -103,8 +103,27 @@ struct SettingsView: View {
                            "Same format as Hayase extensions: paste the repository's index.json URL."))
                 }
 
-                Section {
+                Section("Nami") {
+                    LabeledContent(t("Créée par", "Made by")) { Text("raph559").bold() }
+                    Link(destination: URL(string: "https://github.com/raph559/Nami")!) {
+                        LabeledContent {
+                            Image(systemName: "arrow.up.right.square")
+                        } label: {
+                            VStack(alignment: .leading) {
+                                Text(t("Code source", "Source code")).foregroundStyle(Nami.text)
+                                Text("github.com/raph559/Nami").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                     LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")
+                    NavigationLink {
+                        ThirdPartyView()
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Text(t("Licence et logiciels tiers", "License and third-party software"))
+                            Text("GPL-3.0 · mpv, FFmpeg, anacrolix/torrent…").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
             .navigationTitle(t("Réglages", "Settings"))
@@ -235,5 +254,45 @@ struct SubtitleSizeChoice: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Nami.border))
+    }
+}
+
+/// Nami's license and the main components it is built on (full list in
+/// THIRD_PARTY_NOTICES.md in the repository).
+struct ThirdPartyView: View {
+    private let components: [(name: String, license: String, note: String)] = [
+        ("mpv, FFmpeg, libass, libplacebo", "LGPL-2.1+", t("Lecture vidéo, via MPVKit", "Video playback, through MPVKit")),
+        ("MPVKit", "LGPL-3.0", t("mpv et FFmpeg pour iOS", "mpv and FFmpeg for iOS")),
+        ("MoltenVK", "Apache-2.0", t("Vulkan sur Metal", "Vulkan on Metal")),
+        ("anacrolix/torrent", "MPL-2.0", t("Moteur torrent", "Torrent engine")),
+        ("Go", "BSD-3-Clause", t("Langage du moteur", "The engine's language")),
+    ]
+
+    var body: some View {
+        List {
+            Section {
+                Text(t("Nami est un logiciel libre de raph559, sous licence GNU GPL 3.0 : tu peux l'utiliser, l'étudier, le modifier et le partager.",
+                       "Nami is free software by raph559, under the GNU GPL 3.0: you can use, study, change and share it."))
+                Link("github.com/raph559/Nami", destination: URL(string: "https://github.com/raph559/Nami")!)
+            }
+            Section {
+                ForEach(components, id: \.name) { c in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(c.name)
+                            Spacer()
+                            Text(c.license).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Text(c.note).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text(t("Logiciels tiers", "Third-party software"))
+            } footer: {
+                Text(t("Liste complète, modules Go compris : THIRD_PARTY_NOTICES.md dans le dépôt.",
+                       "Full list, Go modules included: THIRD_PARTY_NOTICES.md in the repository."))
+            }
+        }
+        .navigationTitle(t("Licences", "Licenses"))
     }
 }

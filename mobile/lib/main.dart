@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:device_preview/device_preview.dart';
 import 'package:device_preview/presets.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
@@ -32,6 +33,7 @@ Future<void> main() async {
     await windowManager.setTitleBarStyle(TitleBarStyle.hidden, windowButtonVisibility: false);
   }
   await AppSettings.load();
+  _registerLicenses();
   Engine.instance.start().catchError((_) => 0);
   AniList.instance.loadViewer();
   ExtensionStore.instance.refresh();
@@ -232,4 +234,25 @@ class WindowChrome extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Components that are not Dart packages, so the license page lists them too
+/// (pub packages are added by Flutter itself). See THIRD_PARTY_NOTICES.md.
+void _registerLicenses() {
+  LicenseRegistry.addLicense(() async* {
+    yield const LicenseEntryWithLineBreaks(
+      ['mpv', 'FFmpeg'],
+      'Played through media_kit, dynamically linked and shipped unmodified.\n'
+      'GNU Lesser General Public License, version 2.1 or later.\n'
+      'https://mpv.io · https://ffmpeg.org',
+    );
+    yield const LicenseEntryWithLineBreaks(
+      ['anacrolix/torrent'],
+      'The torrent engine, with the Go modules listed in THIRD_PARTY_NOTICES.md.\n'
+      'Mozilla Public License 2.0. https://github.com/anacrolix/torrent',
+    );
+    yield LicenseEntryWithLineBreaks([
+      'Hanken Grotesk',
+    ], await rootBundle.loadString('assets/fonts/OFL-HankenGrotesk.txt'));
+  });
 }
