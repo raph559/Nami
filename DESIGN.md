@@ -9,11 +9,15 @@ the room is black and quiet, and the anime artwork is the only thing that brings
 
 ## Dials
 
-Dial: ENERGY 1 / RHYTHM 2 / MOTION 1
+Dial: ENERGY 1 / RHYTHM 2 / MOTION 2
 
 - ENERGY 1: the chrome stays out of the way; covers and banners carry the emotion.
 - RHYTHM 2: consistent screens with one strong break per screen (the full-bleed banner).
-- MOTION 1: state changes and hover/press feedback only; no decorative animation.
+- MOTION 2: everything that changes eases instead of jumping: hovers brighten (no grey boxes, no
+  ripple on desktop), the chosen tab's bar grows, the hover card fades and grows in, pages fade when
+  tabs change or content arrives, and the home banner cross-fades with a very slow push into the
+  picture. Timings live in `Motion` (140 ms hover, 240 ms changes, 600 ms the banner); with reduced
+  motion every duration is zero.
 
 ## Palette
 

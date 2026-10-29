@@ -10,6 +10,7 @@ import '../screens/list_editor.dart';
 import '../settings.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'motion.dart';
 
 /// The home banner: up to five anime, one at a time. It moves on every 8 s,
 /// holds still while the pointer or the focus is on it, and never moves by
@@ -20,6 +21,7 @@ class HeroCarousel extends StatefulWidget {
   final void Function(HeroItem) onOpen;
 
   static const interval = Duration(seconds: 8);
+  static const zoomKey = ValueKey('hero-zoom');
 
   @override
   State<HeroCarousel> createState() => _HeroCarouselState();
@@ -74,7 +76,9 @@ class _HeroCarouselState extends State<HeroCarousel> {
     if (widget.items.isEmpty) return const SizedBox.shrink();
     final item = widget.items[index];
     final slide = AnimatedSwitcher(
-      duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 300),
+      duration: Motion.of(context).slow,
+      switchInCurve: Curves.easeOut,
+      switchOutCurve: Curves.easeIn,
       child: _Slide(
         key: ValueKey(item.media.id),
         item: item,
@@ -245,7 +249,17 @@ class _Slide extends StatelessWidget {
             right: 0,
             top: 0,
             bottom: 2,
-            child: CoverImage(media.banner ?? media.cover, radius: 0, alignment: const Alignment(0.4, -0.3)),
+            // A very slow push into the picture while it is shown (none with reduced motion).
+            child: ClipRect(
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 1, end: MediaQuery.disableAnimationsOf(context) ? 1 : 1.06),
+                duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(seconds: 6),
+                curve: Curves.easeOut,
+                builder: (context, scale, child) =>
+                    Transform.scale(key: HeroCarousel.zoomKey, scale: scale, child: child),
+                child: CoverImage(media.banner ?? media.cover, radius: 0, alignment: const Alignment(0.4, -0.3)),
+              ),
+            ),
           ),
           // Dark from the text side, and solid ground at the bottom: text keeps 4.5:1 over any picture.
           Positioned.fill(

@@ -156,4 +156,15 @@ void main() {
     expect(side.stops![1] * heroWidth, greaterThanOrEqualTo(text.right));
     expect(side.colors[1].a, greaterThanOrEqualTo(0.8));
   });
+
+  testWidgets('the banner picture zooms in slowly, not with reduced motion', (tester) async {
+    double scale() => tester.widget<Transform>(find.byKey(HeroCarousel.zoomKey)).transform.getMaxScaleOnAxis();
+    await pumpHero(tester);
+    await tester.pump(const Duration(seconds: 3));
+    expect(scale(), greaterThan(1.0));
+    expect(scale(), lessThan(1.06));
+    await pumpHero(tester, reduceMotion: true);
+    await tester.pump(const Duration(seconds: 3));
+    expect(scale(), 1.0);
+  });
 }
