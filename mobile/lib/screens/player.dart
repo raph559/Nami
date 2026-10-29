@@ -7,13 +7,26 @@ import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../anilist.dart';
+import '../aniskip.dart';
 import '../engine.dart';
 import '../extensions.dart';
 import '../settings.dart';
+import '../theme.dart';
 import '../widgets.dart';
 
-/// Resolves a source into a stream and plays it. Pops `true` to ask for the
-/// next episode.
+/// What the player asks for when it closes on the way to the next episode.
+class PlayerExit {
+  const PlayerExit({required this.auto, this.reuse});
+
+  /// The countdown ran out: pick the recommended source without asking.
+  final bool auto;
+
+  /// The torrent just played also holds the next episode (a season pack).
+  final TorrentResult? reuse;
+}
+
+/// Resolves a source into a stream and plays it. Pops a [PlayerExit] to ask
+/// for the next episode.
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key, required this.media, required this.episode, required this.result});
   final Media media;
@@ -42,6 +55,30 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _statsTimer;
   final _subs = <StreamSubscription>[];
 
+  // Resume
+  bool _durationSeen = false;
+  Duration _lastSaved = Duration.zero;
+
+  // AniSkip
+  List<SkipInterval> skips = [];
+  final _skipped = <SkipKind>{};
+  SkipInterval? offered;
+
+  // Short message over the video, with an optional action ("Recommencer", "Revoir").
+  ({String text, String? action, VoidCallback? onAction})? notice;
+  Timer? _noticeTimer;
+
+  // Next episode
+  int? countdown;
+  bool countdownCancelled = false;
+  Timer? _countdownTimer;
+
+  // Subtitles
+  bool _subtitleChosen = false;
+  double subDelay = 0;
+
+  bool get hasNext => !widget.media.isMovie && widget.episode < widget.media.availableEpisodes;
+
   @override
   void initState() {
     super.initState();
@@ -54,11 +91,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
       native.setProperty('cache', 'yes');
       native.setProperty('demuxer-max-bytes', '64MiB');
       native.setProperty('network-timeout', '90');
+      native.setProperty('sub-scale', (AppSettings.instance.subtitleSize / 100).toString());
     }
     _subs.addAll([
-      player.stream.position.listen((_) => _checkWatched()),
+      player.stream.position.listen(_onPosition),
+      player.stream.duration.listen(_onDuration),
+      player.stream.tracks.listen(_chooseSubtitle),
       player.stream.completed.listen((done) {
-        if (done) _checkWatched(force: true);
+        if (!done) return;
+        _checkWatched(force: true);
+        if (hasNext && AppSettings.instance.autoNext) _startCountdown();
       }),
       for (final s in [player.stream.playing, player.stream.buffering, player.stream.tracks, player.stream.track])
         s.listen((_) {
@@ -70,8 +112,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    _saveResume();
     _hideTimer?.cancel();
     _statsTimer?.cancel();
+    _noticeTimer?.cancel();
+    _countdownTimer?.cancel();
     for (final s in _subs) {
       s.cancel();
     }
@@ -135,8 +180,143 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (markedWatched || duration <= 0) return;
     if (force || player.state.position.inMilliseconds / duration >= 0.85) {
       markedWatched = true;
+      AppSettings.instance.setResume(widget.media.id, widget.episode, null);
       AniList.instance.setProgress(widget.media, widget.episode).catchError((_) {});
     }
+  }
+
+  void _onPosition(Duration position) {
+    _checkWatched();
+    if ((position - _lastSaved).abs() > const Duration(seconds: 5)) _saveResume();
+
+    SkipInterval? inside;
+    for (final i in skips) {
+      if (!i.contains(position)) continue;
+      if (i.kind == SkipKind.ending && hasNext && AppSettings.instance.autoNext && !countdownCancelled) {
+        _startCountdown();
+        return;
+      }
+      if (AppSettings.instance.autoSkip && _skipped.add(i.kind)) {
+        player.seek(i.end);
+        _showNotice(
+          i.kind == SkipKind.opening ? t('Intro passée', 'Opening skipped') : t('Générique passé', 'Ending skipped'),
+          action: t('Revoir', 'Watch it'),
+          onAction: () => player.seek(i.start),
+        );
+        return;
+      }
+      inside = i;
+    }
+    if (inside != offered && mounted) setState(() => offered = inside);
+  }
+
+  /// The first known duration: AniSkip needs it, and so does resuming.
+  void _onDuration(Duration duration) {
+    if (_durationSeen || duration <= Duration.zero) return;
+    _durationSeen = true;
+    final at = AppSettings.instance.resumeAt(widget.media.id, widget.episode);
+    if (at != null && at > const Duration(seconds: 30) && at < duration - const Duration(minutes: 2)) {
+      player.seek(at);
+      _lastSaved = at;
+      _showNotice(
+        t('Reprise à ${clock(at)}', 'Resumed at ${clock(at)}'),
+        action: t('Recommencer', 'Start over'),
+        onAction: () => player.seek(Duration.zero),
+      );
+    }
+    final malId = widget.media.idMal;
+    if (malId != null) {
+      AniSkip.fetch(malId, widget.episode, duration).then((found) {
+        if (mounted) setState(() => skips = found);
+      });
+    }
+  }
+
+  void _saveResume() {
+    if (markedWatched || !_durationSeen) return;
+    final position = player.state.position;
+    _lastSaved = position;
+    if (position > const Duration(seconds: 30)) {
+      AppSettings.instance.setResume(widget.media.id, widget.episode, position);
+    }
+  }
+
+  void _showNotice(String text, {String? action, VoidCallback? onAction}) {
+    _noticeTimer?.cancel();
+    setState(() => notice = (text: text, action: action, onAction: onAction));
+    _noticeTimer = Timer(const Duration(seconds: 6), () {
+      if (mounted) setState(() => notice = null);
+    });
+  }
+
+  /// Picks the subtitle track in the user's language once the file's tracks are known.
+  void _chooseSubtitle(mk.Tracks tracks) {
+    final real = tracks.subtitle.where((s) => s.id != 'auto' && s.id != 'no').toList();
+    if (_subtitleChosen || real.isEmpty) return;
+    _subtitleChosen = true;
+    final (codes, names) = switch (AppSettings.instance.subtitleLanguage) {
+      SubtitleLanguage.fr => (const {'fr', 'fre', 'fra', 'fr-fr'}, const ['french', 'français', 'francais']),
+      SubtitleLanguage.en => (const {'en', 'eng', 'en-us', 'en-gb'}, const ['english']),
+      SubtitleLanguage.file => (const <String>{}, const <String>[]),
+    };
+    if (codes.isEmpty) return;
+    bool matches(mk.SubtitleTrack s) {
+      final title = (s.title ?? '').toLowerCase();
+      return codes.contains((s.language ?? '').toLowerCase()) || names.any(title.contains);
+    }
+
+    // "Signs & Songs" tracks only translate on-screen text; prefer the full dialogue track.
+    bool partial(mk.SubtitleTrack s) => RegExp(r'sign|song|forced', caseSensitive: false).hasMatch(s.title ?? '');
+    final candidates = real.where(matches).toList()..sort((a, b) => (partial(a) ? 1 : 0) - (partial(b) ? 1 : 0));
+    if (candidates.isNotEmpty) player.setSubtitleTrack(candidates.first);
+  }
+
+  void _setSubDelay(double seconds) {
+    final native = player.platform;
+    if (native is! mk.NativePlayer) return;
+    setState(() => subDelay = double.parse(seconds.toStringAsFixed(2)));
+    native.setProperty('sub-delay', subDelay.toString());
+  }
+
+  /// S or the floating button: skip the part playing now, else the fixed 85 s jump.
+  void _skipNow() {
+    final i = offered;
+    if (i != null) {
+      _skipped.add(i.kind);
+      player.seek(i.end);
+      setState(() => offered = null);
+    } else {
+      _seekBy(85);
+    }
+  }
+
+  void _startCountdown() {
+    if (countdown != null || countdownCancelled) return;
+    setState(() => countdown = 10);
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return timer.cancel();
+      if (countdown! <= 1) {
+        timer.cancel();
+        _goNext(auto: true);
+      } else {
+        setState(() => countdown = countdown! - 1);
+      }
+    });
+  }
+
+  void _cancelCountdown() {
+    _countdownTimer?.cancel();
+    setState(() {
+      countdown = null;
+      countdownCancelled = true;
+    });
+  }
+
+  void _goNext({required bool auto}) {
+    _countdownTimer?.cancel();
+    final files = torrent?.files ?? const <EngineFile>[];
+    final packHasNext = files.where((f) => f.isVideo).length > 1 && Engine.pick(files, widget.episode + 1) != null;
+    Navigator.pop(context, PlayerExit(auto: auto, reuse: packHasNext ? widget.result : null));
   }
 
   void _toggleControls() {
@@ -181,7 +361,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
         const SingleActivator(LogicalKeyboardKey.keyK): () => player.playOrPause(),
         const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _seekBy(-10),
         const SingleActivator(LogicalKeyboardKey.arrowRight): () => _seekBy(10),
-        const SingleActivator(LogicalKeyboardKey.keyS): () => _seekBy(85),
+        const SingleActivator(LogicalKeyboardKey.keyS): _skipNow,
+        const SingleActivator(LogicalKeyboardKey.keyZ): () => _setSubDelay(subDelay - 0.25),
+        const SingleActivator(LogicalKeyboardKey.keyX): () => _setSubDelay(subDelay + 0.25),
         const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.maybePop(context),
       },
       child: Focus(
@@ -215,6 +397,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
               if (phase == _Phase.playing && controls) _overlay(),
+              if (phase == _Phase.playing) _floating(),
               if (phase != _Phase.playing)
                 SafeArea(
                   child: Align(
@@ -301,7 +484,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final fraction = duration.inMilliseconds > 0 ? position.inMilliseconds / duration.inMilliseconds : 0.0;
     final shown = scrub ?? fraction.clamp(0.0, 1.0);
     final accent = widget.media.color ?? Theme.of(context).colorScheme.primary;
-    final hasNext = !widget.media.isMovie && widget.episode < widget.media.availableEpisodes;
+    final knowsOpening = skips.any((i) => i.kind == SkipKind.opening);
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -381,18 +564,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
               const Spacer(),
               Row(
                 children: [
-                  FocusOutline(
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
-                      onPressed: () => _seekBy(85),
-                      child: Text(t("Passer l'intro (+85 s)", 'Skip intro (+85 s)')),
+                  // Without AniSkip timings, a fixed jump over a typical 1:30 opening.
+                  if (!knowsOpening)
+                    FocusOutline(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
+                        onPressed: () => _seekBy(85),
+                        child: Text(t("Passer l'intro (+85 s)", 'Skip intro (+85 s)')),
+                      ),
                     ),
-                  ),
                   const Spacer(),
-                  if (hasNext)
+                  // The countdown card offers the same action while it runs.
+                  if (hasNext && countdown == null)
                     FocusOutline(
                       child: FilledButton.icon(
-                        onPressed: () => Navigator.pop(context, true),
+                        onPressed: () => _goNext(auto: false),
                         icon: const Icon(Icons.skip_next),
                         label: Text(t('Épisode suivant', 'Next episode')),
                       ),
@@ -426,6 +612,165 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
+  /// Stays on screen while the controls are hidden: the skip button, a short
+  /// notice and the next-episode countdown.
+  Widget _floating() {
+    final skip = offered;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, controls ? 110 : 24),
+        child: Stack(
+          children: [
+            if (notice != null)
+              Align(
+                alignment: Alignment.bottomLeft,
+                child: _panel(
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(notice!.text, style: const TextStyle(color: Colors.white)),
+                      ),
+                      if (notice!.action != null) ...[
+                        const SizedBox(width: 8),
+                        FocusOutline(
+                          child: TextButton(
+                            style: TextButton.styleFrom(foregroundColor: Colors.white),
+                            onPressed: () {
+                              notice!.onAction?.call();
+                              setState(() => notice = null);
+                            },
+                            child: Text(notice!.action!),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            if (countdown != null)
+              Align(alignment: Alignment.bottomRight, child: _countdownCard())
+            else if (skip != null)
+              Align(
+                alignment: Alignment.bottomRight,
+                child: FocusOutline(
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Nami.text,
+                      foregroundColor: Nami.ground,
+                      minimumSize: const Size(0, 48),
+                    ),
+                    onPressed: _skipNow,
+                    icon: const Icon(Icons.fast_forward_rounded),
+                    label: Text(
+                      skip.kind == SkipKind.opening
+                          ? t("Passer l'intro", 'Skip opening')
+                          : t('Passer le générique', 'Skip ending'),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _countdownCard() => _panel(
+    Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          t('Épisode ${widget.episode + 1} dans $countdown s', 'Episode ${widget.episode + 1} in $countdown s'),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FocusOutline(
+              child: TextButton(
+                style: TextButton.styleFrom(foregroundColor: Colors.white),
+                onPressed: _cancelCountdown,
+                child: Text(t('Annuler', 'Cancel')),
+              ),
+            ),
+            const SizedBox(width: 8),
+            FocusOutline(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(backgroundColor: Nami.text, foregroundColor: Nami.ground),
+                onPressed: () => _goNext(auto: true),
+                icon: const Icon(Icons.skip_next),
+                label: Text(t('Lire maintenant', 'Play now')),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+
+  /// Near-black panel: white text keeps 15:1 whatever frame is behind it.
+  Widget _panel(Widget child) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    decoration: BoxDecoration(color: const Color(0xE6131315), borderRadius: BorderRadius.circular(8)),
+    child: child,
+  );
+
+  Future<void> _delayDialog() => showDialog<void>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setDialog) {
+        void change(double v) {
+          _setSubDelay(v);
+          setDialog(() {});
+        }
+
+        return AlertDialog(
+          title: Text(t('Décalage des sous-titres', 'Subtitle delay')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    tooltip: t('Plus tôt', 'Earlier'),
+                    icon: const Icon(Icons.remove),
+                    onPressed: () => change(subDelay - 0.25),
+                  ),
+                  SizedBox(
+                    width: 90,
+                    child: Text('${_signed(subDelay)} s', textAlign: TextAlign.center, style: Nami.section),
+                  ),
+                  IconButton(
+                    tooltip: t('Plus tard', 'Later'),
+                    icon: const Icon(Icons.add),
+                    onPressed: () => change(subDelay + 0.25),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                t(
+                  'Positif si les sous-titres arrivent trop tôt. Au clavier : Z et X.',
+                  'Positive when subtitles come too early. Keyboard: Z and X.',
+                ),
+                style: Nami.caption,
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => change(0), child: Text(t('Remettre à zéro', 'Reset'))),
+            FilledButton(onPressed: () => Navigator.pop(context), child: Text(t('Fermer', 'Close'))),
+          ],
+        );
+      },
+    ),
+  );
+
   Widget _trackMenu() {
     final tracks = player.state.tracks;
     final current = player.state.track;
@@ -443,6 +788,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
             value: () => player.setSubtitleTrack(s),
             child: Text(s.id == 'no' ? t('Aucun', 'None') : label(s.id, s.title, s.language)),
           ),
+        PopupMenuItem(
+          value: _delayDialog,
+          child: Text(
+            subDelay == 0
+                ? t('Décalage des sous-titres…', 'Subtitle delay…')
+                : t('Décalage : ${_signed(subDelay)} s', 'Delay: ${_signed(subDelay)} s'),
+          ),
+        ),
         const PopupMenuDivider(),
         PopupMenuItem(enabled: false, child: Text(t('Audio', 'Audio'))),
         for (final a in tracks.audio.where((a) => a.id != 'auto' && a.id != 'no'))
@@ -489,6 +842,8 @@ Widget _roundButton(IconData icon, double size, String label, VoidCallback onPre
     onPressed: onPressed,
   ),
 );
+
+String _signed(double v) => '${v > 0 ? '+' : ''}${v.toStringAsFixed(2)}';
 
 extension on String {
   String ifEmpty(String fallback) => isEmpty ? fallback : this;

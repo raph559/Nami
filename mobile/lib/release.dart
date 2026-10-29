@@ -81,7 +81,9 @@ class ReleaseInfo {
 
   /// Ranking for the recommended source. Seeders matter most (they decide
   /// whether playback starts), then the user's quality, original audio,
-  /// and a finished release over a pre-release.
+  /// and a finished release over a pre-release. A full season always has more
+  /// seeders than one episode, so it is held back: a single-episode release
+  /// with a few dozen seeders wins over a season pack with a few hundred.
   double score(String preferredResolution) {
     var s = math.log(result.seeders + 1) * 10;
     if (result.isBest) s += 25;
@@ -92,7 +94,7 @@ class ReleaseInfo {
     }
     if (dub) s -= 40;
     if (prerelease) s -= 30;
-    if (batch) s -= 4;
+    if (batch) s -= 25;
     if (result.seeders == 0) s -= 30;
     return s;
   }

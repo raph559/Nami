@@ -103,6 +103,16 @@ class ExtensionStore extends ChangeNotifier {
     _merge(repo, manifests);
   }
 
+  /// Short name for a repository: host and path without `index.json`, so
+  /// `…/dub/index.json` and `…/multi/index.json` on one host read apart.
+  static String repoLabel(String repo) {
+    final uri = Uri.tryParse(repo);
+    if (uri == null || uri.host.isEmpty) return repo;
+    var path = uri.path.replaceFirst(RegExp(r'/?index\.json$'), '');
+    if (path.endsWith('/')) path = path.substring(0, path.length - 1);
+    return '${uri.host}$path';
+  }
+
   void removeRepo(String repo) {
     repos.remove(repo);
     installed.removeWhere((e) => e.repo == repo);

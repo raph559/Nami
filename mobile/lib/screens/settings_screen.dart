@@ -72,6 +72,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (ok == true) ExtensionStore.instance.removeRepo(repo);
   }
 
+  /// "2 of 3 on: NekoBT, AnimeTosho, …" so each repository says what it brings.
+  String _repoSummary(ExtensionStore store, String repo) {
+    final exts = store.installed.where((e) => e.repo == repo).toList();
+    if (exts.isEmpty) return t('Aucune extension', 'No extensions');
+    final on = exts.where((e) => e.enabled).length;
+    final names = exts.map((e) => e.manifest.name).join(', ');
+    return t('$on sur ${exts.length} activées : $names', '$on of ${exts.length} on: $names');
+  }
+
   Widget _header(String text) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
     child: Semantics(header: true, child: Text(text, style: Nami.section.copyWith(fontSize: 18))),
@@ -85,7 +94,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(t('Réglages', 'Settings'))),
       body: ListenableBuilder(
-        listenable: Listenable.merge([anilist, store]),
+        listenable: Listenable.merge([anilist, store, settings]),
         builder: (context, _) => ContentWidth(
           child: ListView(
             children: [
@@ -136,6 +145,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   for (final r in ['1080', '720', '480']) r: '${r}p',
                 },
               ),
+              _Toggle(
+                label: t("Passer l'intro et le générique", 'Skip openings and endings'),
+                detail: t(
+                  'Automatiquement, quand AniSkip connaît leurs horaires.',
+                  'Automatically, when AniSkip knows where they are.',
+                ),
+                value: settings.autoSkip,
+                onChanged: (v) => settings.autoSkip = v,
+              ),
+              _Toggle(
+                label: t("Enchaîner l'épisode suivant", 'Play the next episode'),
+                detail: t('Après un compte à rebours de 10 secondes.', 'After a 10 second countdown.'),
+                value: settings.autoNext,
+                onChanged: (v) => settings.autoNext = v,
+              ),
+              _Choice<SubtitleLanguage>(
+                label: t('Sous-titres', 'Subtitles'),
+                value: settings.subtitleLanguage,
+                onChanged: (v) => settings.subtitleLanguage = v,
+                items: {for (final l in SubtitleLanguage.values) l: l.label},
+              ),
+              _Choice<int>(
+                label: t('Taille des sous-titres', 'Subtitle size'),
+                value: settings.subtitleSize,
+                onChanged: (v) => settings.subtitleSize = v,
+                items: {
+                  80: t('Petite', 'Small'),
+                  100: t('Normale', 'Normal'),
+                  125: t('Grande', 'Large'),
+                  150: t('Très grande', 'Extra large'),
+                },
+              ),
               _header('Extensions'),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -178,8 +219,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   radius: 0,
                   gap: -2,
                   child: ListTile(
-                    title: Text(Uri.tryParse(repo)?.host ?? repo),
-                    subtitle: Text(repo, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    title: Text(ExtensionStore.repoLabel(repo)),
+                    subtitle: Text(_repoSummary(store, repo), maxLines: 2, overflow: TextOverflow.ellipsis),
                     trailing: IconButton(
                       tooltip: t('Retirer ce dépôt', 'Remove this repository'),
                       icon: const Icon(Icons.delete_outline),
@@ -217,7 +258,7 @@ class RepoScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = ExtensionStore.instance;
     return Scaffold(
-      appBar: AppBar(title: Text(Uri.tryParse(repo)?.host ?? t('Dépôt', 'Repository'))),
+      appBar: AppBar(title: Text(ExtensionStore.repoLabel(repo))),
       body: ListenableBuilder(
         listenable: store,
         builder: (context, _) => ListView(
@@ -327,4 +368,19 @@ class _Choice<T> extends StatelessWidget {
       ),
     );
   }
+}
+
+class _Toggle extends StatelessWidget {
+  const _Toggle({required this.label, required this.detail, required this.value, required this.onChanged});
+  final String label;
+  final String detail;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => FocusOutline(
+    radius: 0,
+    gap: -2,
+    child: SwitchListTile(value: value, onChanged: onChanged, title: Text(label), subtitle: Text(detail)),
+  );
 }

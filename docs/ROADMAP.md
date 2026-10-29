@@ -18,17 +18,18 @@
 
 ## Player
 
-- [ ] Resume where you stopped, per episode.
-- [ ] Skip intros and endings automatically (AniSkip).
-- [ ] Autoplay the next episode with a countdown.
+- [x] Resume where you stopped, per episode (Android, Windows).
+- [x] Skip intros and endings automatically (AniSkip) (Android, Windows).
+- [x] Autoplay the next episode with a countdown (Android, Windows).
 - [ ] Picture-in-Picture.
 
 ## Subtitles
 
-- [ ] Preferred subtitle language, picked automatically.
+- [x] Preferred subtitle language, picked automatically (Android, Windows).
 - [ ] External subtitles when a release has none in your language (e.g. Jimaku, OpenSubtitles).
-- [ ] Subtitle style: size, font, outline/background, position; keep ASS styling when present.
-- [ ] Sync offset (+/− ms) per episode.
+- [ ] Subtitle style: font, outline/background, position; keep ASS styling when present.
+      Size is done on Android and Windows.
+- [x] Sync offset (+/− ms) per episode (Android, Windows).
 
 ## More
 
@@ -40,3 +41,4 @@
 
 - [ ] Bring the Android and Windows source picker to the SwiftUI app: recommended source,
       release facts as tags, seeder levels.
+- [ ] Bring the player features above (resume, AniSkip, countdown, subtitle settings).

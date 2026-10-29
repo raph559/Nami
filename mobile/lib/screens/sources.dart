@@ -8,19 +8,21 @@ import '../theme.dart';
 import '../widgets.dart';
 
 /// Shows the sources for one episode and pops the chosen [TorrentResult].
-Future<TorrentResult?> pickSource(BuildContext context, Media media, int episode) {
+/// With [autoPick], the recommended source is played as soon as it is known.
+Future<TorrentResult?> pickSource(BuildContext context, Media media, int episode, {bool autoPick = false}) {
   return showModalBottomSheet<TorrentResult>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    builder: (_) => SourcesSheet(media: media, episode: episode),
+    builder: (_) => SourcesSheet(media: media, episode: episode, autoPick: autoPick),
   );
 }
 
 class SourcesSheet extends StatefulWidget {
-  const SourcesSheet({super.key, required this.media, required this.episode});
+  const SourcesSheet({super.key, required this.media, required this.episode, this.autoPick = false});
   final Media media;
   final int episode;
+  final bool autoPick;
 
   @override
   State<SourcesSheet> createState() => _SourcesSheetState();
@@ -49,6 +51,7 @@ class _SourcesSheetState extends State<SourcesSheet> {
           search = s;
           releases = rankReleases(s.results);
         });
+        if (widget.autoPick && releases.isNotEmpty) Navigator.pop(context, releases.first.result);
       }
     });
   }
@@ -119,7 +122,12 @@ class _SourcesSheetState extends State<SourcesSheet> {
     if (s == null) {
       return [
         SliverToBoxAdapter(
-          child: StateMessage(loading: true, title: t('Recherche des sources…', 'Looking for sources…')),
+          child: StateMessage(
+            loading: true,
+            title: widget.autoPick
+                ? t('Recherche de la meilleure source…', 'Finding the best source…')
+                : t('Recherche des sources…', 'Looking for sources…'),
+          ),
         ),
       ];
     }
@@ -155,11 +163,7 @@ class _SourcesSheetState extends State<SourcesSheet> {
 
     return [
       SliverToBoxAdapter(
-        child: _Recommended(
-          release: best,
-          reason: best.reason(pref),
-          accent: Nami.accentOf(widget.media.color),
-        ),
+        child: _Recommended(release: best, reason: best.reason(pref), accent: Nami.accentOf(widget.media.color)),
       ),
       if (single.isNotEmpty) ...[
         SliverToBoxAdapter(child: _SectionLabel(t('Cet épisode', 'This episode'))),
@@ -388,7 +392,10 @@ class _SourceRow extends StatelessWidget {
                 Wrap(
                   spacing: 8,
                   crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [_Health(release), Text('·  ${r.source}', style: Nami.caption)],
+                  children: [
+                    _Health(release),
+                    Text('·  ${r.source}', style: Nami.caption),
+                  ],
                 ),
               ],
             ),

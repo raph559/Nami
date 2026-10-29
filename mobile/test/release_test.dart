@@ -19,8 +19,14 @@ void main() {
     2410,
     source: 'AnimeTosho (New)',
   );
-  final varyg = r('[VARYG] Cyberpunk Edgerunners S02 1080p NF WEB-DL DUAL DDP5.1 H (Cyberpunk: Edgerunners 2, Multi-Subs)', 357);
-  final erai = r('[Erai-raws] Cyberpunk: Edgerunners S02 [1080p NF WEB-DL HEVC EAC3][MultiSub] [BATCH] (Cyberpunk: Edgerunners 2)', 165);
+  final varyg = r(
+    '[VARYG] Cyberpunk Edgerunners S02 1080p NF WEB-DL DUAL DDP5.1 H (Cyberpunk: Edgerunners 2, Multi-Subs)',
+    357,
+  );
+  final erai = r(
+    '[Erai-raws] Cyberpunk: Edgerunners S02 [1080p NF WEB-DL HEVC EAC3][MultiSub] [BATCH] (Cyberpunk: Edgerunners 2)',
+    165,
+  );
   final whomst = r('[whomst-mini] Cyberpunk Edgerunners - S02 v2 [WEB 1080p AV1 Opus] [Dual Audio]', 134);
 
   test('reads the facts out of release names', () {
@@ -52,6 +58,14 @@ void main() {
     final ranked = rankReleases([dubPre, varyg, erai, whomst]);
     expect(ranked.first.result, same(varyg));
     expect(ranked.last.result, same(dubPre));
+  });
+
+  test('a seeded single episode beats a season pack with far more seeders', () {
+    // Seen on episode 1 of Edgerunners 2: VARYG's 12.8 GB season pack was recommended.
+    final single = r('[Onalrie] Cyberpunk Edgerunners 2 - 01 [1080p WEB AV1]', 37);
+    expect(rankReleases([varyg, single]).first.result, same(single));
+    final dead = r('[Onalrie] Cyberpunk Edgerunners 2 - 01 [1080p WEB AV1]', 1);
+    expect(rankReleases([varyg, dead]).first.result, same(varyg));
   });
 
   test('seeders map to a health level', () {

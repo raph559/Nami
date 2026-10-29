@@ -41,7 +41,12 @@ Android and Windows only, for now:
 
 - **Source picker**: release names are read (group, quality, codec, audio, full season) and
   one source is recommended, based on seeders, your preferred quality and original audio.
-- **Keyboard shortcuts** in the player on Windows.
+- **Player comfort**: resumes each episode where you stopped, skips openings and endings
+  with [AniSkip](https://aniskip.com) timings, plays the next episode after a 10 s countdown
+  (reusing the season pack when it holds it), picks subtitles in your language, with
+  adjustable size and delay.
+- **Keyboard shortcuts** in the player on Windows: Space/K play, ←/→ 10 s, S skip,
+  Z/X subtitle delay, Esc close.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for what is coming next.
 

@@ -13,18 +13,23 @@ import 'sources.dart';
 Future<void> startWatching(BuildContext context, Media media, int episode) async {
   final navigator = Navigator.of(context);
   var ep = episode;
+  PlayerExit? previous;
   while (navigator.mounted) {
-    // navigator.mounted is checked by the loop condition.
-    // ignore: use_build_context_synchronously
-    final result = await pickSource(navigator.context, media, ep);
+    // A season pack that holds the next episode is played again; otherwise
+    // the sheet opens, and after a countdown it plays its recommendation.
+    final result =
+        previous?.reuse ??
+        // navigator.mounted is checked by the loop condition.
+        // ignore: use_build_context_synchronously
+        await pickSource(navigator.context, media, ep, autoPick: previous?.auto ?? false);
     if (result == null || !navigator.mounted) return;
-    final next = await navigator.push<bool>(
+    previous = await navigator.push<PlayerExit>(
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => PlayerScreen(media: media, episode: ep, result: result),
       ),
     );
-    if (next != true) return;
+    if (previous == null) return;
     ep++;
   }
 }
