@@ -17,6 +17,8 @@ import 'screens/home.dart';
 import 'screens/library.dart';
 import 'screens/search.dart';
 import 'screens/settings_screen.dart';
+import 'platform.dart';
+import 'ui/desktop_shell.dart';
 import 'settings.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -69,7 +71,11 @@ class NamiApp extends StatelessWidget {
 }
 
 class RootScreen extends StatefulWidget {
-  const RootScreen({super.key});
+  const RootScreen({super.key, this.pages});
+
+  /// Replaces the four tab pages in tests.
+  @visibleForTesting
+  final List<Widget>? pages;
 
   @override
   State<RootScreen> createState() => _RootScreenState();
@@ -86,7 +92,19 @@ class _RootScreenState extends State<RootScreen> {
       (Icons.bookmark_border, Icons.bookmark, t('Ma liste', 'My list')),
       (Icons.tune_outlined, Icons.tune, t('Réglages', 'Settings')),
     ];
-    final pages = IndexedStack(index: tab, children: const [HomeScreen(), SearchScreen(), LibraryScreen(), SettingsScreen()]);
+    final children = widget.pages ?? const [HomeScreen(), SearchScreen(), LibraryScreen(), SettingsScreen()];
+    if (isDesktop) {
+      return DesktopShell(
+        items: [for (final i in items) (icon: i.$1, selectedIcon: i.$2, label: i.$3)],
+        index: tab,
+        onSelect: (i) => setState(() => tab = i),
+        pages: children,
+        onAccount: () => AniList.instance.isLoggedIn
+            ? setState(() => tab = 2)
+            : Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginScreen())),
+      );
+    }
+    final pages = IndexedStack(index: tab, children: children);
     Widget item(int i, {required bool vertical}) => _NavItem(
       icon: tab == i ? items[i].$2 : items[i].$1,
       label: items[i].$3,

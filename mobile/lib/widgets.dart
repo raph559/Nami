@@ -1,10 +1,10 @@
-import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'anilist.dart';
+import 'platform.dart';
 import 'screens/detail.dart';
 import 'settings.dart';
 import 'theme.dart';
@@ -175,8 +175,6 @@ void openMedia(BuildContext context, Media media, {String? heroTag}) {
   );
 }
 
-bool get _desktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
-
 /// A cover with its title. On a mouse, hovering lifts it and shows the score
 /// and genres; a long press (touch) opens a short sheet with the same facts
 /// and the two actions. Opening it, the cover grows into the anime page.
@@ -228,7 +226,7 @@ class _MediaCardState extends State<MediaCard> {
       child: Semantics(
         button: true,
         label: [media.title.display, ?widget.badge].join(', '),
-        hint: _desktop ? null : t('Appui long pour un aperçu', 'Long press for a preview'),
+        hint: isDesktop ? null : t('Appui long pour un aperçu', 'Long press for a preview'),
         excludeSemantics: true,
         child: MouseRegion(
           onEnter: (_) => setState(() => hovered = true),
@@ -485,7 +483,7 @@ class _MediaRowState extends State<MediaRow> {
         const SizedBox(height: 10),
         SizedBox(
           height: height + 16,
-          child: !_desktop
+          child: !isDesktop
               ? list
               : MouseRegion(
                   onEnter: (_) => setState(() => hovered = true),

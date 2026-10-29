@@ -1,3 +1,4 @@
+
 import 'dart:async';
 import 'dart:io';
 
@@ -7,6 +8,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../aniskip.dart';
+import '../platform.dart';
 import '../playback.dart';
 import '../player_center.dart';
 import '../settings.dart';
@@ -36,8 +38,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   /// Windows: the window covers the whole screen (double-click or F11).
   bool _windowFull = false;
-
-  bool get _desktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
   @override
   void initState() {
@@ -156,9 +156,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
         // Tap for the controls, pinch to fill the screen, swipe down to shrink the player.
         // With a mouse: moving it shows the controls and the cursor, double-click fills the screen.
         MouseRegion(
-          cursor: controls || !_desktop ? MouseCursor.defer : SystemMouseCursors.none,
+          cursor: controls || !isDesktop ? MouseCursor.defer : SystemMouseCursors.none,
           onHover: (_) {
-            if (!_desktop) return;
+            if (!isDesktop) return;
             if (!controls) _setControls(true);
             _scheduleHide();
           },
