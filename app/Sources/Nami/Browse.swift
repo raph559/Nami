@@ -155,16 +155,27 @@ struct MediaRow: View {
     @Binding var path: [MediaRoute]
     var badge: (Media) -> String? = { _ in nil }
     var progress: (Media) -> Double? = { _ in nil }
+    /// Numbers the covers (1, 2, 3…), for "top" lists.
+    var ranked = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.title3.bold()).padding(.horizontal)
+            Text(title).font(.title3.bold()).padding(.horizontal).accessibilityAddTraits(.isHeader)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 12) {
-                    ForEach(items) { m in
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, m in
                         let route = MediaRoute(media: m, source: "\(title)-\(m.id)")
                         NavigationLink(value: route) {
-                            MediaCard(media: m, badge: badge(m), progress: progress(m)).zoomSource(route.source, in: ns)
+                            MediaCard(media: m, badge: badge(m), progress: progress(m))
+                                .overlay(alignment: .topLeading) {
+                                    if ranked {
+                                        Text("\(index + 1)").font(.footnote.weight(.heavy)).foregroundStyle(Nami.ground)
+                                            .padding(.horizontal, 6).padding(.vertical, 1)
+                                            .background(Nami.text, in: RoundedRectangle(cornerRadius: 4))
+                                            .padding(6)
+                                    }
+                                }
+                                .zoomSource(route.source, in: ns)
                         }
                         .buttonStyle(.plain)
                         .mediaPreview(m) { path.append(route) }
@@ -197,16 +208,69 @@ struct LoadingShape: View {
 }
 
 /// The anime to resume (or the top trending one) across the top of the home screen.
-struct HomeHero: View {
-    let media: Media
-    let episode: Int
-    let resuming: Bool
+/// The home banner: up to five anime, one at a time. It moves on every 8 s,
+/// never by itself with Reduce Motion, and a swipe changes it.
+struct HomeCarousel: View {
+    let items: [HeroItem]
+    let open: (HeroItem) -> Void
+    @State private var index = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        TabView(selection: $index) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
+                HeroSlide(item: item, count: items.count, index: i) { open(item) }.tag(i)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .frame(height: 460)
+        // Restarts the wait after every change, so a slide just swiped to stays.
+        .task(id: "\(index)-\(reduceMotion)-\(scenePhase == .active)") {
+            guard items.count > 1, !reduceMotion, scenePhase == .active else { return }
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled else { return }
+            withAnimation { index = (index + 1) % items.count }
+        }
+    }
+}
+
+private struct HeroSlide: View {
+    let item: HeroItem
+    let count: Int
+    let index: Int
     let open: () -> Void
+    @EnvironmentObject private var anilist: AniList
+
+    private var media: Media { item.media }
+
+    private var kicker: String {
+        switch item.reason {
+        case .resume: t("Reprendre · épisode \(item.episode)", "Resume · episode \(item.episode)")
+        case .newEpisode: t("Nouvel épisode · \(item.episode)", "New episode · \(item.episode)")
+        case .trending: t("Tendance", "Trending")
+        }
+    }
+
+    private var meta: String {
+        var parts: [String] = []
+        if let y = media.seasonYear { parts.append(String(y)) }
+        if let e = media.episodes { parts.append(t("\(e) épisodes", "\(e) episodes")) }
+        if let s = media.averageScore { parts.append("\(s) %") }
+        if let g = media.genres, !g.isEmpty { parts.append(g.prefix(3).joined(separator: ", ")) }
+        return parts.joined(separator: " · ")
+    }
+
+    private var watchLabel: String {
+        if item.reason == .resume { return t("Reprendre l'épisode \(item.episode)", "Resume episode \(item.episode)") }
+        if media.isMovie { return t("Regarder", "Watch") }
+        return t("Regarder l'épisode \(item.episode)", "Watch episode \(item.episode)")
+    }
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             CoverImageView(url: media.bannerImage ?? media.coverImage?.extraLarge, corner: 0)
-                .frame(height: 440)
+                .frame(height: 460)
                 .frame(maxWidth: .infinity)
                 .clipped()
                 // A long fade into the ground, then solid ground under the text (4.5:1 over any picture).
@@ -218,20 +282,12 @@ struct HomeHero: View {
                     .init(color: Nami.ground, location: 0.96),
                 ], startPoint: .top, endPoint: .bottom))
             VStack(alignment: .leading, spacing: 8) {
-                Text(resuming ? t("À reprendre", "Up next") : t("En tendance", "Trending"))
-                    .font(.footnote).foregroundStyle(Nami.textSecondary)
+                Text(kicker).font(.footnote.weight(.semibold)).foregroundStyle(Nami.accent(media.coverImage?.color))
                 Text(media.title.display).font(.largeTitle.bold()).lineLimit(3)
-                if !media.isMovie {
-                    Text(media.episodes.map { t("Épisode \(episode) sur \($0)", "Episode \(episode) of \($0)") }
-                         ?? t("Épisode \(episode)", "Episode \(episode)"))
-                        .font(.subheadline).foregroundStyle(Nami.textSecondary)
-                }
+                if !meta.isEmpty { Text(meta).font(.subheadline).foregroundStyle(Nami.textSecondary).lineLimit(2) }
                 HStack(spacing: 10) {
-                    Button { PlayerCenter.shared.openSources(media, episode: episode) } label: {
-                        Label(media.isMovie ? t("Regarder", "Watch")
-                              : resuming ? t("Reprendre l'épisode \(episode)", "Resume episode \(episode)")
-                              : t("Regarder l'épisode \(episode)", "Watch episode \(episode)"),
-                              systemImage: "play.fill")
+                    Button { PlayerCenter.shared.openSources(media, episode: item.episode) } label: {
+                        Label(watchLabel, systemImage: "play.fill")
                             .font(.headline).padding(.horizontal, 6).padding(.vertical, 4)
                     }
                     .buttonStyle(.borderedProminent).tint(Nami.text).foregroundStyle(Nami.ground)
@@ -241,6 +297,17 @@ struct HomeHero: View {
                     .buttonStyle(.bordered).tint(Nami.text)
                 }
                 .padding(.top, 6)
+                if count > 1 {
+                    HStack(spacing: 6) {
+                        ForEach(0..<count, id: \.self) { i in
+                            Capsule().fill(i == index ? Nami.text : Nami.text.opacity(0.25))
+                                .frame(width: i == index ? 30 : 18, height: 3)
+                        }
+                    }
+                    .padding(.top, 10)
+                    .accessibilityElement()
+                    .accessibilityLabel(t("\(index + 1) sur \(count)", "\(index + 1) of \(count)"))
+                }
             }
             .foregroundStyle(Nami.text)
             .padding(.horizontal, 20)
@@ -249,22 +316,58 @@ struct HomeHero: View {
     }
 }
 
+/// Today's episodes in time order: small cover, time, title, episode, and a mark on the anime of your list.
+struct AiringRow: View {
+    let items: [AiringItem]
+    let listIDs: Set<Int>
+    let ns: Namespace.ID
+    @Binding var path: [MediaRoute]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(t("Aujourd'hui", "Today")).font(.title3.bold()).padding(.horizontal).accessibilityAddTraits(.isHeader)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 12) {
+                    ForEach(items) { item in
+                        let route = MediaRoute(media: item.media, source: "today-\(item.id)")
+                        NavigationLink(value: route) { card(item).zoomSource(route.source, in: ns) }
+                            .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    private func card(_ item: AiringItem) -> some View {
+        let time = item.airingAt.formatted(date: .omitted, time: .shortened)
+        return HStack(spacing: 10) {
+            CoverImageView(url: item.media.coverImage?.large, corner: 4).frame(width: 52, height: 74)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.aired ? t("\(time) · sorti", "\(time) · out") : time).font(.caption2.bold()).foregroundStyle(Nami.textSecondary)
+                Text(item.media.title.display).font(.caption.weight(.semibold)).lineLimit(1)
+                Text(t("Épisode \(item.episode)", "Episode \(item.episode)")).font(.caption2).foregroundStyle(Nami.textSecondary)
+                if listIDs.contains(item.media.id) {
+                    Text(t("Dans ta liste", "In your list")).font(.caption2.weight(.semibold))
+                        .foregroundStyle(Nami.accent(item.media.coverImage?.color))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(8)
+        .frame(width: 240)
+        .background(Nami.card.opacity(0.7), in: RoundedRectangle(cornerRadius: 8))
+        .foregroundStyle(Nami.text)
+    }
+}
+
 struct HomeView: View {
     @EnvironmentObject private var anilist: AniList
-    @State private var watching: [WatchingEntry] = []
-    @State private var seasonal: [Media] = []
-    @State private var trending: [Media] = []
-    @State private var error: String?
+    @State private var feed: HomeFeed?
+    @State private var failed = false
     @State private var loaded = false
     @State private var path: [MediaRoute] = []
     @Namespace private var ns
-
-    /// The anime to resume (first with an aired, unwatched episode), else the top trending one.
-    private var hero: (media: Media, episode: Int, resuming: Bool)? {
-        if let w = watching.first(where: \.hasNewEpisode) { return (w.media, w.progress + 1, true) }
-        if let m = trending.first { return (m, 1, false) }
-        return nil
-    }
 
     /// Without AniList, the anime played on this device that still have an episode to go.
     private var local: [Playback.Recent] {
@@ -277,23 +380,10 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 26) {
                     if !loaded {
                         skeleton
+                    } else if let feed {
+                        sections(feed)
                     } else {
-                        if let hero {
-                            let route = MediaRoute(media: hero.media, source: "hero-\(hero.media.id)")
-                            HomeHero(media: hero.media, episode: hero.episode, resuming: hero.resuming) { path.append(route) }
-                                .zoomSource(route.source, in: ns)
-                        }
-                        if let error {
-                            Text(error).font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
-                        }
-                        continueRow
-                        if !anilist.isLoggedIn { loginHint }
-                        if !seasonal.isEmpty {
-                            let (s, y) = AniList.currentSeason()
-                            MediaRow(title: "\(Self.seasonName(s)) \(y)", items: seasonal, ns: ns, path: $path)
-                        }
-                        let rest = trending.filter { $0.id != hero?.media.id }
-                        if !rest.isEmpty { MediaRow(title: t("Tendances", "Trending"), items: rest, ns: ns, path: $path) }
+                        failure
                     }
                 }
                 .padding(.bottom)
@@ -313,30 +403,52 @@ struct HomeView: View {
                 MediaDetailView(media: r.media).zoomDestination(r.source, in: ns)
             }
             .refreshable { await load() }
-            .task(id: anilist.viewer?.id) { await load() }
-            // The list changed (edited, or an episode watched): refresh "Continue" only.
-            .onChange(of: anilist.listRevision) { _, _ in
-                Task { if let w = try? await anilist.watching() { watching = w } }
-            }
+            .task(id: "\(anilist.viewer?.id ?? 0)-\(anilist.listRevision)") { await load() }
         }
     }
 
     @ViewBuilder
-    private var continueRow: some View {
-        let shown = watching.filter { $0.media.id != hero?.media.id }
+    private func sections(_ feed: HomeFeed) -> some View {
+        if !feed.hero.isEmpty {
+            HomeCarousel(items: feed.hero) { item in
+                path.append(MediaRoute(media: item.media, source: "hero-\(item.media.id)"))
+            }
+        }
+        if !anilist.isLoggedIn { loginHint }
+        continueRow(feed)
+        if !feed.today.isEmpty { AiringRow(items: feed.today, listIDs: feed.listIDs, ns: ns, path: $path) }
+        if !feed.planning.isEmpty {
+            MediaRow(title: t("À voir dans ta liste", "Planned in your list"), items: feed.planning, ns: ns, path: $path)
+        }
+        if let because = feed.because {
+            MediaRow(title: t("Parce que tu regardes \(because.source.title.display)", "Because you watch \(because.source.title.display)"),
+                     items: because.items, ns: ns, path: $path)
+        }
+        if !feed.season.isEmpty {
+            let (s, y) = AniList.currentSeason()
+            MediaRow(title: "\(Self.seasonName(s)) \(y)", items: feed.season, ns: ns, path: $path)
+        }
+        if !feed.trending.isEmpty { MediaRow(title: t("Tendances", "Trending"), items: feed.trending, ns: ns, path: $path) }
+        if !feed.topRated.isEmpty {
+            MediaRow(title: t("Les mieux notés", "Top rated"), items: feed.topRated, ns: ns, path: $path, ranked: true)
+        }
+    }
+
+    @ViewBuilder
+    private func continueRow(_ feed: HomeFeed) -> some View {
+        let shown = feed.continueWatching
         if !shown.isEmpty {
             MediaRow(title: t("Continuer", "Continue watching"), items: shown.map(\.media), ns: ns, path: $path) { m in
-                guard let e = shown.first(where: { $0.id == m.id }) else { return nil }
-                if Playback.resumeFraction(media: m.id, episode: e.progress + 1) != nil {
-                    return t("Reprendre l'épisode \(e.progress + 1)", "Resume episode \(e.progress + 1)")
-                }
-                return e.hasNewEpisode ? t("Épisode \(e.progress + 1) dispo", "Episode \(e.progress + 1) out") : nil
+                guard let c = shown.first(where: { $0.id == m.id }) else { return nil }
+                if c.fraction != nil { return t("Reprendre l'épisode \(c.nextEpisode)", "Resume episode \(c.nextEpisode)") }
+                return c.available ? t("Épisode \(c.nextEpisode) dispo", "Episode \(c.nextEpisode) out")
+                    : t("Épisode \(c.nextEpisode)", "Episode \(c.nextEpisode)")
             } progress: { m in
                 // How far into the next episode you are, else how far into the series.
-                guard let e = shown.first(where: { $0.id == m.id }) else { return nil }
-                if let f = Playback.resumeFraction(media: m.id, episode: e.progress + 1) { return f }
+                guard let c = shown.first(where: { $0.id == m.id }) else { return nil }
+                if let f = c.fraction { return f }
                 let total = m.episodes ?? m.availableEpisodes
-                return total > 0 ? Double(e.progress) / Double(total) : nil
+                return total > 0 ? Double(c.nextEpisode - 1) / Double(total) : nil
             }
         } else if !anilist.isLoggedIn, !local.isEmpty {
             let items = local
@@ -353,7 +465,7 @@ struct HomeView: View {
     /// The page's shape while it loads, so nothing jumps when it arrives.
     private var skeleton: some View {
         VStack(alignment: .leading, spacing: 26) {
-            LoadingShape(height: 440, corner: 0)
+            LoadingShape(height: 460, corner: 0)
             ForEach(0..<2, id: \.self) { _ in
                 VStack(alignment: .leading, spacing: 12) {
                     LoadingShape(width: 150, height: 20).padding(.horizontal)
@@ -368,6 +480,19 @@ struct HomeView: View {
         .accessibilityLabel(t("Chargement des animes…", "Loading anime…"))
     }
 
+    private var failure: some View {
+        VStack(spacing: 10) {
+            Text(t("Rien à afficher pour le moment", "Nothing to show yet")).font(.headline)
+            Text(t("Impossible de joindre AniList. Vérifie ta connexion, puis réessaie.",
+                   "Can't reach AniList. Check your connection, then try again."))
+                .font(.subheadline).foregroundStyle(Nami.textSecondary).multilineTextAlignment(.center)
+            Button(t("Réessayer", "Try again")) { Task { await load() } }.buttonStyle(.bordered).tint(Nami.text)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 160)
+        .padding(.horizontal, 32)
+    }
+
     private var loginHint: some View {
         Text(t("Connecte AniList dans Réglages pour reprendre là où tu en es.",
                "Log in to AniList in Settings to pick up where you left off."))
@@ -377,15 +502,8 @@ struct HomeView: View {
     }
 
     private func load() async {
-        do {
-            async let w = anilist.watching()
-            async let s = anilist.seasonal()
-            async let tr = anilist.trending()
-            (watching, seasonal, trending) = try await (w, s, tr)
-            error = nil
-        } catch {
-            self.error = error.localizedDescription
-        }
+        let fresh = await HomeFeed.load(anilist)
+        if let fresh { feed = fresh } else if feed == nil { failed = true }
         loaded = true
     }
 
