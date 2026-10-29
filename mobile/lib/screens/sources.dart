@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../anilist.dart';
 import '../extensions.dart';
+import '../platform.dart';
 import '../release.dart';
 import '../settings.dart';
 import '../theme.dart';
@@ -9,7 +11,13 @@ import '../widgets.dart';
 
 /// Shows the sources for one episode and pops the chosen [TorrentResult].
 /// With [autoPick], the recommended source is played as soon as it is known.
+/// On desktop it slides in from the right as a panel; on touch it is a bottom sheet.
 Future<TorrentResult?> pickSource(BuildContext context, Media media, int episode, {bool autoPick = false}) {
+  if (isDesktop) {
+    return Navigator.of(context).push<TorrentResult>(
+      SourcesPanel.route(SourcesSheet(media: media, episode: episode, autoPick: autoPick, panel: true)),
+    );
+  }
   return showModalBottomSheet<TorrentResult>(
     context: context,
     isScrollControlled: true,
@@ -18,11 +26,66 @@ Future<TorrentResult?> pickSource(BuildContext context, Media media, int episode
   );
 }
 
+/// The desktop frame of the sources: a full-height panel on the right, over
+/// a dark scrim. Escape, the close button or a click beside it closes it.
+class SourcesPanel extends StatelessWidget {
+  const SourcesPanel({super.key, required this.child});
+  final Widget child;
+
+  static const width = 440.0;
+  static const panelKey = ValueKey('sources-panel');
+
+  static Route<TorrentResult> route(Widget child) => PageRouteBuilder<TorrentResult>(
+    opaque: false,
+    barrierDismissible: true,
+    barrierColor: Nami.ground.withValues(alpha: 0.55),
+    barrierLabel: t('Fermer', 'Close'),
+    transitionDuration: const Duration(milliseconds: 200),
+    reverseTransitionDuration: const Duration(milliseconds: 160),
+    pageBuilder: (_, _, _) => SourcesPanel(child: child),
+    transitionsBuilder: (context, animation, _, page) => SlideTransition(
+      position: Tween(
+        begin: const Offset(1, 0),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+      child: page,
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: CallbackShortcuts(
+        bindings: {const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.maybePop(context)},
+        child: Focus(
+          autofocus: true,
+          child: Material(
+            key: panelKey,
+            color: const Color(0xFF1B1B1E),
+            shape: Border(left: BorderSide(color: Nami.line)),
+            child: SizedBox(width: width, height: double.infinity, child: child),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class SourcesSheet extends StatefulWidget {
-  const SourcesSheet({super.key, required this.media, required this.episode, this.autoPick = false});
+  const SourcesSheet({
+    super.key,
+    required this.media,
+    required this.episode,
+    this.autoPick = false,
+    this.panel = false,
+  });
   final Media media;
   final int episode;
   final bool autoPick;
+
+  /// Shown in [SourcesPanel] (desktop) rather than a bottom sheet.
+  final bool panel;
 
   @override
   State<SourcesSheet> createState() => _SourcesSheetState();
@@ -58,6 +121,15 @@ class _SourcesSheetState extends State<SourcesSheet> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.panel) {
+      return CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(child: _header()),
+          ..._body(),
+          const SliverToBoxAdapter(child: SizedBox(height: 24)),
+        ],
+      );
+    }
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.75,
@@ -81,6 +153,42 @@ class _SourcesSheetState extends State<SourcesSheet> {
       if (!media.isMovie) media.title.display,
       if (releases.isNotEmpty) t('${releases.length} sources', '${releases.length} sources'),
     ].join(' · ');
+    final heading = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          header: true,
+          child: Text(title, style: widget.panel ? Nami.section.copyWith(fontSize: 16) : Nami.section),
+        ),
+        if (sub.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            sub,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Nami.meta.copyWith(fontSize: widget.panel ? 12 : null),
+          ),
+        ],
+      ],
+    );
+    if (widget.panel) {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(20, MediaQuery.paddingOf(context).top + 12, 12, 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: heading),
+            FocusOutline(
+              child: IconButton(
+                tooltip: t('Fermer', 'Close'),
+                onPressed: () => Navigator.maybePop(context),
+                icon: const Icon(Icons.close),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 8),
       child: Column(
@@ -94,11 +202,7 @@ class _SourcesSheetState extends State<SourcesSheet> {
             ),
           ),
           const SizedBox(height: 14),
-          Semantics(header: true, child: Text(title, style: Nami.section)),
-          if (sub.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: Nami.meta),
-          ],
+          heading,
         ],
       ),
     );
