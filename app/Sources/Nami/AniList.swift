@@ -114,6 +114,15 @@ struct Media: Codable, Identifiable, Hashable {
     var nextAiringEpisode: AiringEpisode?
     var mediaListEntry: ListEntry?
     var startDate: FuzzyDate?
+    var studios: Studios?
+
+    struct Studios: Codable, Hashable {
+        struct Node: Codable, Hashable { var name: String }
+        var nodes: [Node]?
+    }
+
+    /// The main studio, when AniList knows it.
+    var studio: String? { studios?.nodes?.first?.name }
 
     /// Episodes that can be watched now (aired so far for ongoing shows).
     var availableEpisodes: Int {
@@ -173,6 +182,44 @@ struct LibraryEntry: Identifiable, Hashable {
     var id: Int { media.id }
 }
 
+/// Orders for the viewer's list. `activity` is AniList's order (last updated first).
+enum LibrarySort: String, CaseIterable, Identifiable {
+    case activity, title, score, progress
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .activity: t("Dernière activité", "Last activity")
+        case .title: t("Titre", "Title")
+        case .score: t("Note", "Score")
+        case .progress: t("Progression", "Progress")
+        }
+    }
+
+    /// A sorted copy: unrated anime and unknown totals go last.
+    func sorted(_ entries: [LibraryEntry]) -> [LibraryEntry] {
+        func fraction(_ e: LibraryEntry) -> Double {
+            guard let total = e.media.episodes, total > 0 else { return -1 }
+            return Double(e.entry.progress ?? 0) / Double(total)
+        }
+        switch self {
+        case .activity: return entries
+        case .title: return entries.sorted { $0.media.title.display.lowercased() < $1.media.title.display.lowercased() }
+        case .score: return entries.sorted { ($0.entry.score ?? 0) > ($1.entry.score ?? 0) }
+        case .progress: return entries.sorted { fraction($0) > fraction($1) }
+        }
+    }
+}
+
+/// An episode that airs (or aired) today.
+struct AiringItem: Identifiable, Hashable {
+    var media: Media
+    var episode: Int
+    var airingAt: Date
+    var id: String { "\(media.id)-\(episode)" }
+    var aired: Bool { airingAt <= .now }
+}
+
 struct WatchingEntry: Identifiable, Hashable {
     var media: Media
     var progress: Int
@@ -190,7 +237,7 @@ enum AniListError: LocalizedError {
 let mediaFields = """
 id idMal title { romaji english native userPreferred } coverImage { extraLarge large color }
 bannerImage description(asHtml: false) episodes duration format status season seasonYear
-averageScore genres synonyms nextAiringEpisode { episode airingAt } startDate { year month day }
+studios(isMain: true) { nodes { name } } averageScore genres synonyms nextAiringEpisode { episode airingAt } startDate { year month day }
 mediaListEntry { \(entryFields) }
 """
 
@@ -255,14 +302,56 @@ final class AniList: ObservableObject {
         """, ["s": season, "y": year], as: PageData.self).Page.media
     }
 
-    /// Searches by text and/or genre; with neither, returns the most popular.
-    func search(_ text: String, genre: String? = nil) async throws -> [Media] {
+    /// Searches by text and/or genres (all of them); with neither, returns the most popular.
+    func search(_ text: String, genres: [String] = []) async throws -> [Media] {
         var vars: [String: Any] = ["sort": [text.isEmpty ? "POPULARITY_DESC" : "SEARCH_MATCH"]]
         if !text.isEmpty { vars["q"] = text }
-        if let genre { vars["g"] = genre }
+        if !genres.isEmpty { vars["g"] = genres }
         return try await query("""
-        query($q: String, $g: String, $sort: [MediaSort]) { Page(perPage: 40) { media(type: ANIME, search: $q, genre: $g, sort: $sort, isAdult: false) { \(mediaFields) } } }
+        query($q: String, $g: [String], $sort: [MediaSort]) { Page(perPage: 40) { media(type: ANIME, search: $q, genre_in: $g, sort: $sort, isAdult: false) { \(mediaFields) } } }
         """, vars, as: PageData.self).Page.media
+    }
+
+    func topRated() async throws -> [Media] {
+        try await query("query { Page(perPage: 30) { media(type: ANIME, sort: SCORE_DESC, isAdult: false) { \(mediaFields) } } }", as: PageData.self).Page.media
+    }
+
+    /// Episodes airing during the local day, in time order.
+    func airingToday(now: Date = .now) async throws -> [AiringItem] {
+        let start = Calendar.current.startOfDay(for: now)
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? now
+        struct D: Decodable {
+            struct Page: Decodable { var airingSchedules: [S] }
+            struct S: Decodable { var episode: Int; var airingAt: Int; var media: M? }
+            struct M: Decodable { var isAdult: Bool?; var media: Media
+                init(from decoder: Decoder) throws {
+                    isAdult = try decoder.container(keyedBy: K.self).decodeIfPresent(Bool.self, forKey: .isAdult)
+                    media = try Media(from: decoder)
+                }
+                enum K: String, CodingKey { case isAdult }
+            }
+            var Page: Page
+        }
+        let d = try await query("""
+        query($a: Int, $b: Int) { Page(perPage: 50) { airingSchedules(airingAt_greater: $a, airingAt_lesser: $b, sort: TIME) { episode airingAt media { isAdult \(mediaFields) } } } }
+        """, ["a": Int(start.timeIntervalSince1970) - 1, "b": Int(end.timeIntervalSince1970)], as: D.self)
+        return d.Page.airingSchedules.compactMap { s in
+            guard let m = s.media, m.isAdult != true else { return nil }
+            return AiringItem(media: m.media, episode: s.episode, airingAt: Date(timeIntervalSince1970: TimeInterval(s.airingAt)))
+        }
+    }
+
+    /// AniList's best-rated recommendations for an anime.
+    func recommendations(for id: Int) async throws -> [Media] {
+        struct D: Decodable {
+            struct M: Decodable { var recommendations: R }
+            struct R: Decodable { var nodes: [N] }
+            struct N: Decodable { var mediaRecommendation: Media? }
+            var Media: M
+        }
+        return try await query("""
+        query($id: Int) { Media(id: $id) { recommendations(sort: RATING_DESC, perPage: 15) { nodes { mediaRecommendation { \(mediaFields) } } } } }
+        """, ["id": id], as: D.self).Media.recommendations.nodes.compactMap(\.mediaRecommendation)
     }
 
     func media(id: Int) async throws -> Media {

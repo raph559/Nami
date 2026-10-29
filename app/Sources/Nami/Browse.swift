@@ -465,7 +465,7 @@ struct SearchView: View {
                 if !q.isEmpty { try? await Task.sleep(for: .milliseconds(350)) }
                 guard !Task.isCancelled else { return }
                 loading = true
-                if let found = try? await anilist.search(q, genre: genre), !Task.isCancelled { results = found }
+                if let found = try? await anilist.search(q, genres: genre.map { [$0] } ?? []), !Task.isCancelled { results = found }
                 loading = false
             }
         }
