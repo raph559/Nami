@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../anilist.dart';
 import '../extensions.dart';
+import '../platform.dart';
 import '../settings.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -24,6 +25,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _repo = TextEditingController();
   bool busy = false;
   String version = '';
+
+  /// The section shown on desktop.
+  int section = 0;
 
   @override
   void initState() {
@@ -98,7 +102,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         builder: (context, _) {
           final wide = MediaQuery.sizeOf(context).width >= 900;
           final account = _Section(
-            title: 'AniList',
+            title: t('Compte', 'Account'),
+            flat: isDesktop,
             children: [
               if (anilist.viewer != null)
                 Padding(
@@ -151,6 +156,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           );
           final language = _Section(
             title: t('Langue', 'Language'),
+            flat: isDesktop,
             children: [
               _Setting(
                 label: t("Langue de l'app", 'App language'),
@@ -172,6 +178,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           );
           final playback = _Section(
             title: t('Lecture', 'Playback'),
+            flat: isDesktop,
             children: [
               _Setting(
                 label: t('Qualité préférée', 'Preferred quality'),
@@ -208,8 +215,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 control: Switch(value: settings.autoNext, onChanged: (v) => settings.autoNext = v),
                 inline: true,
               ),
+              if (isDesktop) const _Shortcuts(),
+            ],
+          );
+          final subtitles = _Section(
+            title: t('Sous-titres', 'Subtitles'),
+            flat: isDesktop,
+            children: [
               _Setting(
-                label: t('Sous-titres', 'Subtitles'),
+                label: t('Langue des sous-titres', 'Subtitle language'),
                 detail: t('Langue choisie au début de chaque épisode.', 'Language picked when an episode starts.'),
                 control: _Segments<SubtitleLanguage>(
                   value: settings.subtitleLanguage,
@@ -244,7 +258,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           );
           final extensions = _Section(
-            title: 'Extensions',
+            title: t('Sources et extensions', 'Sources and extensions'),
+            flat: isDesktop,
             footer: t(
               "Même format que les extensions Hayase : colle l'URL de l'index.json du dépôt.",
               "Same format as Hayase extensions: paste the repository's index.json URL.",
@@ -308,7 +323,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           );
           final about = _Section(
-            title: 'Nami',
+            title: t('À propos', 'About'),
+            flat: isDesktop,
             children: [
               ListTile(
                 title: Text(t('Créée par', 'Made by')),
@@ -350,6 +366,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           );
+          final all = [account, playback, subtitles, extensions, language, about];
+          if (isDesktop) {
+            // Sections on the left, the chosen one on the right.
+            final left = MediaQuery.paddingOf(context).left;
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  width: left + 260,
+                  padding: EdgeInsets.fromLTRB(left + 28, top + 26, 16, 16),
+                  decoration: BoxDecoration(
+                    border: Border(right: BorderSide(color: Nami.line)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Semantics(header: true, child: Text(t('Réglages', 'Settings'), style: Nami.pageTitle)),
+                      const SizedBox(height: 18),
+                      for (var i = 0; i < all.length; i++)
+                        _NavEntry(
+                          label: all[i].title,
+                          selected: i == section,
+                          onTap: () => setState(() => section = i),
+                        ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView(
+                    padding: EdgeInsets.fromLTRB(40, top + 14, 40, 32),
+                    children: [
+                      Align(
+                        alignment: Alignment.topLeft,
+                        child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: all[section]),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }
           final side = wide ? 48.0 : 20.0;
           return ListView(
             padding: EdgeInsets.fromLTRB(side, top + (wide ? 32 : 20), side, 32),
@@ -365,7 +422,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(child: Column(children: [account, language, playback])),
+                        Expanded(child: Column(children: [account, language, playback, subtitles])),
                         const SizedBox(width: 32),
                         Expanded(child: Column(children: [extensions, about])),
                       ],
@@ -373,7 +430,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 )
               else
-                ContentWidth(child: Column(children: [account, language, playback, extensions, about])),
+                ContentWidth(child: Column(children: all)),
             ],
           );
         },
@@ -487,13 +544,41 @@ class _LoginScreenState extends State<LoginScreen> {
 /// A labelled dropdown that wraps under its label when the text is large.
 /// A titled group of settings on its own card.
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.children, this.footer});
+  const _Section({required this.title, required this.children, this.footer, this.flat = false});
   final String title;
   final List<Widget> children;
   final String? footer;
 
+  /// Desktop pane: rows on lines, no card around them.
+  final bool flat;
+
   @override
   Widget build(BuildContext context) {
+    if (flat) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 16, bottom: 6, top: 12),
+            child: Semantics(header: true, child: Text(title, style: Nami.section.copyWith(fontSize: 20))),
+          ),
+          Material(
+            type: MaterialType.transparency,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final child in children) ...[child, Divider(height: 1, thickness: 1, color: Nami.line)],
+              ],
+            ),
+          ),
+          if (footer != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              child: Text(footer!, style: Nami.caption),
+            ),
+        ],
+      );
+    }
     return Padding(
       padding: const EdgeInsets.only(top: 24),
       child: Column(
@@ -624,8 +709,108 @@ class _Segments<T> extends StatelessWidget {
           foregroundColor: WidgetStateProperty.resolveWith(
             (s) => s.contains(WidgetState.selected) ? Nami.ground : Nami.text,
           ),
-          textStyle: const WidgetStatePropertyAll(TextStyle(fontFamily: Nami.sans, fontSize: 14)),
+          // Semi-bold when chosen: thin dark strokes on off-white read lighter than they are.
+          textStyle: WidgetStateProperty.resolveWith(
+            (s) => TextStyle(
+              fontFamily: Nami.sans,
+              fontSize: 14,
+              fontWeight: s.contains(WidgetState.selected) ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
         ),
+      ),
+    );
+  }
+}
+
+/// One section in the desktop settings list.
+class _NavEntry extends StatelessWidget {
+  const _NavEntry({required this.label, required this.selected, required this.onTap});
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: FocusOutline(
+        child: Material(
+          color: selected ? Nami.text.withValues(alpha: 0.08) : Colors.transparent,
+          borderRadius: BorderRadius.circular(Nami.radiusButton),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(Nami.radiusButton),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+              child: Text(
+                label,
+                style: Nami.body.copyWith(
+                  fontSize: 14,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  color: selected ? Nami.text : Nami.textSecondary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The player's keyboard shortcuts, so they can be found (desktop only).
+class _Shortcuts extends StatelessWidget {
+  const _Shortcuts();
+
+  @override
+  Widget build(BuildContext context) {
+    final keys = [
+      ('Espace', t('Lecture / pause', 'Play / pause')),
+      ('K', t('Lecture / pause', 'Play / pause')),
+      // Words, not arrows: the app font has no arrow glyphs.
+      (t('Flèches', 'Arrows'), t('Reculer / avancer de 10 s', 'Back / forward 10 s')),
+      ('S', t("Passer l'intro", 'Skip the opening')),
+      ('F', t("Remplir l'écran", 'Fill the screen')),
+      ('Z X', t('Décaler les sous-titres', 'Shift the subtitles')),
+      ('F11', t('Plein écran', 'Full screen')),
+      ('Échap', t('Réduire le lecteur', 'Shrink the player')),
+    ];
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(t('Raccourcis du lecteur', 'Player shortcuts'), style: Nami.body),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 24,
+            runSpacing: 10,
+            children: [
+              for (final (key, action) in keys)
+                SizedBox(
+                  width: 220,
+                  child: Row(
+                    children: [
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Nami.border),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          child: Text(key, style: Nami.caption.copyWith(color: Nami.text)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(action, style: Nami.caption)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }
