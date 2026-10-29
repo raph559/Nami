@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
 
 import '../anilist.dart';
+import '../platform.dart';
 import '../settings.dart';
 import '../theme.dart';
+import '../ui/tabs.dart';
 import '../widgets.dart';
 import 'settings_screen.dart';
 
 /// The viewer's AniList profile and list, one status at a time.
 class LibraryScreen extends StatefulWidget {
-  const LibraryScreen({super.key});
+  const LibraryScreen({super.key, this.loader});
+
+  /// Replaces the AniList request in tests.
+  final Future<Map<String, List<LibraryEntry>>> Function()? loader;
+
+  static const sortKey = ValueKey('library-sort');
 
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
@@ -17,6 +24,8 @@ class LibraryScreen extends StatefulWidget {
 class _LibraryScreenState extends State<LibraryScreen> {
   Map<String, List<LibraryEntry>> lists = {};
   String status = 'CURRENT';
+  LibrarySort sort =
+      LibrarySort.values.asNameMap()[AppSettings.instance.prefs.getString('librarySort')] ?? LibrarySort.activity;
   bool loading = false;
   bool failed = false;
   int? _loadedFor;
@@ -53,7 +62,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       failed = false;
     });
     try {
-      final found = await anilist.library();
+      final found = await (widget.loader ?? anilist.library)();
       if (!mounted) return;
       setState(() {
         lists = found;
@@ -78,17 +87,46 @@ class _LibraryScreenState extends State<LibraryScreen> {
         builder: (context, _) {
           final viewer = anilist.viewer;
           if (viewer == null) return _loggedOut(context, anilist.isLoggedIn);
-          final entries = lists[status] ?? const <LibraryEntry>[];
+          final entries = sortLibrary(lists[status] ?? const <LibraryEntry>[], sort);
+          final side = isDesktop ? MediaQuery.paddingOf(context).left + 36 : 16.0;
           return RefreshIndicator(
             onRefresh: _load,
             child: CustomScrollView(
               slivers: [
-                SliverToBoxAdapter(child: _ProfileHeader(viewer: viewer)),
-                SliverToBoxAdapter(child: _statusChips(context)),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      side,
+                      MediaQuery.paddingOf(context).top + (isDesktop ? 26 : 16),
+                      24,
+                      0,
+                    ),
+                    child: _ProfileHeader(viewer: viewer),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(side, 22, isDesktop ? 40 : 16, 0),
+                    child: UnderlineTabs(
+                      labels: [for (final s in listStatuses) listStatusLabel(s)],
+                      counts: [for (final s in listStatuses) lists[s]?.length],
+                      selected: listStatuses.indexOf(status),
+                      onSelect: (i) => setState(() => status = listStatuses[i]),
+                      trailing: isDesktop ? _sortMenu() : null,
+                    ),
+                  ),
+                ),
+                if (!isDesktop)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(side - 8, 4, 16, 0),
+                      child: Align(alignment: Alignment.centerLeft, child: _sortMenu()),
+                    ),
+                  ),
                 if (loading)
-                  const SliverPadding(
-                    padding: EdgeInsets.all(16),
-                    sliver: SliverToBoxAdapter(child: SkeletonGrid()),
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(side, 16, 16, 16),
+                    sliver: const SliverToBoxAdapter(child: SkeletonGrid()),
                   )
                 else if (failed)
                   SliverToBoxAdapter(
@@ -102,7 +140,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 else if (entries.isEmpty)
                   SliverToBoxAdapter(
                     child: StateMessage(
-                      title: t('Rien ici pour l\'instant', 'Nothing here yet'),
+                      title: t("Rien ici pour l'instant", 'Nothing here yet'),
                       body: t(
                         "Sur la page d'un anime, « Ma liste » le range dans ta liste AniList.",
                         "On an anime's page, \"My list\" files it in your AniList list.",
@@ -110,11 +148,42 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     ),
                   )
                 else
-                  _grid(entries),
+                  _grid(entries, side),
               ],
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _sortMenu() {
+    return PopupMenuButton<LibrarySort>(
+      key: LibraryScreen.sortKey,
+      tooltip: t('Trier', 'Sort'),
+      initialValue: sort,
+      onSelected: (s) {
+        setState(() => sort = s);
+        AppSettings.instance.prefs.setString('librarySort', s.name);
+      },
+      itemBuilder: (_) => [for (final s in LibrarySort.values) PopupMenuItem(value: s, child: Text(s.label))],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                t('Trier : ${sort.label}', 'Sort: ${sort.label}'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Nami.caption.copyWith(fontSize: 13),
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(Icons.keyboard_arrow_down, size: 18, color: Nami.textSecondary),
+          ],
+        ),
       ),
     );
   }
@@ -165,39 +234,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  Widget _statusChips(BuildContext context) {
-    return SizedBox(
-      height: 64 + MediaQuery.textScalerOf(context).scale(13) - 13,
-      child: ListView.separated(
-        clipBehavior: Clip.none,
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        itemCount: listStatuses.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (_, i) {
-          final s = listStatuses[i];
-          final count = lists[s]?.length;
-          return FocusOutline(
-            child: ChoiceChip(
-              label: Text(count == null ? listStatusLabel(s) : '${listStatusLabel(s)}  $count'),
-              selected: status == s,
-              showCheckmark: false,
-              materialTapTargetSize: MaterialTapTargetSize.padded,
-              onSelected: (_) => setState(() => status = s),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _grid(List<LibraryEntry> entries) {
+  Widget _grid(List<LibraryEntry> entries, double side) {
     return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      padding: EdgeInsets.fromLTRB(side, 16, isDesktop ? 40 : 16, 32),
       sliver: SliverLayoutBuilder(
         builder: (context, c) {
           final available = c.crossAxisExtent;
-          final columns = ((available + 12) / (130 + 12)).ceil().clamp(2, 10);
+          final cover = isDesktop ? 120.0 : 104.0;
+          final columns = ((available + 12) / (cover + 12)).ceil().clamp(2, 12);
           final cell = (available - 12 * (columns - 1)) / columns;
           return SliverGrid(
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -230,7 +274,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return [
       if (!e.media.isMovie) total == null ? t('$progress ép.', '$progress ep.') : '$progress / $total',
       if (score > 0)
-        '★ ${score == score.roundToDouble() ? score.toInt() : score.toStringAsFixed(1).replaceAll('.', t(',', '.'))}',
+        // Words, not "★": the app font has no star glyph.
+        t('note ', 'score ') +
+            (score == score.roundToDouble()
+                ? '${score.toInt()}'
+                : score.toStringAsFixed(1).replaceAll('.', t(',', '.'))),
     ].join(' · ');
   }
 
@@ -247,45 +295,32 @@ class _ProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final top = MediaQuery.paddingOf(context).top;
     final days = viewer.minutesWatched / 60 / 24;
     final stats = [
       t('${viewer.animeCount} animes', '${viewer.animeCount} anime'),
       t('${viewer.episodesWatched} épisodes vus', '${viewer.episodesWatched} episodes watched'),
       t('${days.toStringAsFixed(1).replaceAll('.', ',')} jours', '${days.toStringAsFixed(1)} days'),
     ].join(' · ');
-    return SizedBox(
-      height: 190 + top,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (viewer.banner != null)
-            Padding(padding: const EdgeInsets.only(bottom: 2), child: CoverImage(viewer.banner, radius: 0)),
-          const GroundFade(from: 0.1),
-          Positioned(
-            left: 20,
-            right: 20,
-            bottom: 12,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                SizedBox(width: 72, height: 72, child: CoverImage(viewer.avatar, radius: 36)),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Semantics(header: true, child: Text(viewer.name, style: Nami.pageTitle)),
-                      const SizedBox(height: 4),
-                      Text(stats, style: Nami.meta),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+    final avatar = isDesktop ? 64.0 : 52.0;
+    return Row(
+      children: [
+        SizedBox(
+          width: avatar,
+          height: avatar,
+          child: CoverImage(viewer.avatar, radius: avatar / 2),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(header: true, child: Text(viewer.name, style: Nami.pageTitle)),
+              const SizedBox(height: 2),
+              Text(stats, style: Nami.meta.copyWith(fontSize: isDesktop ? 13 : null)),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
