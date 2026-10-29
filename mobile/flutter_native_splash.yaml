@@ -1,0 +1,8 @@
+# Launch screen on the app's black ground. Run: dart run flutter_native_splash:create
+flutter_native_splash:
+  color: "#0A0A0B"
+  image: assets/icon/icon.png
+  android_12:
+    color: "#0A0A0B"
+    image: assets/icon/icon.png
+  web: false

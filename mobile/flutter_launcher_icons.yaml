@@ -1,0 +1,14 @@
+# Same icon as the Swift app (app/Icon.png). Run: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  image_path: assets/icon/icon.png
+  android: true
+  # The artwork is full-bleed, so it is the adaptive background and the
+  # foreground layer stays empty: any mask shape crops the waves cleanly.
+  adaptive_icon_background: assets/icon/icon.png
+  adaptive_icon_foreground: assets/icon/foreground-empty.png
+  ios: true
+  remove_alpha_ios: true
+  windows:
+    generate: true
+    image_path: assets/icon/icon.png
+    icon_size: 256
