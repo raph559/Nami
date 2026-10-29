@@ -10,6 +10,7 @@ import 'screens/detail.dart';
 import 'settings.dart';
 import 'theme.dart';
 import 'ui/hover_card.dart';
+import 'ui/motion.dart';
 
 /// Network image that fills the space it is given.
 class CoverImage extends StatelessWidget {
@@ -210,7 +211,7 @@ class MediaCard extends StatefulWidget {
   State<MediaCard> createState() => _MediaCardState();
 }
 
-class _MediaCardState extends State<MediaCard> {
+class _MediaCardState extends State<MediaCard> with SingleTickerProviderStateMixin {
   bool hovered = false;
 
   // Desktop hover card: opens 400 ms after the pointer or the focus arrives,
@@ -219,12 +220,19 @@ class _MediaCardState extends State<MediaCard> {
   final _link = LayerLink();
   Timer? _openTimer, _closeTimer;
 
+  /// The card fades and grows in, and fades out before it goes.
+  late final _appear = AnimationController(vsync: this, duration: const Duration(milliseconds: 220));
+  late final _curve = CurvedAnimation(parent: _appear, curve: Motion.curve, reverseCurve: Curves.easeIn);
+
   void _scheduleOpen() {
     if (!isDesktop) return;
     _closeTimer?.cancel();
     _openTimer?.cancel();
     _openTimer = Timer(const Duration(milliseconds: 400), () {
-      if (mounted) _card.show();
+      if (!mounted) return;
+      _appear.duration = Motion.of(context).medium;
+      _card.show();
+      _appear.forward();
     });
   }
 
@@ -237,13 +245,17 @@ class _MediaCardState extends State<MediaCard> {
   void _close() {
     _openTimer?.cancel();
     _closeTimer?.cancel();
-    if (mounted && _card.isShowing) _card.hide();
+    if (!mounted || !_card.isShowing) return;
+    _appear.reverse().whenCompleteOrCancel(() {
+      if (mounted && _appear.isDismissed && _card.isShowing) _card.hide();
+    });
   }
 
   @override
   void dispose() {
     _openTimer?.cancel();
     _closeTimer?.cancel();
+    _appear.dispose();
     super.dispose();
   }
 
@@ -271,7 +283,14 @@ class _MediaCardState extends State<MediaCard> {
         child: MouseRegion(
           onEnter: (_) => _closeTimer?.cancel(),
           onExit: (_) => _scheduleClose(),
-          child: MediaHoverCard(media: media, onDone: _close),
+          child: FadeTransition(
+            opacity: _curve,
+            child: ScaleTransition(
+              scale: Tween(begin: 0.95, end: 1.0).animate(_curve),
+              alignment: follower,
+              child: MediaHoverCard(media: media, onDone: _close),
+            ),
+          ),
         ),
       ),
     );

@@ -83,7 +83,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 450));
     expect(find.byType(MediaHoverCard), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.byType(MediaHoverCard), findsNothing);
   });
 
@@ -119,5 +119,21 @@ void main() {
     final rect = tester.getRect(find.byType(MediaHoverCard));
     expect(rect.right, lessThanOrEqualTo(800));
     expect(rect.left, greaterThanOrEqualTo(0));
+  });
+
+  testWidgets('the card fades and grows in', (tester) async {
+    final mouse = await pumpCard(tester, desktop: true);
+    await mouse.moveTo(tester.getCenter(find.byType(MediaCard)));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 30));
+    double opacity() => tester
+        .widget<FadeTransition>(
+          find.ancestor(of: find.byType(MediaHoverCard), matching: find.byType(FadeTransition)).first,
+        )
+        .opacity
+        .value;
+    expect(opacity(), lessThan(1));
+    await tester.pumpAndSettle();
+    expect(opacity(), 1);
   });
 }
