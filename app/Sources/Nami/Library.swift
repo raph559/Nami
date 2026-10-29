@@ -159,6 +159,8 @@ struct LibraryView: View {
     @EnvironmentObject private var anilist: AniList
     @State private var lists: [ListStatus: [LibraryEntry]] = [:]
     @State private var status: ListStatus = .CURRENT
+    @AppStorage("librarySort") private var sortRaw = LibrarySort.activity.rawValue
+    private var sort: LibrarySort { LibrarySort(rawValue: sortRaw) ?? .activity }
     @State private var loaded = false
     @State private var failed = false
     @State private var path: [MediaRoute] = []
@@ -195,7 +197,7 @@ struct LibraryView: View {
 
     @ViewBuilder
     private var content: some View {
-        let entries = lists[status] ?? []
+        let entries = sort.sorted(lists[status] ?? [])
         if !loaded {
             LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(0..<9, id: \.self) { _ in LoadingShape(height: 160) }
@@ -224,19 +226,44 @@ struct LibraryView: View {
         }
     }
 
+    /// Text tabs over a thin line, the chosen one bold with a bar under it (same as Android and Windows).
     private var statusChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(ListStatus.allCases) { s in
-                    let count = lists[s]?.count
-                    Button { status = s } label: {
-                        Text(count.map { "\(s.label)  \($0)" } ?? s.label).font(.subheadline)
-                            .padding(.horizontal, 12).padding(.vertical, 7)
-                            .background(status == s ? Nami.text : .white.opacity(0.08), in: Capsule())
-                            .foregroundStyle(status == s ? Nami.ground : Nami.text)
+        VStack(alignment: .leading, spacing: 4) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .bottom, spacing: 22) {
+                    ForEach(ListStatus.allCases) { s in
+                        let count = lists[s]?.count
+                        Button { status = s } label: {
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                    Text(s.label).font(.subheadline.weight(status == s ? .bold : .medium))
+                                        .foregroundStyle(status == s ? Nami.text : Nami.textSecondary)
+                                    if let count {
+                                        Text("\(count)").font(.caption).foregroundStyle(Nami.textMuted)
+                                    }
+                                }
+                                Capsule().fill(status == s ? Nami.text : .clear).frame(height: 2)
+                            }
+                            .fixedSize()
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(status == s ? .isSelected : [])
                     }
-                    .accessibilityAddTraits(status == s ? .isSelected : [])
                 }
+                .padding(.horizontal)
+            }
+            .overlay(alignment: .bottom) { Rectangle().fill(Nami.text.opacity(0.1)).frame(height: 1).padding(.horizontal) }
+            Menu {
+                Picker(t("Trier", "Sort"), selection: $sortRaw) {
+                    ForEach(LibrarySort.allCases) { Text($0.label).tag($0.rawValue) }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(t("Trier : \(sort.label)", "Sort: \(sort.label)")).font(.footnote)
+                    Image(systemName: "chevron.down").font(.caption2)
+                }
+                .foregroundStyle(Nami.textSecondary)
+                .padding(.vertical, 8)
             }
             .padding(.horizontal)
         }

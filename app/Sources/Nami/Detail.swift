@@ -133,7 +133,10 @@ struct MediaDetailView: View {
         var parts: [String] = []
         if let f = media.format { parts.append(f.replacingOccurrences(of: "_", with: " ")) }
         if let y = media.seasonYear { parts.append(String(y)) }
-        if let e = media.episodes { parts.append(t("\(e) ép.", "\(e) ep.")) }
+        if let e = media.episodes {
+            parts.append(media.duration.map { t("\(e) ép. de \($0) min", "\(e) ep. of \($0) min") } ?? t("\(e) ép.", "\(e) ep."))
+        }
+        if let studio = media.studio { parts.append(studio) }
         if let s = media.averageScore { parts.append("\(s) %") }
         if let next = media.nextAiringEpisode {
             let d = Date(timeIntervalSince1970: TimeInterval(next.airingAt))

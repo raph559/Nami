@@ -521,7 +521,7 @@ struct HomeView: View {
 struct SearchView: View {
     @EnvironmentObject private var anilist: AniList
     @State private var text = ""
-    @State private var genre: String?
+    @State private var genres: Set<String> = []
     @State private var results: [Media] = []
     @State private var loading = false
     @State private var path: [MediaRoute] = []
@@ -535,7 +535,7 @@ struct SearchView: View {
 
     private var heading: String {
         if !text.trimmingCharacters(in: .whitespaces).isEmpty { return t("Résultats", "Results") }
-        if let genre { return genre }
+        if !genres.isEmpty { return genres.sorted().joined(separator: ", ") }
         return t("Les plus populaires", "Most popular")
     }
 
@@ -546,12 +546,14 @@ struct SearchView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(Self.genres, id: \.self) { g in
-                                Button { genre = genre == g ? nil : g } label: {
+                                let on = genres.contains(g)
+                                Button { if on { genres.remove(g) } else { genres.insert(g) } } label: {
                                     Text(g).font(.subheadline)
                                         .padding(.horizontal, 12).padding(.vertical, 7)
-                                        .background(genre == g ? Nami.text : .white.opacity(0.08), in: Capsule())
-                                        .foregroundStyle(genre == g ? Nami.ground : Nami.text)
+                                        .background(on ? Nami.text : .white.opacity(0.08), in: Capsule())
+                                        .foregroundStyle(on ? Nami.ground : Nami.text)
                                 }
+                                .accessibilityAddTraits(on ? .isSelected : [])
                             }
                         }
                         .padding(.horizontal)
@@ -577,13 +579,13 @@ struct SearchView: View {
             .navigationDestination(for: MediaRoute.self) { r in
                 MediaDetailView(media: r.media).zoomDestination(r.source, in: ns)
             }
-            .task(id: "\(text)|\(genre ?? "")") {
+            .task(id: "\(text)|\(genres.sorted().joined(separator: ","))") {
                 let q = text.trimmingCharacters(in: .whitespaces)
                 if q.count == 1 { return }
                 if !q.isEmpty { try? await Task.sleep(for: .milliseconds(350)) }
                 guard !Task.isCancelled else { return }
                 loading = true
-                if let found = try? await anilist.search(q, genres: genre.map { [$0] } ?? []), !Task.isCancelled { results = found }
+                if let found = try? await anilist.search(q, genres: Self.genres.filter(genres.contains)), !Task.isCancelled { results = found }
                 loading = false
             }
         }
