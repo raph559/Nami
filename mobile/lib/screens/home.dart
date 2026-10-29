@@ -39,52 +39,95 @@ class AniListHomeApi implements HomeApi {
   Future<List<Media>> recommendationsFor(int id) => _a.recommendationsFor(id);
 }
 
-/// Fetches every section at once; a source that fails only empties its own section.
-/// Returns null when every source failed.
-Future<HomeFeed?> loadHomeFeed(HomeApi api, {required bool loggedIn}) async {
+/// What the home was built from, kept so a refresh can reuse what it does not fetch again.
+class HomeInputs {
+  const HomeInputs({
+    this.watching = const [],
+    this.library = const {},
+    this.recommendations = const [],
+    this.today = const [],
+    this.season = const [],
+    this.trending = const [],
+    this.topRated = const [],
+  });
+
+  final List<WatchingEntry> watching;
+  final Map<String, List<LibraryEntry>> library;
+  final List<Media> recommendations;
+  final List<AiringItem> today;
+  final List<Media> season;
+  final List<Media> trending;
+  final List<Media> topRated;
+
+  HomeFeed feed({required bool loggedIn}) {
+    final source = watching.isEmpty ? null : watching.first.media;
+    return HomeFeed.build(
+      loggedIn: loggedIn,
+      watching: watching,
+      planning: library['PLANNING'] ?? const [],
+      recommendations: recommendations,
+      recommendationSource: source,
+      today: today,
+      season: season,
+      trending: trending,
+      topRated: topRated,
+      resumeFraction: AppSettings.instance.resumeFraction,
+      listIds: {
+        for (final list in library.values)
+          for (final e in list) e.media.id,
+        for (final w in watching) w.media.id,
+      },
+    );
+  }
+}
+
+/// Fetches the home's sources at once. A source that fails keeps what [previous] had
+/// (or stays empty), so one failed request never blanks a row that was on screen.
+/// With [accountOnly], only the rows that depend on your list are fetched again.
+/// Returns null when every request failed and there was nothing before.
+Future<HomeInputs?> fetchHomeInputs(
+  HomeApi api, {
+  required bool loggedIn,
+  HomeInputs? previous,
+  bool accountOnly = false,
+}) async {
+  final before = previous ?? const HomeInputs();
   var failures = 0, attempts = 0;
-  Future<T> safe<T>(Future<T> Function() f, T empty) async {
+  Future<T> fetch<T>(Future<T> Function() f, T fallback) async {
     attempts++;
     try {
       return await f();
     } catch (_) {
       failures++;
-      return empty;
+      return fallback;
     }
   }
 
-  final watchingF = loggedIn ? safe(api.watching, <WatchingEntry>[]) : Future.value(<WatchingEntry>[]);
-  final libraryF = loggedIn
-      ? safe(api.library, <String, List<LibraryEntry>>{})
-      : Future.value(<String, List<LibraryEntry>>{});
-  final seasonF = safe(api.seasonal, <Media>[]);
-  final trendingF = safe(api.trending, <Media>[]);
-  final topF = safe(api.topRated, <Media>[]);
-  final todayF = safe(api.airingToday, <AiringItem>[]);
+  Future<T> public<T>(Future<T> Function() f, T kept) => accountOnly ? Future.value(kept) : fetch(f, kept);
+
+  final watchingF = loggedIn ? fetch(api.watching, before.watching) : Future.value(<WatchingEntry>[]);
+  final libraryF = loggedIn ? fetch(api.library, before.library) : Future.value(<String, List<LibraryEntry>>{});
+  final todayF = public(api.airingToday, before.today);
+  final seasonF = public(api.seasonal, before.season);
+  final trendingF = public(api.trending, before.trending);
+  final topF = public(api.topRated, before.topRated);
   final watching = await watchingF;
   // Suggestions from the anime you watched most recently.
   final source = watching.isEmpty ? null : watching.first.media;
-  final recs = source == null ? <Media>[] : await safe(() => api.recommendationsFor(source.id), <Media>[]);
-  final library = await libraryF;
-  final today = await todayF, season = await seasonF, trending = await trendingF, top = await topF;
-  if (failures == attempts) return null;
-  return HomeFeed.build(
-    loggedIn: loggedIn,
+  final recs = source == null
+      ? <Media>[]
+      : await fetch(() => api.recommendationsFor(source.id), before.recommendations);
+  final inputs = HomeInputs(
     watching: watching,
-    planning: library['PLANNING'] ?? const [],
+    library: await libraryF,
     recommendations: recs,
-    recommendationSource: source,
-    today: today,
-    season: season,
-    trending: trending,
-    topRated: top,
-    resumeFraction: AppSettings.instance.resumeFraction,
-    listIds: {
-      for (final list in library.values)
-        for (final e in list) e.media.id,
-      for (final w in watching) w.media.id,
-    },
+    today: await todayF,
+    season: await seasonF,
+    trending: await trendingF,
+    topRated: await topF,
   );
+  if (attempts > 0 && failures == attempts && previous == null) return null;
+  return inputs;
 }
 
 class HomeScreen extends StatefulWidget {
@@ -104,6 +147,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   HomeFeed? feed;
+  HomeInputs? _inputs;
+
+  /// Goes up with every load: an older load that finishes last is dropped.
+  int _request = 0;
   bool loading = true;
   bool failed = false;
   int? _loadedFor;
@@ -124,20 +171,36 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onAccount() {
     final anilist = AniList.instance;
-    if (anilist.viewer?.id != _loadedFor || anilist.listRevision != _revision) _load();
+    if (anilist.viewer?.id != _loadedFor) {
+      _load();
+    } else if (anilist.listRevision != _revision) {
+      // The list changed (edited, or an episode watched): only the rows that depend on it.
+      _load(accountOnly: true);
+    }
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool accountOnly = false}) async {
     final anilist = AniList.instance;
+    final request = ++_request;
+    final sameAccount = anilist.viewer?.id == _loadedFor;
     _loadedFor = anilist.viewer?.id;
     _revision = anilist.listRevision;
     setState(() => loading = feed == null);
-    final loaded = await loadHomeFeed(widget.api, loggedIn: anilist.isLoggedIn);
-    if (!mounted) return;
+    final loggedIn = anilist.isLoggedIn;
+    final inputs = await fetchHomeInputs(
+      widget.api,
+      loggedIn: loggedIn,
+      previous: sameAccount ? _inputs : null,
+      accountOnly: accountOnly && _inputs != null,
+    );
+    if (!mounted || request != _request) return;
     setState(() {
       loading = false;
-      failed = loaded == null && feed == null;
-      if (loaded != null) feed = loaded;
+      failed = inputs == null && feed == null;
+      if (inputs != null) {
+        _inputs = inputs;
+        feed = inputs.feed(loggedIn: loggedIn);
+      }
     });
   }
 

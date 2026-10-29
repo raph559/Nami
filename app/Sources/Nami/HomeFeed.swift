@@ -66,32 +66,50 @@ struct HomeFeed {
         return feed
     }
 
-    /// Fetches every section at once; a source that fails only empties its own section.
-    /// Returns nil when every source failed.
+    /// Fetches the sources at once. A source that fails keeps what `previous` had, so one failed
+    /// request never blanks a row that was on screen. With `accountOnly`, only the rows that depend
+    /// on your list are fetched again. Returns nil when every request failed and there was nothing before.
     @MainActor
-    static func load(_ anilist: AniList) async -> HomeFeed? {
+    static func load(_ anilist: AniList, previous: HomeInputs?, accountOnly: Bool = false) async -> HomeInputs? {
         let loggedIn = anilist.isLoggedIn
+        let before = previous ?? HomeInputs()
+        let reusePublic = accountOnly && previous != nil
         async let watchingR: [WatchingEntry]? = loggedIn ? try? await anilist.watching() : []
         async let libraryR: [ListStatus: [LibraryEntry]]? = loggedIn ? try? await anilist.library() : [:]
-        async let todayR = try? await anilist.airingToday()
-        async let seasonR = try? await anilist.seasonal()
-        async let trendingR = try? await anilist.trending()
-        async let topR = try? await anilist.topRated()
+        async let todayR = reusePublic ? before.today : try? await anilist.airingToday()
+        async let seasonR = reusePublic ? before.season : try? await anilist.seasonal()
+        async let trendingR = reusePublic ? before.trending : try? await anilist.trending()
+        async let topR = reusePublic ? before.topRated : try? await anilist.topRated()
         let watching = await watchingR
         // Suggestions from the anime you watched most recently.
-        let source = watching?.first?.media
+        let source = (watching ?? before.watching).first?.media
         let recs: [Media]? = if let source { try? await anilist.recommendations(for: source.id) } else { [] }
         let (library, today, season, trending, top) = await (libraryR, todayR, seasonR, trendingR, topR)
-        // Only the requests actually made count (logged out, the account ones are skipped).
-        var results: [Any?] = [today, season, trending, top]
-        if loggedIn { results += [watching, library] }
-        if source != nil { results.append(recs) }
-        if results.allSatisfy({ $0 == nil }) { return nil }
-        var ids = Set((library ?? [:]).values.flatMap { $0.map(\.media.id) })
-        ids.formUnion((watching ?? []).map(\.media.id))
-        return build(loggedIn: loggedIn, watching: watching ?? [], planning: library?[.PLANNING] ?? [],
-                     recommendations: recs ?? [], recommendationSource: source, today: today ?? [], season: season ?? [],
-                     trending: trending ?? [], topRated: top ?? [],
-                     resumeFraction: { Playback.resumeFraction(media: $0, episode: $1) }, listIDs: ids)
+        let all: [Any?] = [watching, library, today, season, trending, top, recs]
+        if previous == nil, all.allSatisfy({ $0 == nil }) { return nil }
+        return HomeInputs(watching: watching ?? before.watching, library: library ?? before.library,
+                          recommendations: recs ?? before.recommendations, today: today ?? before.today,
+                          season: season ?? before.season, trending: trending ?? before.trending,
+                          topRated: top ?? before.topRated)
+    }
+}
+
+/// What the home was built from, kept so a refresh can reuse what it does not fetch again.
+struct HomeInputs {
+    var watching: [WatchingEntry] = []
+    var library: [ListStatus: [LibraryEntry]] = [:]
+    var recommendations: [Media] = []
+    var today: [AiringItem] = []
+    var season: [Media] = []
+    var trending: [Media] = []
+    var topRated: [Media] = []
+
+    func feed(loggedIn: Bool) -> HomeFeed {
+        var ids = Set(library.values.flatMap { $0.map(\.media.id) })
+        ids.formUnion(watching.map(\.media.id))
+        return HomeFeed.build(loggedIn: loggedIn, watching: watching, planning: library[.PLANNING] ?? [],
+                              recommendations: recommendations, recommendationSource: watching.first?.media,
+                              today: today, season: season, trending: trending, topRated: topRated,
+                              resumeFraction: { Playback.resumeFraction(media: $0, episode: $1) }, listIDs: ids)
     }
 }

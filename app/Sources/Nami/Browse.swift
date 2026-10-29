@@ -364,7 +364,9 @@ struct AiringRow: View {
 struct HomeView: View {
     @EnvironmentObject private var anilist: AniList
     @State private var feed: HomeFeed?
-    @State private var failed = false
+    @State private var inputs: HomeInputs?
+    @State private var loadedFor: Int?
+    @State private var revision = -1
     @State private var loaded = false
     @State private var path: [MediaRoute] = []
     @Namespace private var ns
@@ -403,7 +405,11 @@ struct HomeView: View {
                 MediaDetailView(media: r.media).zoomDestination(r.source, in: ns)
             }
             .refreshable { await load() }
-            .task(id: "\(anilist.viewer?.id ?? 0)-\(anilist.listRevision)") { await load() }
+            .task(id: "\(anilist.viewer?.id ?? 0)-\(anilist.listRevision)") {
+                // A list change only refreshes the rows that depend on the list.
+                let sameAccount = loadedFor == anilist.viewer?.id && inputs != nil
+                await load(accountOnly: sameAccount && revision != anilist.listRevision)
+            }
         }
     }
 
@@ -501,9 +507,17 @@ struct HomeView: View {
             .padding(.horizontal, 20)
     }
 
-    private func load() async {
-        let fresh = await HomeFeed.load(anilist)
-        if let fresh { feed = fresh } else if feed == nil { failed = true }
+    private func load(accountOnly: Bool = false) async {
+        let account = anilist.viewer?.id
+        let fresh = await HomeFeed.load(anilist, previous: account == loadedFor ? inputs : nil, accountOnly: accountOnly)
+        // A newer load replaced this one: leave the screen to it.
+        guard !Task.isCancelled else { return }
+        loadedFor = account
+        revision = anilist.listRevision
+        if let fresh {
+            inputs = fresh
+            feed = fresh.feed(loggedIn: anilist.isLoggedIn)
+        }
         loaded = true
     }
 

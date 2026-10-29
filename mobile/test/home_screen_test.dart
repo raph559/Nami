@@ -17,9 +17,11 @@ Media anime(int id, {int? nextEpisode}) => Media({
 
 class FakeApi implements HomeApi {
   FakeApi({this.failing = const {}});
-  final Set<String> failing;
+  Set<String> failing;
+  int calls = 0;
 
   Future<T> _maybe<T>(String name, T value) async {
+    calls++;
     if (failing.contains(name)) throw Exception(name);
     return value;
   }
@@ -148,4 +150,65 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Anime 1'), findsWidgets);
   });
+
+  testWidgets('a failed refresh keeps the rows it had', (tester) async {
+    final api = FakeApi();
+    await pumpHome(tester, api: api, size: tall);
+    expect(find.text('Tendances'), findsOneWidget);
+    api.failing = {'trending'};
+    bumpList();
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Tendances'), findsOneWidget);
+  });
+
+  testWidgets('a list change reloads only the account rows', (tester) async {
+    final api = FakeApi();
+    await pumpHome(tester, api: api, size: tall);
+    final before = api.calls;
+    bumpList();
+    await tester.pump();
+    await tester.pump();
+    // watching, library and recommendations: the public rows are not asked again.
+    expect(api.calls - before, 3);
+  });
+
+  testWidgets('an older load finishing last is ignored', (tester) async {
+    final api = SlowFirstApi();
+    await pumpHome(tester, api: api, size: tall);
+    bumpList();
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Anime 2'), findsWidgets);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+    expect(find.text('Anime 2'), findsWidgets);
+    expect(find.text('Anime 1'), findsNothing);
+  });
+}
+
+/// The list changed (edited in Nami): screens showing it reload.
+void bumpList() {
+  AniList.instance.listRevision++;
+  // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+  AniList.instance.notifyListeners();
+}
+
+/// The first "watching" answer comes back late and holds old data.
+class SlowFirstApi extends FakeApi {
+  int watchingCalls = 0;
+  @override
+  Future<List<WatchingEntry>> watching() async {
+    watchingCalls++;
+    if (watchingCalls == 1) {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      return [WatchingEntry(anime(1, nextEpisode: 5), 2)];
+    }
+    return [WatchingEntry(anime(2, nextEpisode: 5), 2)];
+  }
+
+  @override
+  Future<List<Media>> trending() async => [];
+  @override
+  Future<List<Media>> recommendationsFor(int id) async => [];
 }
