@@ -7,6 +7,7 @@ import '../settings.dart';
 import '../theme.dart';
 import '../ui/airing_row.dart';
 import '../ui/hero_carousel.dart';
+import '../ui/motion.dart';
 import '../widgets.dart';
 
 /// Where the home gets its data; tests pass a fake.
@@ -206,6 +207,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // The loading shapes, the message or the page: they cross-fade into each other.
+    final state = feed != null ? 'feed' : (loading ? 'loading' : 'failed');
+    return AnimatedSwitcher(
+      duration: Motion.of(context).medium,
+      child: KeyedSubtree(key: ValueKey(state), child: _page(context)),
+    );
+  }
+
+  Widget _page(BuildContext context) {
     final feed = this.feed;
     if (loading && feed == null) {
       // The page's shape while it loads, so nothing jumps when it arrives.

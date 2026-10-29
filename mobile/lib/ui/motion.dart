@@ -72,3 +72,39 @@ class _QuietTapState extends State<QuietTap> {
     child: widget.builder(context, hovered),
   );
 }
+
+/// An [IndexedStack] (every page keeps its state) whose shown page fades in
+/// when the index changes.
+class FadeIndexedStack extends StatefulWidget {
+  const FadeIndexedStack({super.key, required this.index, required this.children});
+  final int index;
+  final List<Widget> children;
+
+  @override
+  State<FadeIndexedStack> createState() => _FadeIndexedStackState();
+}
+
+class _FadeIndexedStackState extends State<FadeIndexedStack> with SingleTickerProviderStateMixin {
+  late final _fade = AnimationController(vsync: this, value: 1);
+
+  @override
+  void didUpdateWidget(FadeIndexedStack old) {
+    super.didUpdateWidget(old);
+    if (old.index != widget.index) {
+      _fade.duration = Motion.of(context).medium;
+      _fade.forward(from: _fade.duration == Duration.zero ? 1 : 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _fade.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+    opacity: CurvedAnimation(parent: _fade, curve: Motion.curve),
+    child: IndexedStack(index: widget.index, children: widget.children),
+  );
+}

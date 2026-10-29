@@ -5,6 +5,8 @@ import 'package:nami/settings.dart';
 import 'package:nami/theme.dart';
 import 'package:nami/ui/motion.dart';
 import 'package:nami/ui/tabs.dart';
+import 'package:nami/main.dart';
+import 'package:nami/platform.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Widget host(Widget child, {bool reduce = false}) => MaterialApp(
@@ -89,5 +91,29 @@ void main() {
     await tester.pumpAndSettle();
     expect(mid, lessThan(1));
     expect(share(), 1);
+  });
+
+  testWidgets('switching tab fades the new page in', (tester) async {
+    debugDesktopOverride = true;
+    addTearDown(() => debugDesktopOverride = null);
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: Nami.desktopTheme(),
+        home: const RootScreen(pages: [Text('home'), Text('search'), Text('list'), Text('settings')]),
+      ),
+    );
+    await tester.tap(find.byTooltip('Recherche'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    double opacity() => tester
+        .widget<FadeTransition>(find.ancestor(of: find.text('search'), matching: find.byType(FadeTransition)).first)
+        .opacity
+        .value;
+    expect(opacity(), lessThan(1));
+    await tester.pumpAndSettle();
+    expect(opacity(), 1);
   });
 }

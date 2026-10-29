@@ -41,7 +41,7 @@ class DesktopShell extends StatelessWidget {
           Positioned.fill(
             child: MediaQuery(
               data: media.copyWith(padding: media.padding.copyWith(left: width)),
-              child: IndexedStack(index: index, children: pages),
+              child: FadeIndexedStack(index: index, children: pages),
             ),
           ),
           Positioned(

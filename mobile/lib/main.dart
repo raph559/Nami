@@ -19,6 +19,7 @@ import 'screens/search.dart';
 import 'screens/settings_screen.dart';
 import 'platform.dart';
 import 'ui/desktop_shell.dart';
+import 'ui/motion.dart';
 import 'settings.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -137,7 +138,7 @@ class _RootScreenState extends State<RootScreen> {
         child: Focus(autofocus: true, onKeyEvent: _onKey, child: shell),
       );
     }
-    final pages = IndexedStack(index: tab, children: children);
+    final pages = FadeIndexedStack(index: tab, children: children);
     Widget item(int i, {required bool vertical, bool showLabel = true}) => _NavItem(
       icon: tab == i ? items[i].$2 : items[i].$1,
       label: items[i].$3,
