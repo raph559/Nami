@@ -111,4 +111,33 @@ void main() {
     await tester.pump();
     expect(tester.widget<IndexedStack>(find.byType(IndexedStack)).index, 0);
   });
+
+  testWidgets('slash typed in another text field stays there', (tester) async {
+    calls.clear();
+    SharedPreferences.setMockInitialValues({'appLanguage': 'fr'});
+    await AppSettings.load();
+    debugDesktopOverride = true;
+    addTearDown(() => debugDesktopOverride = null);
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: Nami.desktopTheme(),
+        home: const RootScreen(
+          pages: [
+            Material(child: TextField(key: Key('repo'))),
+            SearchScreen(search: fakeSearch),
+            Text('l'),
+            Text('s'),
+          ],
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const Key('repo')));
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.slash);
+    await tester.pump();
+    expect(tester.widget<IndexedStack>(find.byType(IndexedStack)).index, 0);
+  });
 }

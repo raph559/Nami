@@ -102,7 +102,11 @@ class _RootScreenState extends State<RootScreen> {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final keys = HardwareKeyboard.instance;
     final ctrlK = event.logicalKey == LogicalKeyboardKey.keyK && (keys.isControlPressed || keys.isMetaPressed);
-    final editing = FocusManager.instance.primaryFocus?.context?.widget is EditableText;
+    // EditableText puts its node in a Focus widget, so look for it among the ancestors.
+    final focused = FocusManager.instance.primaryFocus?.context;
+    final editing =
+        focused != null &&
+        (focused.widget is EditableText || focused.findAncestorWidgetOfExactType<EditableText>() != null);
     final slash = event.logicalKey == LogicalKeyboardKey.slash && !editing;
     if (!ctrlK && !slash) return KeyEventResult.ignored;
     _openSearch();
