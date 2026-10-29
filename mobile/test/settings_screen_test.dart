@@ -100,4 +100,38 @@ void main() {
     expect(style.color, Nami.ground);
     expect(style.fontWeight, FontWeight.w600);
   });
+
+  testWidgets('desktop settings at the smallest window with large text', (tester) async {
+    SharedPreferences.setMockInitialValues({'appLanguage': 'fr'});
+    await AppSettings.load();
+    PackageInfo.setMockInitialValues(
+      appName: 'Nami',
+      packageName: 'n',
+      version: '0.5.0',
+      buildNumber: '5',
+      buildSignature: '',
+    );
+    debugDesktopOverride = true;
+    addTearDown(() => debugDesktopOverride = null);
+    tester.view.physicalSize = const Size(720, 480);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: Nami.desktopTheme(),
+        home: Builder(
+          builder: (context) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(2)),
+            child: const SettingsScreen(),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    await tester.scrollUntilVisible(find.text('À propos'), 100, scrollable: find.byType(Scrollable).first);
+    await tester.tap(find.text('À propos'));
+    await tester.pump();
+    expect(find.text('Code source'), findsOneWidget);
+  });
 }

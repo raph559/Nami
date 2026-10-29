@@ -379,8 +379,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   decoration: BoxDecoration(
                     border: Border(right: BorderSide(color: Nami.line)),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                  // Scrolls when the window is short or the text large.
+                  child: ListView(
+                    padding: EdgeInsets.zero,
                     children: [
                       Semantics(header: true, child: Text(t('Réglages', 'Settings'), style: Nami.pageTitle)),
                       const SizedBox(height: 18),
