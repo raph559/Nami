@@ -184,7 +184,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   value: settings.resolution,
                   onChanged: (v) => settings.resolution = v,
                   items: {
-                    for (final r in ['2160', '1440', '1080', '720', '480']) r: Text('${r}p'),
+                    for (final r in ['480', '720', '1080', '1440', '2160']) r: Text('${r}p'),
                   },
                 ),
               ),

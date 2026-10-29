@@ -50,7 +50,7 @@ struct SettingsView: View {
                                              "Few releases exist in this quality, and an episode often weighs 4 to 10 GB: slower to start, and mobile data goes fast.")
                                          : nil,
                                      selection: $resolution,
-                                     options: ["2160", "1440", "1080", "720", "480"].map { ($0, "\($0)p") })
+                                     options: ["480", "720", "1080", "1440", "2160"].map { ($0, "\($0)p") })
                     Toggle(isOn: $autoSkip) {
                         VStack(alignment: .leading) {
                             Text(t("Passer l'intro et le générique", "Skip openings and endings"))
