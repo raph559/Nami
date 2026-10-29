@@ -29,7 +29,7 @@ struct ReleaseInfo: Identifiable {
             return String(t[range]).trimmingCharacters(in: .whitespaces)
         }
         group = first(#"^\s*\[([^\]]+)\]"#)
-        resolution = first(#"\b(2160|1080|720|480)p\b"#)
+        resolution = first(#"\b(2160|1440|1080|720|480)p\b"#) ?? (has(#"\b(4K|UHD)\b"#) ? "2160" : nil)
         if has(#"\b(BD|Blu-?Ray|BDRip|BDMV)\b"#) { source = "Blu-ray" } else if has(#"\bWEB(-?DL|-?Rip)?\b"#) { source = "WEB" }
         if has(#"\b(HEVC|x265|H\.?265)\b"#) { codec = "HEVC" } else if has(#"\bAV1\b"#) { codec = "AV1" } else if has(#"\b(AVC|x264|H\.?264)\b"#) { codec = "H.264" }
         dualAudio = has(#"\bDual[- ]?Audio\b|\bDUAL\b"#)

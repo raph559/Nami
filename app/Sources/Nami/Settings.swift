@@ -45,7 +45,12 @@ struct SettingsView: View {
                 Section(t("Lecture", "Playback")) {
                     SegmentedSetting(label: t("Qualité préférée", "Preferred quality"),
                                      detail: t("La source recommandée la privilégie.", "The recommended source favours it."),
-                                     selection: $resolution, options: [("1080", "1080p"), ("720", "720p"), ("480", "480p")])
+                                     warning: ["2160", "1440"].contains(resolution)
+                                         ? t("Peu de releases existent dans cette qualité, et un épisode pèse souvent 4 à 10 Go : lancement plus lent, forfait vite consommé en 4G/5G.",
+                                             "Few releases exist in this quality, and an episode often weighs 4 to 10 GB: slower to start, and mobile data goes fast.")
+                                         : nil,
+                                     selection: $resolution,
+                                     options: ["2160", "1440", "1080", "720", "480"].map { ($0, "\($0)p") })
                     Toggle(isOn: $autoSkip) {
                         VStack(alignment: .leading) {
                             Text(t("Passer l'intro et le générique", "Skip openings and endings"))
@@ -180,6 +185,8 @@ struct RepoView: View {
 struct SegmentedSetting: View {
     let label: String
     var detail: String?
+    /// Shown in amber with an icon: the icon and words carry it, not the color alone.
+    var warning: String?
     @Binding var selection: String
     let options: [(value: String, label: String)]
 
@@ -187,6 +194,11 @@ struct SegmentedSetting: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(label)
             if let detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
+            if let warning {
+                Label(warning, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Nami.warning)
+            }
             Picker(label, selection: $selection) {
                 ForEach(options, id: \.value) { Text($0.label).tag($0.value) }
             }

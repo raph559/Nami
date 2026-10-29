@@ -21,13 +21,14 @@ class ReleaseInfo {
   bool prerelease = false;
 
   static final _group = RegExp(r'^\s*\[([^\]]+)\]');
-  static final _resolution = RegExp(r'\b(2160|1080|720|480)p\b', caseSensitive: false);
+  static final _resolution = RegExp(r'\b(2160|1440|1080|720|480)p\b', caseSensitive: false);
+  static final _uhd = RegExp(r'\b(4K|UHD)\b', caseSensitive: false);
 
   factory ReleaseInfo.parse(TorrentResult r) {
     final t = r.title;
     final info = ReleaseInfo._(r);
     info.group = _group.firstMatch(t)?.group(1)?.trim();
-    info.resolution = _resolution.firstMatch(t)?.group(1);
+    info.resolution = _resolution.firstMatch(t)?.group(1) ?? (_uhd.hasMatch(t) ? '2160' : null);
     bool has(String pattern) => RegExp(pattern, caseSensitive: false).hasMatch(t);
     if (has(r'\b(BD|Blu-?Ray|BDRip|BDMV)\b')) {
       info.source = 'Blu-ray';

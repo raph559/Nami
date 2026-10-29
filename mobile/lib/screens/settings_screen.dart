@@ -171,11 +171,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _Setting(
                 label: t('Qualité préférée', 'Preferred quality'),
                 detail: t('La source recommandée la privilégie.', 'The recommended source favours it.'),
+                warning: switch (settings.resolution) {
+                  '2160' || '1440' => t(
+                    'Peu de releases existent dans cette qualité, et un épisode pèse souvent 4 à 10 Go : '
+                        'lancement plus lent, forfait vite consommé en 4G/5G.',
+                    'Few releases exist in this quality, and an episode often weighs 4 to 10 GB: '
+                        'slower to start, and mobile data goes fast.',
+                  ),
+                  _ => null,
+                },
                 control: _Segments<String>(
                   value: settings.resolution,
                   onChanged: (v) => settings.resolution = v,
                   items: {
-                    for (final r in ['1080', '720', '480']) r: Text('${r}p'),
+                    for (final r in ['2160', '1440', '1080', '720', '480']) r: Text('${r}p'),
                   },
                 ),
               ),
@@ -476,9 +485,12 @@ class _Section extends StatelessWidget {
 /// under the text when the card is narrow, beside it when there is room;
 /// switches always sit at the end of the line.
 class _Setting extends StatelessWidget {
-  const _Setting({required this.label, required this.control, this.detail, this.inline = false});
+  const _Setting({required this.label, required this.control, this.detail, this.warning, this.inline = false});
   final String label;
   final String? detail;
+
+  /// Shown in amber with an icon, under the text: the icon and words carry it, not the color alone.
+  final String? warning;
   final Widget control;
   final bool inline;
 
@@ -489,6 +501,19 @@ class _Setting extends StatelessWidget {
       children: [
         Text(label, style: Nami.body),
         if (detail != null) ...[const SizedBox(height: 2), Text(detail!, style: Nami.caption)],
+        if (warning != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.warning_amber_rounded, size: 18, color: Nami.warning),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(warning!, style: Nami.caption.copyWith(color: Nami.warning)),
+              ),
+            ],
+          ),
+        ],
       ],
     );
     return Padding(

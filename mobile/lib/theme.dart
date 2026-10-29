@@ -6,6 +6,9 @@ abstract final class Nami {
   static const text = Color(0xFFEDEAE4);
   static const textSecondary = Color(0xFFB8B3AA);
   static const textMuted = Color(0xFF8F8B83);
+
+  /// Amber for cautions (10:1 on the cards); always next to an icon and words.
+  static const warning = Color(0xFFF2C14E);
   static final line = text.withValues(alpha: 0.12);
 
   static const sans = 'HankenGrotesk';

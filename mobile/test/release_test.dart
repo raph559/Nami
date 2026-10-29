@@ -68,6 +68,12 @@ void main() {
     expect(rankReleases([varyg, dead]).first.result, same(varyg));
   });
 
+  test('reads 1440p and 4K releases', () {
+    expect(ReleaseInfo.parse(r('[Group] Show - 01 [1440p WEB]', 10)).resolution, '1440');
+    expect(ReleaseInfo.parse(r('[Group] Show - 01 [4K HDR]', 10)).resolution, '2160');
+    expect(ReleaseInfo.parse(r('[Group] Show S01 UHD BluRay', 10)).resolution, '2160');
+  });
+
   test('seeders map to a health level', () {
     expect(ReleaseInfo.parse(r('a', 50)).health, SeedHealth.good);
     expect(ReleaseInfo.parse(r('a', 49)).health, SeedHealth.fair);

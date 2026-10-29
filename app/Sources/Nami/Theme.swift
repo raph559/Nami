@@ -7,6 +7,8 @@ enum Nami {
     static let text = Color(hex: "#EDEAE4")!
     static let textSecondary = Color(hex: "#B8B3AA")!
     static let textMuted = Color(hex: "#8F8B83")!
+    /// Amber for cautions (10:1 on the cards); always next to an icon and words.
+    static let warning = Color(hex: "#F2C14E")!
     /// Card surface on the sources sheet.
     static let card = Color(hex: "#1B1B1E")!
     /// Control borders: text at 45 %, 3.9:1 on the ground.
