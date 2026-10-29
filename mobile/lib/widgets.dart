@@ -1,3 +1,4 @@
+import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'platform.dart';
 import 'screens/detail.dart';
 import 'settings.dart';
 import 'theme.dart';
+import 'ui/hover_card.dart';
 
 /// Network image that fills the space it is given.
 class CoverImage extends StatelessWidget {
@@ -208,6 +210,70 @@ class MediaCard extends StatefulWidget {
 class _MediaCardState extends State<MediaCard> {
   bool hovered = false;
 
+  // Desktop hover card: opens 400 ms after the pointer or the focus arrives,
+  // stays while the pointer is on the cover or on the card.
+  final _card = OverlayPortalController();
+  final _link = LayerLink();
+  Timer? _openTimer, _closeTimer;
+
+  void _scheduleOpen() {
+    if (!isDesktop) return;
+    _closeTimer?.cancel();
+    _openTimer?.cancel();
+    _openTimer = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) _card.show();
+    });
+  }
+
+  void _scheduleClose() {
+    _openTimer?.cancel();
+    _closeTimer?.cancel();
+    _closeTimer = Timer(const Duration(milliseconds: 150), _close);
+  }
+
+  void _close() {
+    _openTimer?.cancel();
+    _closeTimer?.cancel();
+    if (mounted && _card.isShowing) _card.hide();
+  }
+
+  @override
+  void dispose() {
+    _openTimer?.cancel();
+    _closeTimer?.cancel();
+    super.dispose();
+  }
+
+  Widget _overlay(BuildContext context) {
+    // Beside the cover, on whichever side has room.
+    final box = this.context.findRenderObject() as RenderBox?;
+    final screen = MediaQuery.sizeOf(context);
+    final left = box == null ? 0.0 : box.localToGlobal(Offset.zero).dx;
+    final right = left + widget.width;
+    final fitsRight = right + 8 + MediaHoverCard.width <= screen.width;
+    final fitsLeft = left - 8 - MediaHoverCard.width >= 0;
+    final (target, follower, dx) = fitsRight
+        ? (Alignment.topRight, Alignment.topLeft, 8.0)
+        : fitsLeft
+        ? (Alignment.topLeft, Alignment.topRight, -8.0)
+        : (Alignment.bottomLeft, Alignment.topLeft, 0.0);
+    // Loose constraints, so the follower is only as big as the card.
+    return Align(
+      alignment: Alignment.topLeft,
+      child: CompositedTransformFollower(
+        link: _link,
+        targetAnchor: target,
+        followerAnchor: follower,
+        offset: Offset(dx, 0),
+        child: MouseRegion(
+          onEnter: (_) => _closeTimer?.cancel(),
+          onExit: (_) => _scheduleClose(),
+          child: MediaHoverCard(media: media, onDone: _close),
+        ),
+      ),
+    );
+  }
+
   Media get media => widget.media;
 
   String get facts => [
@@ -229,75 +295,104 @@ class _MediaCardState extends State<MediaCard> {
         hint: isDesktop ? null : t('Appui long pour un aperçu', 'Long press for a preview'),
         excludeSemantics: true,
         child: MouseRegion(
-          onEnter: (_) => setState(() => hovered = true),
-          onExit: (_) => setState(() => hovered = false),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(Nami.radiusImage),
-            onTap: () => openMedia(context, media, heroTag: widget.heroTag),
-            onLongPress: () {
-              HapticFeedback.mediumImpact();
-              showMediaPreview(context, media);
-            },
-            child: SizedBox(
-              width: width,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AnimatedScale(
-                    scale: hovered ? 1.04 : 1,
-                    duration: const Duration(milliseconds: 160),
-                    curve: Curves.easeOut,
-                    child: SizedBox(
-                      width: width,
-                      height: width * 1.45,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          cover,
-                          // Score and genres on hover, on a scrim so they stay readable.
-                          if (hovered && facts.isNotEmpty)
-                            Align(
-                              alignment: Alignment.bottomCenter,
-                              child: ClipRRect(
-                                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(Nami.radiusImage)),
-                                child: Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.fromLTRB(8, 18, 8, 8),
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [Nami.ground.withValues(alpha: 0), Nami.ground.withValues(alpha: 0.88)],
-                                      stops: const [0, 0.35],
+          onEnter: (_) {
+            setState(() => hovered = true);
+            _scheduleOpen();
+          },
+          onExit: (_) {
+            setState(() => hovered = false);
+            _scheduleClose();
+          },
+          child: CallbackShortcuts(
+            bindings: {const SingleActivator(LogicalKeyboardKey.escape): _close},
+            child: OverlayPortal(
+              controller: _card,
+              overlayChildBuilder: _overlay,
+              child: CompositedTransformTarget(
+                link: _link,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(Nami.radiusImage),
+                  onFocusChange: (focused) => focused ? _scheduleOpen() : _scheduleClose(),
+                  onTap: () {
+                    _close();
+                    openMedia(context, media, heroTag: widget.heroTag);
+                  },
+                  onLongPress: () {
+                    HapticFeedback.mediumImpact();
+                    showMediaPreview(context, media);
+                  },
+                  child: SizedBox(
+                    width: width,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AnimatedScale(
+                          scale: hovered ? 1.04 : 1,
+                          duration: const Duration(milliseconds: 160),
+                          curve: Curves.easeOut,
+                          child: SizedBox(
+                            width: width,
+                            height: width * 1.45,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                cover,
+                                // Score and genres on hover, on a scrim so they stay readable
+                                // (touch screens with a mouse; desktop shows the hover card).
+                                if (hovered && !isDesktop && facts.isNotEmpty)
+                                  Align(
+                                    alignment: Alignment.bottomCenter,
+                                    child: ClipRRect(
+                                      borderRadius: const BorderRadius.vertical(
+                                        bottom: Radius.circular(Nami.radiusImage),
+                                      ),
+                                      child: Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.fromLTRB(8, 18, 8, 8),
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                            colors: [
+                                              Nami.ground.withValues(alpha: 0),
+                                              Nami.ground.withValues(alpha: 0.88),
+                                            ],
+                                            stops: const [0, 0.35],
+                                          ),
+                                        ),
+                                        child: Text(
+                                          facts,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Nami.caption.copyWith(color: Nami.text),
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                  child: Text(
-                                    facts,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Nami.caption.copyWith(color: Nami.text),
-                                  ),
-                                ),
-                              ),
+                              ],
                             ),
+                          ),
+                        ),
+                        if (widget.progress != null) ...[
+                          const SizedBox(height: 6),
+                          ProgressLine(value: widget.progress!, color: Nami.accentOf(media.color)),
                         ],
-                      ),
+                        const SizedBox(height: 8),
+                        Text(
+                          media.title.display,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Nami.caption.copyWith(
+                            fontSize: 13,
+                            color: hovered ? Nami.text : const Color(0xFFD9D5CD),
+                          ),
+                        ),
+                        if (widget.badge != null)
+                          Text(widget.badge!, maxLines: 1, overflow: TextOverflow.ellipsis, style: Nami.caption),
+                      ],
                     ),
                   ),
-                  if (widget.progress != null) ...[
-                    const SizedBox(height: 6),
-                    ProgressLine(value: widget.progress!, color: Nami.accentOf(media.color)),
-                  ],
-                  const SizedBox(height: 8),
-                  Text(
-                    media.title.display,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Nami.caption.copyWith(fontSize: 13, color: hovered ? Nami.text : const Color(0xFFD9D5CD)),
-                  ),
-                  if (widget.badge != null)
-                    Text(widget.badge!, maxLines: 1, overflow: TextOverflow.ellipsis, style: Nami.caption),
-                ],
+                ),
               ),
             ),
           ),
