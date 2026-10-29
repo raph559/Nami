@@ -57,7 +57,7 @@ class NamiApp extends StatelessWidget {
         title: 'Nami',
         debugShowCheckedModeBanner: false,
         // Dark by design: Nami is a viewing room (DESIGN.md), so there is no light theme.
-        theme: Nami.theme(),
+        theme: isDesktop ? Nami.desktopTheme() : Nami.theme(),
         navigatorKey: PlayerCenter.instance.navigatorKey,
         // The mini-player floats above every page, so browsing keeps it on screen.
         // Overlay.wrap gives its tooltips an overlay above the navigator.

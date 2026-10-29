@@ -172,4 +172,35 @@ abstract final class Nami {
       focusColor: text.withValues(alpha: 0.18),
     );
   }
+
+  /// Mouse sizes for the desktop layout: 34 px buttons, 13 px labels,
+  /// denser tap targets. Colors and shapes are those of [theme].
+  static ThemeData desktopTheme() {
+    final base = theme();
+    final buttonShape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusButton));
+    const label = TextStyle(fontFamily: sans, fontSize: 13, fontWeight: FontWeight.w600);
+    const padding = EdgeInsets.symmetric(horizontal: 14);
+    return base.copyWith(
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+      filledButtonTheme: FilledButtonThemeData(
+        style: base.filledButtonTheme.style!.copyWith(
+          minimumSize: const WidgetStatePropertyAll(Size(32, 34)),
+          padding: const WidgetStatePropertyAll(padding),
+          textStyle: const WidgetStatePropertyAll(label),
+          shape: WidgetStatePropertyAll(buttonShape),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: base.outlinedButtonTheme.style!.copyWith(
+          minimumSize: const WidgetStatePropertyAll(Size(32, 34)),
+          padding: const WidgetStatePropertyAll(padding),
+          textStyle: const WidgetStatePropertyAll(label),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: base.textButtonTheme.style!.copyWith(minimumSize: const WidgetStatePropertyAll(Size(32, 32))),
+      ),
+    );
+  }
 }
