@@ -1,4 +1,3 @@
-import MobileVLCKit
 import SwiftUI
 
 struct Track: Identifiable, Hashable {
@@ -6,111 +5,12 @@ struct Track: Identifiable, Hashable {
     var name: String
 }
 
-@MainActor
-final class PlayerModel: NSObject, ObservableObject, VLCMediaPlayerDelegate {
-    let player = VLCMediaPlayer()
-
-    @Published var isPlaying = false
-    @Published var isBuffering = true
-    @Published var timeMs: Int32 = 0
-    @Published var lengthMs: Int32 = 0
-    @Published var audioTracks: [Track] = []
-    @Published var subtitleTracks: [Track] = []
-    @Published var audioTrack: Int32 = -1
-    @Published var subtitleTrack: Int32 = -1
-    @Published var fill = false
-    @Published var ended = false
-
-    override init() {
-        super.init()
-        player.delegate = self
-    }
-
-    func play(url: URL) {
-        let media = VLCMedia(url: url)
-        media.addOptions([
-            "network-caching": 5000,
-            "http-reconnect": true,
-        ])
-        player.media = media
-        player.play()
-    }
-
-    func stop() {
-        player.stop()
-        player.media = nil
-    }
-
-    func togglePause() {
-        if player.isPlaying { player.pause() } else { player.play() }
-    }
-
-    func jump(_ seconds: Int32) {
-        if seconds >= 0 { player.jumpForward(seconds) } else { player.jumpBackward(-seconds) }
-    }
-
-    func seek(fraction: Double) {
-        player.position = Float(min(max(fraction, 0), 1))
-    }
-
-    func setAudio(_ id: Int32) { player.currentAudioTrackIndex = id; audioTrack = id }
-    func setSubtitle(_ id: Int32) { player.currentVideoSubTitleIndex = id; subtitleTrack = id }
-
-    func toggleFill(size: CGSize) {
-        fill.toggle()
-        if fill, size.width > 0, size.height > 0 {
-            let w = Int(size.width.rounded()), h = Int(size.height.rounded())
-            "\(w):\(h)".withCString { player.videoCropGeometry = UnsafeMutablePointer(mutating: $0) }
-        } else {
-            player.videoCropGeometry = nil
-        }
-    }
-
-    private func refreshTracks() {
-        func tracks(_ names: [Any]?, _ ids: [Any]?) -> [Track] {
-            let n = names as? [String] ?? []
-            let i = (ids as? [NSNumber] ?? []).map(\.int32Value)
-            return zip(i, n).map { Track(id: $0, name: $1) }
-        }
-        audioTracks = tracks(player.audioTrackNames, player.audioTrackIndexes)
-        subtitleTracks = tracks(player.videoSubTitlesNames, player.videoSubTitlesIndexes)
-        audioTrack = player.currentAudioTrackIndex
-        subtitleTrack = player.currentVideoSubTitleIndex
-    }
-
-    nonisolated func mediaPlayerStateChanged(_ aNotification: Notification) {
-        Task { @MainActor in
-            let state = player.state
-            isPlaying = player.isPlaying
-            isBuffering = state == .buffering || state == .opening
-            if state == .ended { ended = true }
-            if state == .playing || state == .esAdded { refreshTracks() }
-            lengthMs = player.media?.length.intValue ?? 0
-        }
-    }
-
-    nonisolated func mediaPlayerTimeChanged(_ aNotification: Notification) {
-        Task { @MainActor in
-            timeMs = player.time.intValue
-            isBuffering = false
-            isPlaying = player.isPlaying
-            if lengthMs <= 0 { lengthMs = player.media?.length.intValue ?? 0 }
-            if audioTracks.isEmpty { refreshTracks() }
-        }
-    }
-}
-
-struct VLCSurface: UIViewRepresentable {
-    let player: VLCMediaPlayer
-
-    func makeUIView(context: Context) -> UIView {
-        let v = UIView()
-        v.backgroundColor = .black
-        player.drawable = v
-        return v
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {}
+/// What the player asks for when it closes on the way to the next episode.
+struct PlayerExit {
+    /// The countdown ran out: pick the recommended source without asking.
+    var auto: Bool
+    /// The torrent just played also holds the next episode (a season pack).
+    var reuse: TorrentResult?
 }
 
 /// Resolves a source into a stream and plays it.
@@ -118,9 +18,9 @@ struct PlayerView: View {
     let media: Media
     let episode: Int
     let result: TorrentResult
-    var onNext: (() -> Void)?
+    var onNext: ((PlayerExit) -> Void)?
 
-    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var center: PlayerCenter
     @StateObject private var model = PlayerModel()
     @State private var phase: Phase = .connecting
     @State private var torrent: Engine.Torrent?
@@ -130,6 +30,28 @@ struct PlayerView: View {
     @State private var hideTask: Task<Void, Never>?
     @State private var scrub: Double?
     @State private var markedWatched = false
+    // Resume
+    @State private var lengthSeen = false
+    @State private var lastSaved: Int32 = 0
+    // AniSkip
+    @State private var skips: [SkipInterval] = []
+    @State private var skipped: Set<String> = []
+    @State private var offered: SkipInterval?
+    // Short message over the video, with an optional action ("Recommencer", "Revoir").
+    @State private var notice: Notice?
+    @State private var noticeTask: Task<Void, Never>?
+    // Next episode
+    @State private var countdown: Int?
+    @State private var countdownCancelled = false
+    @State private var countdownTask: Task<Void, Never>?
+
+    struct Notice: Equatable {
+        var text: String
+        var action: String?
+        var seekTo: Int32?
+    }
+
+    private var hasNext: Bool { onNext != nil && !media.isMovie && episode < media.availableEpisodes }
 
     enum Phase: Equatable {
         case connecting, chooseFile, playing
@@ -138,51 +60,98 @@ struct PlayerView: View {
 
     var body: some View {
         GeometryReader { geo in
-            ZStack {
-                Color.black.ignoresSafeArea()
-                VLCSurface(player: model.player)
-                    .ignoresSafeArea()
-                    .contentShape(Rectangle())
-                    .onTapGesture { toggleControls() }
+            let mini = center.minimized
+            ZStack(alignment: .bottom) {
+                if !mini { Color.black.ignoresSafeArea() }
 
-                switch phase {
-                case .connecting:
-                    status(icon: nil, text: t("Connexion aux pairs…", "Connecting to peers…"), detail: result.title)
-                case .failed(let message):
-                    status(icon: "exclamationmark.triangle", text: t("Impossible de lire", "Cannot play"), detail: message)
-                case .chooseFile:
-                    fileChooser
-                case .playing:
-                    if model.isBuffering || model.timeMs == 0 {
-                        VStack(spacing: 10) {
-                            ProgressView().tint(.white).controlSize(.large)
-                            Text(statsLine).font(.caption).foregroundStyle(.white.opacity(0.8))
-                        }
+                // One video surface for both shapes, so mpv keeps playing while it shrinks.
+                HStack(spacing: 12) {
+                    MPVSurface(model: model)
+                        .frame(maxWidth: mini ? 112 : .infinity, maxHeight: mini ? 63 : .infinity)
+                        .frame(width: mini ? 112 : nil, height: mini ? 63 : nil)
+                        .clipShape(RoundedRectangle(cornerRadius: mini ? 8 : 0))
+                        .ignoresSafeArea(.all, edges: mini ? [] : .all)
                         .allowsHitTesting(false)
-                    }
-                    if controls { overlay(size: geo.size).transition(.opacity) }
+                    if mini { miniInfo }
                 }
+                .padding(mini ? 8 : 0)
+                .background { if mini { miniBackground } }
+                .contentShape(RoundedRectangle(cornerRadius: 16))
+                .onTapGesture { if mini { expand() } }
+                .padding(.horizontal, mini ? 12 : 0)
+                // Just above the tab bar.
+                .padding(.bottom, mini ? 62 : 0)
+                .gesture(DragGesture(minimumDistance: 20).onEnded { v in
+                    guard mini else { return }
+                    if v.translation.height < -30 { expand() } else if v.translation.height > 40 { center.close() }
+                })
 
-                if phase != .playing || !controls {
-                    VStack {
-                        HStack {
-                            if phase != .playing { closeButton }
-                            Spacer()
+                if !mini {
+                    ZStack {
+                        // Catches the gestures over the video: tap for the controls, pinch to
+                        // fill the screen, swipe down to shrink the player like YouTube.
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .ignoresSafeArea()
+                            .onTapGesture { toggleControls() }
+                            .gesture(MagnifyGesture().onEnded { value in
+                                if value.magnification > 1.05 { model.setFill(true, screen: fullSize(geo)) }
+                                else if value.magnification < 0.95 { model.setFill(false, screen: fullSize(geo)) }
+                            })
+                            .simultaneousGesture(DragGesture(minimumDistance: 40).onEnded { v in
+                                if v.translation.height > 110, abs(v.translation.width) < v.translation.height { minimize() }
+                            })
+
+                        switch phase {
+                        case .connecting:
+                            status(icon: nil, text: t("Connexion aux pairs…", "Connecting to peers…"), detail: result.title)
+                        case .failed(let message):
+                            status(icon: "exclamationmark.triangle", text: t("Impossible de lire", "Cannot play"), detail: message)
+                        case .chooseFile:
+                            fileChooser
+                        case .playing:
+                            if model.isBuffering || model.timeMs == 0 {
+                                VStack(spacing: 10) {
+                                    ProgressView().tint(.white).controlSize(.large)
+                                    Text(statsLine).font(.caption).foregroundStyle(.white.opacity(0.8))
+                                }
+                                .allowsHitTesting(false)
+                            }
+                            if controls { overlay(size: fullSize(geo)).transition(.opacity) }
+                            floating
                         }
-                        Spacer()
+
+                        if phase != .playing || !controls {
+                            VStack {
+                                HStack {
+                                    if phase != .playing { closeButton }
+                                    Spacer()
+                                }
+                                Spacer()
+                            }
+                            .padding()
+                        }
                     }
-                    .padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         }
-        .statusBarHidden()
-        .persistentSystemOverlays(.hidden)
+        .statusBarHidden(!center.minimized)
+        .persistentSystemOverlays(center.minimized ? .automatic : .hidden)
         .task { await start() }
         .task(id: torrent?.hash) { await pollStats() }
-        .onChange(of: model.timeMs) { _, _ in checkWatched() }
-        .onChange(of: model.ended) { _, ended in if ended { checkWatched(force: true) } }
+        .onChange(of: model.timeMs) { _, ms in onTime(ms) }
+        .onChange(of: model.lengthMs) { _, ms in onLength(ms) }
+        .onChange(of: model.ended) { _, ended in
+            guard ended else { return }
+            checkWatched(force: true)
+            if hasNext, Playback.autoNext { startCountdown() }
+        }
         .onAppear { Orientation.set(.landscape) }
         .onDisappear {
+            saveResume()
+            countdownTask?.cancel()
             model.stop()
             Orientation.set(.portrait)
             if let hash = torrent?.hash { Task { await Engine.shared.drop(hash) } }
@@ -229,8 +198,99 @@ struct PlayerView: View {
         guard !markedWatched, model.lengthMs > 0 else { return }
         if force || Double(model.timeMs) / Double(model.lengthMs) >= 0.85 {
             markedWatched = true
+            Playback.setResume(media: media.id, episode: episode, ms: nil)
             Task { try? await AniList.shared.setProgress(media: media, episode: episode) }
         }
+    }
+
+    private func onTime(_ ms: Int32) {
+        checkWatched()
+        if abs(ms - lastSaved) > 5000 { saveResume() }
+
+        var inside: SkipInterval?
+        for i in skips where i.contains(ms) {
+            if i.kind == .ending, hasNext, Playback.autoNext, !countdownCancelled {
+                startCountdown()
+                return
+            }
+            let key = i.kind == .opening ? "op" : "ed"
+            if Playback.autoSkip, !skipped.contains(key) {
+                skipped.insert(key)
+                model.seek(ms: i.endMs)
+                show(Notice(text: i.kind == .opening ? t("Intro passée", "Opening skipped") : t("Générique passé", "Ending skipped"),
+                            action: t("Revoir", "Watch it"), seekTo: i.startMs))
+                return
+            }
+            inside = i
+        }
+        if inside != offered { offered = inside }
+    }
+
+    /// The first known length: AniSkip needs it, and so does resuming.
+    private func onLength(_ ms: Int32) {
+        guard !lengthSeen, ms > 0 else { return }
+        lengthSeen = true
+        if let at = Playback.resumeAt(media: media.id, episode: episode), at > 30_000, at < ms - 120_000 {
+            model.seek(ms: at)
+            lastSaved = at
+            show(Notice(text: t("Reprise à \(Self.clock(at))", "Resumed at \(Self.clock(at))"), action: t("Recommencer", "Start over"), seekTo: 0))
+        }
+        if let malId = media.idMal {
+            Task { skips = await AniSkip.fetch(malId: malId, episode: episode, lengthMs: ms) }
+        }
+    }
+
+    private func saveResume() {
+        guard !markedWatched, lengthSeen else { return }
+        lastSaved = model.timeMs
+        if model.timeMs > 30_000 { Playback.setResume(media: media.id, episode: episode, ms: model.timeMs) }
+    }
+
+    private func show(_ n: Notice) {
+        noticeTask?.cancel()
+        withAnimation { notice = n }
+        noticeTask = Task {
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
+            withAnimation { notice = nil }
+        }
+    }
+
+    /// The floating skip button, or the fixed 85 s jump when AniSkip has nothing.
+    private func skipNow() {
+        if let i = offered {
+            skipped.insert(i.kind == .opening ? "op" : "ed")
+            model.seek(ms: i.endMs)
+            offered = nil
+        } else {
+            model.jump(85)
+        }
+    }
+
+    private func startCountdown() {
+        guard countdown == nil, !countdownCancelled else { return }
+        countdown = 10
+        countdownTask = Task {
+            while !Task.isCancelled, let c = countdown {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                if c <= 1 { goNext(auto: true); return }
+                countdown = c - 1
+            }
+        }
+    }
+
+    private func cancelCountdown() {
+        countdownTask?.cancel()
+        countdown = nil
+        countdownCancelled = true
+    }
+
+    private func goNext(auto: Bool) {
+        countdownTask?.cancel()
+        let files = torrent?.files ?? []
+        let packHasNext = files.filter(\.isVideo).count > 1 && Engine.pick(files, episode: episode + 1) != nil
+        onNext?(PlayerExit(auto: auto, reuse: packHasNext ? result : nil))
     }
 
     // MARK: UI
@@ -241,7 +301,7 @@ struct PlayerView: View {
     }
 
     private var closeButton: some View {
-        Button { dismiss() } label: {
+        Button { center.close() } label: {
             Image(systemName: "xmark").font(.title3.weight(.semibold)).foregroundStyle(.white)
                 .frame(width: 44, height: 44).background(.ultraThinMaterial, in: Circle())
         }
@@ -298,25 +358,23 @@ struct PlayerView: View {
                     .foregroundStyle(.white)
                     Spacer()
                     trackMenu
-                    Button { model.toggleFill(size: size); scheduleHide() } label: {
+                    Button { model.setFill(!model.fill, screen: size); scheduleHide() } label: {
                         Image(systemName: model.fill ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                             .font(.title3).foregroundStyle(.white).frame(width: 44, height: 44)
                     }
                 }
                 Spacer()
-                HStack(spacing: 56) {
-                    roundButton("gobackward.10", size: 30) { model.jump(-10) }
-                    roundButton(model.isPlaying ? "pause.fill" : "play.fill", size: 44) { model.togglePause() }
-                    roundButton("goforward.10", size: 30) { model.jump(10) }
-                }
-                Spacer()
                 VStack(spacing: 6) {
                     HStack {
-                        Button("+85 s") { model.jump(85); scheduleHide() }
-                            .buttonStyle(.bordered).tint(.white)
+                        // Without AniSkip timings, a fixed jump over a typical 1:30 opening.
+                        if !skips.contains(where: { $0.kind == .opening }) {
+                            Button("+85 s") { model.jump(85); scheduleHide() }
+                                .buttonStyle(.bordered).tint(.white)
+                        }
                         Spacer()
-                        if let onNext, !media.isMovie, episode < media.availableEpisodes {
-                            Button { dismiss(); onNext() } label: { Label(t("Épisode suivant", "Next episode"), systemImage: "forward.end.fill") }
+                        // The countdown card offers the same action while it runs.
+                        if hasNext, countdown == nil {
+                            Button { goNext(auto: false) } label: { Label(t("Épisode suivant", "Next episode"), systemImage: "forward.end.fill") }
                                 .buttonStyle(.borderedProminent)
                         }
                     }
@@ -336,7 +394,18 @@ struct PlayerView: View {
                     .font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.85))
                 }
             }
-            .padding(.horizontal, 24).padding(.vertical, 12)
+            // Like Netflix: wide side margins keep the controls clear of the rounded
+            // corners, while the bar still spans most of the screen.
+            .padding(.horizontal, 48).padding(.top, 20).padding(.bottom, 16)
+            .ignoresSafeArea()
+
+            // Centred on the screen itself, not between the top bar and the taller bottom block.
+            HStack(spacing: 56) {
+                roundButton("gobackward.10", size: 30) { model.jump(-10) }
+                roundButton(model.isPlaying ? "pause.fill" : "play.fill", size: 44) { model.togglePause() }
+                roundButton("goforward.10", size: 30) { model.jump(10) }
+            }
+            .ignoresSafeArea()
         }
     }
 
@@ -348,6 +417,12 @@ struct PlayerView: View {
                         if t.id == model.subtitleTrack { Label(t.name, systemImage: "checkmark") } else { Text(t.name) }
                     }
                 }
+            }
+            Section(model.subDelay == 0 ? t("Décalage des sous-titres", "Subtitle delay")
+                                        : t("Décalage : \(Self.signed(model.subDelay)) s", "Delay: \(Self.signed(model.subDelay)) s")) {
+                Button { model.setSubDelay(model.subDelay + 0.25) } label: { Label(t("Plus tard (+0,25 s)", "Later (+0.25 s)"), systemImage: "plus") }
+                Button { model.setSubDelay(model.subDelay - 0.25) } label: { Label(t("Plus tôt (−0,25 s)", "Earlier (−0.25 s)"), systemImage: "minus") }
+                if model.subDelay != 0 { Button(t("Remettre à zéro", "Reset")) { model.setSubDelay(0) } }
             }
             Section("Audio") {
                 ForEach(model.audioTracks) { t in
@@ -381,6 +456,127 @@ struct PlayerView: View {
             withAnimation(.easeInOut(duration: 0.3)) { controls = false }
         }
     }
+
+    // MARK: Mini-player
+
+    private func minimize() {
+        model.setFill(false, screen: .zero)
+        controls = false
+        withAnimation(.spring(duration: 0.35)) { center.minimized = true }
+        Orientation.set(.portrait)
+    }
+
+    private func expand() {
+        withAnimation(.spring(duration: 0.35)) { center.minimized = false }
+        Orientation.set(.landscape)
+        controls = true
+        scheduleHide()
+    }
+
+    private var miniInfo: some View {
+        HStack(spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(media.title.display).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Text(miniStatus).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { expand() }
+            Button { model.togglePause() } label: {
+                Image(systemName: model.isPlaying ? "pause.fill" : "play.fill").font(.title3).frame(width: 44, height: 44)
+            }
+            .accessibilityLabel(model.isPlaying ? t("Pause", "Pause") : t("Lecture", "Play"))
+            Button { center.close() } label: {
+                Image(systemName: "xmark").font(.body.weight(.semibold)).frame(width: 44, height: 44)
+            }
+            .accessibilityLabel(t("Fermer", "Close"))
+        }
+        .foregroundStyle(.primary)
+    }
+
+    private var miniStatus: String {
+        let ep = media.isMovie ? nil : t("Épisode \(episode)", "Episode \(episode)")
+        let state: String
+        switch phase {
+        case .connecting: state = t("Connexion…", "Connecting…")
+        case .failed: state = t("Impossible de lire", "Cannot play")
+        case .chooseFile: state = t("Choisis le fichier", "Pick the file")
+        case .playing: state = "\(Self.clock(model.timeMs)) / \(Self.clock(model.lengthMs))"
+        }
+        return [ep, state].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// Liquid Glass on iOS 26 and later, the regular material before.
+    @ViewBuilder
+    private var miniBackground: some View {
+        if #available(iOS 26.0, *) {
+            Color.clear.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+        } else {
+            RoundedRectangle(cornerRadius: 16).fill(.regularMaterial)
+        }
+    }
+
+    // MARK: Floating
+
+    /// Stays on screen while the controls are hidden: the skip button, a short
+    /// notice and the next-episode countdown.
+    private var floating: some View {
+        VStack {
+            Spacer()
+            HStack(alignment: .bottom) {
+                if let notice {
+                    HStack(spacing: 10) {
+                        Text(notice.text).foregroundStyle(.white)
+                        if let action = notice.action {
+                            Button(action) {
+                                if let to = notice.seekTo { model.seek(ms: to) }
+                                self.notice = nil
+                            }
+                            .foregroundStyle(.white).bold()
+                        }
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(Self.panel, in: RoundedRectangle(cornerRadius: 8))
+                }
+                Spacer()
+                if let countdown {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(t("Épisode \(episode + 1) dans \(countdown) s", "Episode \(episode + 1) in \(countdown) s"))
+                            .font(.headline).foregroundStyle(.white)
+                        HStack(spacing: 12) {
+                            Button(t("Annuler", "Cancel")) { cancelCountdown() }.foregroundStyle(.white)
+                            Button { goNext(auto: true) } label: { Label(t("Lire maintenant", "Play now"), systemImage: "forward.end.fill") }
+                                .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black)
+                        }
+                    }
+                    .padding(14)
+                    .background(Self.panel, in: RoundedRectangle(cornerRadius: 8))
+                } else if let offered {
+                    Button { skipNow() } label: {
+                        Label(offered.kind == .opening ? t("Passer l'intro", "Skip opening") : t("Passer le générique", "Skip ending"),
+                              systemImage: "forward.fill")
+                            .font(.headline).padding(.horizontal, 6).padding(.vertical, 4)
+                    }
+                    .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black)
+                }
+            }
+        }
+        // Same edges as the controls, above the progress bar while it shows.
+        .padding(.horizontal, 48)
+        .padding(.bottom, controls ? 108 : 24)
+        .ignoresSafeArea()
+    }
+
+    /// Near-black panel: white text stays readable over any frame.
+    private static let panel = Color(red: 0x13 / 255, green: 0x13 / 255, blue: 0x15 / 255).opacity(0.9)
+
+    /// The whole screen, safe areas included: the video ignores them.
+    private func fullSize(_ geo: GeometryProxy) -> CGSize {
+        CGSize(width: geo.size.width + geo.safeAreaInsets.leading + geo.safeAreaInsets.trailing,
+               height: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom)
+    }
+
+    static func signed(_ v: Double) -> String { (v > 0 ? "+" : "") + String(format: "%.2f", v) }
 
     static func clock(_ ms: Int32) -> String {
         let s = max(Int(ms) / 1000, 0)

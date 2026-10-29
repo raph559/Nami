@@ -6,6 +6,10 @@ struct SettingsView: View {
     @AppStorage("resolution") private var resolution = "1080"
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.fr.rawValue
     @AppStorage("titleLanguage") private var titleLanguage = TitleLanguage.romaji.rawValue
+    @AppStorage("autoSkip") private var autoSkip = true
+    @AppStorage("autoNext") private var autoNext = true
+    @AppStorage("subtitleLanguage") private var subtitleLanguage = SubtitleLanguage.fr.rawValue
+    @AppStorage("subtitleSize") private var subtitleSize = 100
     @State private var repoURL = ""
     @State private var busy = false
     @State private var message: String?
@@ -45,6 +49,29 @@ struct SettingsView: View {
                         Text("720p").tag("720")
                         Text("480p").tag("480")
                     }
+                    Toggle(isOn: $autoSkip) {
+                        VStack(alignment: .leading) {
+                            Text(t("Passer l'intro et le générique", "Skip openings and endings"))
+                            Text(t("Automatiquement, quand AniSkip connaît leurs horaires.", "Automatically, when AniSkip knows where they are."))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Toggle(isOn: $autoNext) {
+                        VStack(alignment: .leading) {
+                            Text(t("Enchaîner l'épisode suivant", "Play the next episode"))
+                            Text(t("Après un compte à rebours de 10 secondes.", "After a 10 second countdown."))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Picker(t("Sous-titres", "Subtitles"), selection: $subtitleLanguage) {
+                        ForEach(SubtitleLanguage.allCases) { Text($0.label).tag($0.rawValue) }
+                    }
+                    Picker(t("Taille des sous-titres", "Subtitle size"), selection: $subtitleSize) {
+                        Text(t("Petite", "Small")).tag(80)
+                        Text(t("Normale", "Normal")).tag(100)
+                        Text(t("Grande", "Large")).tag(125)
+                        Text(t("Très grande", "Extra large")).tag(150)
+                    }
                 }
 
                 Section {
@@ -62,8 +89,8 @@ struct SettingsView: View {
                             RepoView(repo: repo)
                         } label: {
                             VStack(alignment: .leading) {
-                                Text(URL(string: repo)?.host() ?? repo)
-                                Text(repo).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                Text(ExtensionStore.repoLabel(repo))
+                                Text(extensions.summary(repo)).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
                             }
                         }
                     }
@@ -127,7 +154,7 @@ struct RepoView: View {
                 }
             }
         }
-        .navigationTitle(URL(string: repo)?.host() ?? t("Dépôt", "Repository"))
+        .navigationTitle(ExtensionStore.repoLabel(repo))
     }
 
     @ViewBuilder

@@ -19,10 +19,10 @@
 
 Nami is two apps around one torrent engine:
 
-- **iPhone**: a native SwiftUI app with a VLC player, in [`app/`](app).
-- **Android and Windows**: a Flutter app with an mpv player, in [`mobile/`](mobile).
+- **iPhone**: a native SwiftUI app, in [`app/`](app).
+- **Android and Windows**: a Flutter app, in [`mobile/`](mobile).
 
-Both talk to AniList and run the same Hayase-format extensions.
+Both play through mpv, talk to AniList and run the same Hayase-format extensions.
 
 ## Features
 
@@ -33,20 +33,20 @@ Both talk to AniList and run the same Hayase-format extensions.
   repositories you want in Settings.
 - **Torrent engine on the device**: playback starts while the torrent downloads,
   with pieces fetched around the playback position. Nothing is kept after you close the player.
-- **Player**: MKV, HEVC, ASS subtitles, audio and subtitle track selection,
-  10 s seeking, an 85 s intro skip and a next-episode button.
-- **French and English** interface, and a choice of romaji, English or Japanese titles.
-
-Android and Windows only, for now:
-
 - **Source picker**: release names are read (group, quality, codec, audio, full season) and
   one source is recommended, based on seeders, your preferred quality and original audio.
+- **mpv player**: MKV, HEVC, ASS subtitles, audio and subtitle track selection, 10 s seeking
+  and a next-episode button.
 - **Player comfort**: resumes each episode where you stopped, skips openings and endings
   with [AniSkip](https://aniskip.com) timings, plays the next episode after a 10 s countdown
   (reusing the season pack when it holds it), picks subtitles in your language, with
   adjustable size and delay.
-- **Keyboard shortcuts** in the player on Windows: Space/K play, ←/→ 10 s, S skip,
-  Z/X subtitle delay, Esc close.
+- **French and English** interface, and a choice of romaji, English or Japanese titles.
+
+iPhone only: fill the screen with a pinch (subtitles keep their size), a mini-player when you
+swipe the player down, and settings that survive a reinstall in LiveContainer.
+Windows only: keyboard shortcuts in the player (Space/K play, ←/→ 10 s, S skip,
+Z/X subtitle delay, Esc close).
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for what is coming next.
 
@@ -75,7 +75,7 @@ version number: the latest IPA is attached to the most recent release that has o
 ┌──── iPhone app (SwiftUI) ────┐   ┌──── Android / Windows (Flutter) ────┐
 │ AniList GraphQL, ani.zip     │   │ AniList GraphQL, ani.zip            │
 │ WKWebView runs extensions    │   │ headless WebView runs extensions    │
-│ MobileVLCKit plays the file  │   │ media_kit (mpv) plays the file      │
+│ MPVKit (mpv) plays the file  │   │ media_kit (mpv) plays the file      │
 └──────────────┬───────────────┘   └──────────────────┬──────────────────┘
                │ C call + local HTTP                  │ dart:ffi + local HTTP
 ┌──────────────▼──────────────────────────────────────▼──────────────────┐
@@ -104,16 +104,8 @@ which replaces Xcode for SwiftPM apps. A Mac with Xcode works too
 **Requirements**
 - xtool with the Darwin SDK (`xtool setup`), Swift 6
 - Go 1.27+ (`env.sh` expects it in `~/.local/go-sdk`; adjust if needed)
-- MobileVLCKit 3.7.4, which is not in the repository:
-
-```bash
-mkdir -p vendor && cd vendor
-curl -LO https://download.videolan.org/pub/cocoapods/prod/MobileVLCKit-3.0-20260922-1512.tar.xz
-echo "c649c4c47bd065b3a5511746361b5a9066a34033f2df9cbc9454409c0f363b52  MobileVLCKit-3.0-20260922-1512.tar.xz" | sha256sum -c
-tar xf MobileVLCKit-3.0-20260922-1512.tar.xz
-cp -r MobileVLCKit-binary/MobileVLCKit.xcframework ../app/Vendor/
-cd .. && python3 tools/thin.py app/Vendor/MobileVLCKit.xcframework/ios-arm64_armv7_armv7s/MobileVLCKit.framework/MobileVLCKit
-```
+- [MPVKit](https://github.com/mpvkit/MPVKit) 1.0.0 (mpv and FFmpeg, LGPL build) is fetched by
+  SwiftPM on the first build, which takes about 5 minutes.
 
 **Build**
 
@@ -184,8 +176,8 @@ Nami is free software under the [GNU General Public License v3.0](LICENSE).
 Third-party components keep their own licenses, listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md): notably
 [anacrolix/torrent](https://github.com/anacrolix/torrent) (MPL-2.0),
-[MobileVLCKit](https://code.videolan.org/videolan/VLCKit) on iPhone and
-[mpv](https://mpv.io) with FFmpeg through [media_kit](https://github.com/media-kit/media-kit)
-on Android and Windows (both LGPL-2.1, dynamically linked).
+and [mpv](https://mpv.io) with FFmpeg (LGPL-2.1), through
+[MPVKit](https://github.com/mpvkit/MPVKit) on iPhone and
+[media_kit](https://github.com/media-kit/media-kit) on Android and Windows.
 Anime data comes from [AniList](https://anilist.co) and [ani.zip](https://api.ani.zip).
 Nami is not affiliated with AniList, Hayase, mpv or VideoLAN.

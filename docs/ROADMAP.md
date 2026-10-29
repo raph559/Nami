@@ -18,18 +18,19 @@
 
 ## Player
 
-- [x] Resume where you stopped, per episode (Android, Windows).
-- [x] Skip intros and endings automatically (AniSkip) (Android, Windows).
-- [x] Autoplay the next episode with a countdown (Android, Windows).
+- [x] Resume where you stopped, per episode.
+- [x] Skip intros and endings automatically (AniSkip).
+- [x] Autoplay the next episode with a countdown.
+- [x] Mini-player when you swipe the player down (iPhone).
 - [ ] Picture-in-Picture.
 
 ## Subtitles
 
-- [x] Preferred subtitle language, picked automatically (Android, Windows).
+- [x] Preferred subtitle language, picked automatically.
 - [ ] External subtitles when a release has none in your language (e.g. Jimaku, OpenSubtitles).
 - [ ] Subtitle style: font, outline/background, position; keep ASS styling when present.
-      Size is done on Android and Windows.
-- [x] Sync offset (+/− ms) per episode (Android, Windows).
+      Size is done.
+- [x] Sync offset (+/− ms) per episode.
 
 ## More
 
@@ -37,8 +38,3 @@
 - [ ] Notifications when a new episode of an anime on your list airs.
 - [ ] Offline downloads.
 
-## iPhone app
-
-- [ ] Bring the Android and Windows source picker to the SwiftUI app: recommended source,
-      release facts as tags, seeder levels.
-- [ ] Bring the player features above (resume, AniSkip, countdown, subtitle settings).

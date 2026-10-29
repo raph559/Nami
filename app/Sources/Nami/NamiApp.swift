@@ -8,6 +8,9 @@ struct NamiApp: App {
     @AppStorage("titleLanguage") private var titleLanguage = TitleLanguage.romaji.rawValue
 
     init() {
+        // Before any store reads UserDefaults: a reinstall in LiveContainer starts empty.
+        SettingsBackup.restoreIfEmpty()
+        SettingsBackup.watch()
         URLCache.shared = URLCache(memoryCapacity: 64 << 20, diskCapacity: 512 << 20)
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
     }
@@ -51,6 +54,7 @@ enum Orientation {
 struct RootView: View {
     @StateObject private var anilist = AniList.shared
     @StateObject private var extensions = ExtensionStore.shared
+    @StateObject private var center = PlayerCenter.shared
 
     var body: some View {
         TabView {
@@ -61,8 +65,23 @@ struct RootView: View {
             SettingsView()
                 .tabItem { Label(t("Réglages", "Settings"), systemImage: "gearshape.fill") }
         }
+        // Above the tabs, so it can shrink to a mini-player and keep playing.
+        .overlay {
+            if let session = center.session {
+                PlayerView(media: session.media, episode: session.episode, result: session.result) { exit in
+                    center.next(exit)
+                }
+                .id(session.id)
+            }
+        }
+        .sheet(item: $center.sources) { request in
+            SourcesSheet(media: request.media, episode: request.episode, autoPick: request.autoPick) { result in
+                center.picked(result, for: request)
+            }
+        }
         .environmentObject(anilist)
         .environmentObject(extensions)
+        .environmentObject(center)
         .task {
             await anilist.loadViewer()
             await extensions.refresh()

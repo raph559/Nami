@@ -21,7 +21,8 @@ Direct dependencies of `mobile/` (versions in `mobile/pubspec.lock`).
 
 | Component | License | Notes |
 |---|---|---|
-| [MobileVLCKit](https://code.videolan.org/videolan/VLCKit) 3.7.4 | LGPL-2.1 | Dynamically linked framework, shipped unmodified in the IPA |
+| [MPVKit](https://github.com/mpvkit/MPVKit) 1.0.0 | LGPL-3.0 | Swift packaging of the libraries below, LGPL build (no GPL modules) |
+| [libmpv](https://mpv.io), [FFmpeg](https://ffmpeg.org), libass, libplacebo, MoltenVK and their dependencies, from MPVKit | LGPL-2.1 or later, and permissive licenses | Statically linked, unmodified; Nami's source is public, so the app can be rebuilt against modified versions |
 
 ## Go modules in the torrent engine
 
