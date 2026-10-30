@@ -23,6 +23,9 @@ struct CoverImageView: View {
 
 /// Where a cover was tapped, so the anime page can grow out of it (iOS 18 zoom).
 struct MediaRoute: Hashable {
+    /// `source` of the route to the calendar, which fits the same typed path; its media is ignored.
+    static let calendar = "calendar"
+
     var media: Media
     var source: String
 }
@@ -328,7 +331,17 @@ struct AiringRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(t("Aujourd'hui", "Today")).font(.title3.bold()).padding(.horizontal).accessibilityAddTraits(.isHeader)
+            HStack(alignment: .firstTextBaseline) {
+                Text(t("Aujourd'hui", "Today")).font(.title3.bold()).accessibilityAddTraits(.isHeader)
+                Spacer()
+                if let first = items.first {
+                    Button(t("Calendrier complet", "Full calendar")) {
+                        path.append(MediaRoute(media: first.media, source: MediaRoute.calendar))
+                    }
+                    .font(.subheadline).tint(Nami.textSecondary)
+                }
+            }
+            .padding(.horizontal)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 12) {
                     ForEach(items) { item in
@@ -401,7 +414,11 @@ struct HomeView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: MediaRoute.self) { r in
-                MediaDetailView(media: r.media).zoomDestination(r.source, in: ns)
+                if r.source == MediaRoute.calendar {
+                    CalendarView(listIDs: store.feed?.listIDs ?? [], ns: ns)
+                } else {
+                    MediaDetailView(media: r.media).zoomDestination(r.source, in: ns)
+                }
             }
             .refreshable { await load() }
             .task(id: "\(anilist.viewer?.id ?? 0)-\(anilist.listRevision)") {
@@ -519,6 +536,7 @@ struct HomeView: View {
         if let fresh {
             store.inputs = fresh
             store.feed = fresh.feed(loggedIn: anilist.isLoggedIn)
+            anilist.newEpisodes = fresh.watching.filter(\.hasNewEpisode).count
         }
         store.loaded = true
     }

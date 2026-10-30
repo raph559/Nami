@@ -12,6 +12,28 @@ import 'theme.dart';
 import 'ui/hover_card.dart';
 import 'ui/motion.dart';
 
+/// The number of anime of your list with an episode to watch, over a tab's icon.
+class NewEpisodesBadge extends StatelessWidget {
+  const NewEpisodesBadge({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+    valueListenable: AniList.instance.newEpisodes,
+    child: child,
+    builder: (context, count, child) => Semantics(
+      label: count > 0 ? t('$count avec un nouvel épisode', '$count with a new episode') : null,
+      child: Badge.count(
+        count: count,
+        isLabelVisible: count > 0,
+        backgroundColor: Nami.text,
+        textColor: Nami.ground,
+        child: child,
+      ),
+    ),
+  );
+}
+
 /// Network image that fills the space it is given.
 class CoverImage extends StatelessWidget {
   const CoverImage(this.url, {super.key, this.radius = Nami.radiusImage, this.alignment = Alignment.center});

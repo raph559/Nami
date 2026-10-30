@@ -230,6 +230,12 @@ class AniList extends ChangeNotifier {
   /// Goes up each time Nami changes the viewer's list, so screens showing it reload.
   int listRevision = 0;
 
+  /// How many anime of your list have an episode to watch. The home keeps it up to date.
+  final newEpisodes = ValueNotifier<int>(0);
+
+  List<AiringItem>? _week;
+  DateTime? _weekAt;
+
   String get _token => AppSettings.instance.prefs.getString('anilistToken') ?? '';
   bool get isLoggedIn => _token.isNotEmpty;
 
@@ -325,6 +331,29 @@ class AniList extends ChangeNotifier {
       {'a': start.millisecondsSinceEpoch ~/ 1000 - 1, 'b': end.millisecondsSinceEpoch ~/ 1000},
     );
     return parseAiring(d['Page']['airingSchedules'] as List);
+  }
+
+  /// Episodes of the seven days from today, in time order. A week is more than one page,
+  /// so it is kept for a while: going back to the calendar should not ask for it again.
+  Future<List<AiringItem>> airingWeek() async {
+    final now = DateTime.now();
+    final kept = _weekAt;
+    if (_week != null && kept != null && kept.day == now.day && now.difference(kept).inMinutes < 15) return _week!;
+    final (start, _) = dayBounds(now);
+    final end = DateTime(start.year, start.month, start.day + 7);
+    final items = <AiringItem>[];
+    for (var page = 1; page <= 6; page++) {
+      final d = await query(
+        r'query($a: Int, $b: Int, $p: Int) { Page(page: $p, perPage: 50) { pageInfo { hasNextPage } '
+        r'airingSchedules(airingAt_greater: $a, airingAt_lesser: $b, sort: TIME) { episode airingAt media { isAdult '
+        '$mediaFields } } } }',
+        {'a': start.millisecondsSinceEpoch ~/ 1000 - 1, 'b': end.millisecondsSinceEpoch ~/ 1000, 'p': page},
+      );
+      items.addAll(parseAiring(d['Page']['airingSchedules'] as List));
+      if (d['Page']['pageInfo']?['hasNextPage'] != true) break;
+    }
+    _weekAt = now;
+    return _week = items;
   }
 
   /// Today's schedule entries, without adult anime and without entries AniList sent without an anime.

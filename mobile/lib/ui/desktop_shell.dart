@@ -19,6 +19,7 @@ class DesktopShell extends StatelessWidget {
     required this.onSelect,
     required this.pages,
     required this.onAccount,
+    this.badgedIndex,
   });
 
   final List<RailItem> items;
@@ -28,6 +29,9 @@ class DesktopShell extends StatelessWidget {
 
   /// The avatar at the bottom: the list when logged in, the login otherwise.
   final VoidCallback onAccount;
+
+  /// The destination that shows the count of new episodes.
+  final int? badgedIndex;
 
   static const width = 60.0;
   static const railKey = ValueKey('desktop-rail');
@@ -74,7 +78,12 @@ class DesktopShell extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     for (var i = 0; i < items.length; i++) ...[
-                      _RailButton(item: items[i], selected: i == index, onTap: () => onSelect(i)),
+                      _RailButton(
+                        item: items[i],
+                        selected: i == index,
+                        badged: i == badgedIndex,
+                        onTap: () => onSelect(i),
+                      ),
                       const SizedBox(height: 6),
                     ],
                     const Spacer(),
@@ -91,9 +100,10 @@ class DesktopShell extends StatelessWidget {
 }
 
 class _RailButton extends StatelessWidget {
-  const _RailButton({required this.item, required this.selected, required this.onTap});
+  const _RailButton({required this.item, required this.selected, required this.onTap, this.badged = false});
   final RailItem item;
   final bool selected;
+  final bool badged;
   final VoidCallback onTap;
 
   @override
@@ -125,15 +135,18 @@ class _RailButton extends StatelessWidget {
                   icon: TweenAnimationBuilder<Color?>(
                     tween: ColorTween(end: selected || hovered ? Nami.text : Nami.textMuted),
                     duration: motion.fast,
-                    builder: (context, color, _) => AnimatedSwitcher(
-                      duration: motion.fast,
-                      child: Icon(
-                        selected ? item.selectedIcon : item.icon,
-                        key: ValueKey(selected),
-                        size: 20,
-                        color: color,
-                      ),
-                    ),
+                    builder: (context, color, _) {
+                      final glyph = AnimatedSwitcher(
+                        duration: motion.fast,
+                        child: Icon(
+                          selected ? item.selectedIcon : item.icon,
+                          key: ValueKey(selected),
+                          size: 20,
+                          color: color,
+                        ),
+                      );
+                      return badged ? NewEpisodesBadge(child: glyph) : glyph;
+                    },
                   ),
                 ),
               );

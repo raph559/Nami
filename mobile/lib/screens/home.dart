@@ -6,6 +6,7 @@ import '../platform.dart';
 import '../settings.dart';
 import '../theme.dart';
 import '../ui/airing_row.dart';
+import 'calendar.dart';
 import '../ui/hero_carousel.dart';
 import '../ui/motion.dart';
 import '../widgets.dart';
@@ -201,6 +202,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (inputs != null) {
         _inputs = inputs;
         feed = inputs.feed(loggedIn: loggedIn);
+        anilist.newEpisodes.value = inputs.watching.where((w) => w.hasNewEpisode).length;
       }
     });
   }
@@ -309,7 +311,17 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
             if (feed.today.isNotEmpty) ...[
               gap,
-              _SectionTitle(t("Aujourd'hui", 'Today')),
+              _SectionTitle(
+                t("Aujourd'hui", 'Today'),
+                trailing: FocusOutline(
+                  child: TextButton(
+                    onPressed: () =>
+                        Navigator.of(context)
+                            .push(MaterialPageRoute<void>(builder: (_) => CalendarScreen(listIds: feed.listIds))),
+                    child: Text(t('Calendrier complet', 'Full calendar')),
+                  ),
+                ),
+              ),
               const SizedBox(height: 10),
               AiringRow(items: feed.today, listIds: feed.listIds),
             ],
@@ -348,13 +360,21 @@ class _HomeScreenState extends State<HomeScreen> {
 double _side(BuildContext context) => isDesktop ? MediaQuery.paddingOf(context).left + 36 : 20;
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
+  const _SectionTitle(this.text, {this.trailing});
   final String text;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) => Padding(
     padding: EdgeInsets.symmetric(horizontal: _side(context)),
-    child: Semantics(header: true, child: Text(text, style: MediaRow.titleStyle)),
+    child: Row(
+      children: [
+        Expanded(
+          child: Semantics(header: true, child: Text(text, style: MediaRow.titleStyle)),
+        ),
+        ?trailing,
+      ],
+    ),
   );
 }
 

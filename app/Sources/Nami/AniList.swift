@@ -257,6 +257,9 @@ final class AniList: ObservableObject {
     @Published var viewerError: String?
     /// Goes up each time Nami changes the viewer's list, so screens showing it reload.
     @Published var listRevision = 0
+    /// How many anime of your list have an episode to watch. The home keeps it up to date.
+    @Published var newEpisodes = 0
+    private var week: (at: Date, items: [AiringItem])?
 
     var isLoggedIn: Bool { !token.isEmpty }
 
@@ -331,8 +334,31 @@ final class AniList: ObservableObject {
     func airingToday(now: Date = .now) async throws -> [AiringItem] {
         let start = Calendar.current.startOfDay(for: now)
         let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? now
+        return try await airing(from: start, to: end, page: 1).items
+    }
+
+    /// Episodes of the seven days from today, in time order. A week is more than one page,
+    /// so it is kept for a while: going back to the calendar should not ask for it again.
+    func airingWeek(now: Date = .now) async throws -> [AiringItem] {
+        if let week, Calendar.current.isDate(week.at, inSameDayAs: now), now.timeIntervalSince(week.at) < 15 * 60 {
+            return week.items
+        }
+        let start = Calendar.current.startOfDay(for: now)
+        let end = Calendar.current.date(byAdding: .day, value: 7, to: start) ?? now
+        var items: [AiringItem] = []
+        for page in 1...6 {
+            let found = try await airing(from: start, to: end, page: page)
+            items += found.items
+            if !found.more { break }
+        }
+        week = (now, items)
+        return items
+    }
+
+    private func airing(from start: Date, to end: Date, page: Int) async throws -> (items: [AiringItem], more: Bool) {
         struct D: Decodable {
-            struct Page: Decodable { var airingSchedules: [S] }
+            struct Page: Decodable { var pageInfo: Info?; var airingSchedules: [S] }
+            struct Info: Decodable { var hasNextPage: Bool? }
             struct S: Decodable { var episode: Int; var airingAt: Int; var media: M? }
             struct M: Decodable { var isAdult: Bool?; var media: Media
                 init(from decoder: Decoder) throws {
@@ -344,12 +370,13 @@ final class AniList: ObservableObject {
             var Page: Page
         }
         let d = try await query("""
-        query($a: Int, $b: Int) { Page(perPage: 50) { airingSchedules(airingAt_greater: $a, airingAt_lesser: $b, sort: TIME) { episode airingAt media { isAdult \(mediaFields) } } } }
-        """, ["a": Int(start.timeIntervalSince1970) - 1, "b": Int(end.timeIntervalSince1970)], as: D.self)
-        return d.Page.airingSchedules.compactMap { s in
+        query($a: Int, $b: Int, $p: Int) { Page(page: $p, perPage: 50) { pageInfo { hasNextPage } airingSchedules(airingAt_greater: $a, airingAt_lesser: $b, sort: TIME) { episode airingAt media { isAdult \(mediaFields) } } } }
+        """, ["a": Int(start.timeIntervalSince1970) - 1, "b": Int(end.timeIntervalSince1970), "p": page], as: D.self)
+        let items: [AiringItem] = d.Page.airingSchedules.compactMap { s in
             guard let m = s.media, m.isAdult != true else { return nil }
             return AiringItem(media: m.media, episode: s.episode, airingAt: Date(timeIntervalSince1970: TimeInterval(s.airingAt)))
         }
+        return (items, d.Page.pageInfo?.hasNextPage == true)
     }
 
     /// AniList's best-rated recommendations for an anime.

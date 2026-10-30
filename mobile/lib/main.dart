@@ -169,6 +169,7 @@ class _RootScreenState extends State<RootScreen> {
         index: tab,
         onSelect: (i) => setState(() => tab = i),
         pages: children,
+        badgedIndex: 2,
         onAccount: () => AniList.instance.isLoggedIn
             ? setState(() => tab = 2)
             : Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginScreen())),
@@ -184,6 +185,7 @@ class _RootScreenState extends State<RootScreen> {
       label: items[i].$3,
       selected: tab == i,
       vertical: vertical,
+      badged: i == 2,
       showLabel: showLabel,
       onTap: () => setState(() => tab = i),
     );
@@ -243,6 +245,7 @@ class _NavItem extends StatelessWidget {
     required this.vertical,
     required this.onTap,
     this.showLabel = true,
+    this.badged = false,
   });
   final IconData icon;
   final String label;
@@ -253,9 +256,13 @@ class _NavItem extends StatelessWidget {
   /// The phone bar names only the current tab; the others keep their name for screen readers and as a tooltip.
   final bool showLabel;
 
+  /// Shows the count of new episodes on the icon.
+  final bool badged;
+
   @override
   Widget build(BuildContext context) {
     final color = selected ? Nami.text : Nami.textMuted;
+    final glyph = Icon(icon, color: color, size: showLabel ? 24 : 22);
     return FocusOutline(
       child: Semantics(
         selected: selected,
@@ -272,7 +279,7 @@ class _NavItem extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(icon, color: color, size: showLabel ? 24 : 22),
+                  if (badged) NewEpisodesBadge(child: glyph) else glyph,
                   if (showLabel) ...[
                     const SizedBox(height: 4),
                     Text(

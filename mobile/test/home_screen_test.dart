@@ -103,6 +103,21 @@ void main() {
     expect(order, ordered);
   });
 
+  testWidgets('the home counts the anime with an episode to watch', (tester) async {
+    AniList.instance.newEpisodes.value = 0;
+    await pumpHome(tester, size: tall);
+    expect(AniList.instance.newEpisodes.value, 1);
+  });
+
+  testWidgets('the Today row opens the full calendar', (tester) async {
+    await pumpHome(tester, size: tall);
+    await tester.tap(find.text('Calendrier complet'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Calendrier'), findsOneWidget);
+    expect(find.text('Demain'), findsOneWidget);
+  });
+
   testWidgets('suggestions leave out anime already in the list', (tester) async {
     await pumpHome(tester, size: tall);
     expect(find.text('Anime 70'), findsWidgets);
