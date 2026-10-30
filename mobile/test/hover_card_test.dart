@@ -136,4 +136,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(opacity(), 1);
   });
+
+  testWidgets('the card stays inside a short window', (tester) async {
+    debugDesktopOverride = true;
+    addTearDown(() => debugDesktopOverride = null);
+    tester.view.physicalSize = const Size(1000, 420);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: Nami.desktopTheme(),
+        home: Scaffold(
+          body: Stack(children: [Positioned(left: 20, top: 300, child: MediaCard(media, width: 120))]),
+        ),
+      ),
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(const Offset(80, 340));
+    await tester.pump(const Duration(milliseconds: 700));
+    final rect = tester.getRect(find.byType(MediaHoverCard));
+    expect(rect.bottom, lessThanOrEqualTo(420));
+    expect(rect.top, greaterThanOrEqualTo(0));
+  });
 }

@@ -18,6 +18,9 @@ class MediaHoverCard extends StatelessWidget {
   final VoidCallback? onDone;
 
   static const width = 300.0;
+
+  /// Upper bound of its height, to choose a side before it is laid out.
+  static const tallest = 340.0;
   static const surface = Color(0xFF1B1B1E);
 
   int get nextEpisode =>

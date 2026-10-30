@@ -124,4 +124,27 @@ void main() {
     await tester.pump();
     expect(find.text('4 · En cours · 18 min restantes'), findsOneWidget);
   });
+
+  testWidgets('small window tags show each genre apart and no studio', (tester) async {
+    await pumpDetail(tester, full(), desktop: true, size: const Size(900, 1200));
+    expect(find.text('Action'), findsOneWidget);
+    expect(find.text('Drame'), findsOneWidget);
+    expect(find.text('Action, Drame, Science-fiction'), findsNothing);
+    // The studio is already in the line under the title.
+    expect(find.text('TRIGGER'), findsNothing);
+  });
+
+  testWidgets('no empty tag row when only the studio is known', (tester) async {
+    final media = Media({
+      'id': 3,
+      'title': <String, dynamic>{'romaji': 'Only studio'},
+      'studios': {
+        'nodes': [
+          {'name': 'TRIGGER'},
+        ],
+      },
+    });
+    await pumpDetail(tester, media, desktop: false);
+    expect(find.byType(Wrap), findsNothing);
+  });
 }

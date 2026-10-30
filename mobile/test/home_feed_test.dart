@@ -111,4 +111,9 @@ void main() {
   test('planning keeps the list order', () {
     expect(ids(build(planning: [planned(31), planned(30)]).planning), [31, 30]);
   });
+
+  test('the feed knows every anime of the list', () {
+    final feed = build(listIds: {1, 2, 3});
+    expect(feed.listIds, {1, 2, 3});
+  });
 }

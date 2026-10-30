@@ -34,6 +34,7 @@ class HomeFeed {
     required this.season,
     required this.trending,
     required this.topRated,
+    required this.listIds,
   });
 
   final List<HeroItem> hero;
@@ -46,6 +47,9 @@ class HomeFeed {
   final List<Media> season;
   final List<Media> trending;
   final List<Media> topRated;
+
+  /// Every anime of the viewer's list, whatever its status.
+  final Set<int> listIds;
 
   static const heroSize = 5;
 
@@ -105,6 +109,7 @@ class HomeFeed {
           if (!seen.contains(m.id)) m,
       ],
       topRated: topRated,
+      listIds: listIds,
     );
   }
 }

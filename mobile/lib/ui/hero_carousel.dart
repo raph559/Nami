@@ -43,6 +43,7 @@ class _HeroCarouselState extends State<HeroCarousel> {
   void didUpdateWidget(HeroCarousel old) {
     super.didUpdateWidget(old);
     if (index >= widget.items.length) index = 0;
+    if (old.items.length != widget.items.length) _restart();
   }
 
   @override
@@ -53,9 +54,9 @@ class _HeroCarouselState extends State<HeroCarousel> {
 
   void _restart() {
     _timer?.cancel();
-    if (widget.items.length < 2 || MediaQuery.disableAnimationsOf(context)) return;
+    if (widget.items.length < 2 || hovered || focused || MediaQuery.disableAnimationsOf(context)) return;
     _timer = Timer.periodic(HeroCarousel.interval, (_) {
-      if (!hovered && !focused && mounted) _go(1);
+      if (mounted) _go(1);
     });
   }
 
@@ -89,10 +90,19 @@ class _HeroCarouselState extends State<HeroCarousel> {
     return Focus(
       canRequestFocus: false,
       skipTraversal: true,
-      onFocusChange: (f) => focused = f,
+      onFocusChange: (f) {
+        focused = f;
+        _restart();
+      },
       child: MouseRegion(
-        onEnter: (_) => hovered = true,
-        onExit: (_) => hovered = false,
+        onEnter: (_) {
+          hovered = true;
+          _restart();
+        },
+        onExit: (_) {
+          hovered = false;
+          _restart();
+        },
         child: GestureDetector(
           onHorizontalDragEnd: isDesktop
               ? null

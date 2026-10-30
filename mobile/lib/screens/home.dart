@@ -248,7 +248,6 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
     final continueItems = feed.continueWatching;
     final because = feed.because;
-    final listIds = {for (final c in continueItems) c.media.id, for (final m in feed.planning) m.id};
     const gap = SizedBox(height: 28);
     return Scaffold(
       body: RefreshIndicator(
@@ -312,7 +311,7 @@ class _HomeScreenState extends State<HomeScreen> {
               gap,
               _SectionTitle(t("Aujourd'hui", 'Today')),
               const SizedBox(height: 10),
-              AiringRow(items: feed.today, listIds: listIds),
+              AiringRow(items: feed.today, listIds: feed.listIds),
             ],
             if (feed.planning.isNotEmpty) ...[
               gap,

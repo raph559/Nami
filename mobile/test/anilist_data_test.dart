@@ -108,4 +108,14 @@ void main() {
     expect([for (final i in items) i.media.id], [9]);
     expect(items.single.episode, 5);
   });
+
+  test('sortLibrary keeps activity order among ties', () {
+    final ties = [for (var i = 0; i < 40; i++) entry('A$i', score: i.isEven ? 50 : 80)];
+    final sorted = sortLibrary(ties, LibrarySort.score);
+    final eighty = [
+      for (final e in sorted)
+        if (e.entry.score == 80) e.media.title.display,
+    ];
+    expect(eighty, [for (var i = 1; i < 40; i += 2) 'A$i']);
+  });
 }

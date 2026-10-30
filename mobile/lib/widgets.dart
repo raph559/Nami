@@ -263,7 +263,8 @@ class _MediaCardState extends State<MediaCard> with SingleTickerProviderStateMix
     // Beside the cover, on whichever side has room.
     final box = this.context.findRenderObject() as RenderBox?;
     final screen = MediaQuery.sizeOf(context);
-    final left = box == null ? 0.0 : box.localToGlobal(Offset.zero).dx;
+    final origin = box == null ? Offset.zero : box.localToGlobal(Offset.zero);
+    final left = origin.dx;
     final right = left + widget.width;
     final fitsRight = right + 8 + MediaHoverCard.width <= screen.width;
     final fitsLeft = left - 8 - MediaHoverCard.width >= 0;
@@ -272,6 +273,9 @@ class _MediaCardState extends State<MediaCard> with SingleTickerProviderStateMix
         : fitsLeft
         ? (Alignment.topLeft, Alignment.topRight, -8.0)
         : (Alignment.bottomLeft, Alignment.topLeft, 0.0);
+    // Moved up just enough to stay inside a short window.
+    final top = target == Alignment.bottomLeft ? origin.dy + (box?.size.height ?? 0) : origin.dy;
+    final dy = -(top + MediaHoverCard.tallest + 8 - screen.height).clamp(0.0, top < 8 ? 0.0 : top - 8);
     // Loose constraints, so the follower is only as big as the card.
     return Align(
       alignment: Alignment.topLeft,
@@ -279,7 +283,7 @@ class _MediaCardState extends State<MediaCard> with SingleTickerProviderStateMix
         link: _link,
         targetAnchor: target,
         followerAnchor: follower,
-        offset: Offset(dx, 0),
+        offset: Offset(dx, dy),
         child: MouseRegion(
           onEnter: (_) => _closeTimer?.cancel(),
           onExit: (_) => _scheduleClose(),

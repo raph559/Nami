@@ -298,6 +298,20 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
+  /// Score, status and each genre as tags (the studio is already in the line under the title).
+  Widget _factTags() {
+    final tags = [
+      if (media.averageScore != null) FlatTag('${media.averageScore} %'),
+      if (_statusLabel(media.status) case final s?) FlatTag(s),
+      for (final g in media.genres.take(4)) FlatTag(genreLabel(g)),
+    ];
+    if (tags.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(spacing: 6, runSpacing: 6, children: tags),
+    );
+  }
+
   /// Phone: the banner, then the cover beside the title, overlapping it.
   Widget _phoneHeader() {
     final top = MediaQuery.paddingOf(context).top;
@@ -345,19 +359,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     ),
                   ],
                   _description(maxWidth: 680),
-                  if (facts.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: [
-                          if (media.averageScore != null) FlatTag('${media.averageScore} %'),
-                          if (_statusLabel(media.status) case final s?) FlatTag(s),
-                          for (final g in media.genres.take(4)) FlatTag(genreLabel(g)),
-                        ],
-                      ),
-                    ),
+                  _factTags(),
                 ],
               ),
             ),
@@ -394,11 +396,7 @@ class _DetailScreenState extends State<DetailScreen> {
         const SizedBox(height: 16),
         Wrap(spacing: 8, runSpacing: 8, children: [_watchButton(expand: false), ..._listButtons(tall: false)]),
         _description(maxWidth: 640),
-        if (facts.isNotEmpty && !showCard)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Wrap(spacing: 6, runSpacing: 6, children: [for (final f in facts) FlatTag(f.$2)]),
-          ),
+        if (!showCard) _factTags(),
       ],
     );
     return Stack(

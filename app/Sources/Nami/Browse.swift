@@ -225,6 +225,9 @@ struct HomeCarousel: View {
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .frame(height: 460)
+        .onChange(of: items.count) { _, count in
+            if index >= count { index = 0 }
+        }
         // Restarts the wait after every change, so a slide just swiped to stays.
         .task(id: "\(index)-\(reduceMotion)-\(scenePhase == .active)") {
             guard items.count > 1, !reduceMotion, scenePhase == .active else { return }

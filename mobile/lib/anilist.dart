@@ -167,16 +167,21 @@ List<LibraryEntry> sortLibrary(List<LibraryEntry> entries, LibrarySort sort) {
     return total > 0 ? (e.entry.progress ?? 0) / total : -1;
   }
 
+  // Dart's sort is not stable: ties fall back on the list's own order (last activity).
+  final position = {for (final (i, e) in entries.indexed) e: i};
+  int ties(LibraryEntry a, LibraryEntry b, int order) => order != 0 ? order : position[a]!.compareTo(position[b]!);
   final sorted = [...entries];
   switch (sort) {
     case LibrarySort.activity:
       break;
     case LibrarySort.title:
-      sorted.sort((a, b) => a.media.title.display.toLowerCase().compareTo(b.media.title.display.toLowerCase()));
+      sorted.sort(
+        (a, b) => ties(a, b, a.media.title.display.toLowerCase().compareTo(b.media.title.display.toLowerCase())),
+      );
     case LibrarySort.score:
-      sorted.sort((a, b) => (b.entry.score ?? 0).compareTo(a.entry.score ?? 0));
+      sorted.sort((a, b) => ties(a, b, (b.entry.score ?? 0).compareTo(a.entry.score ?? 0)));
     case LibrarySort.progress:
-      sorted.sort((a, b) => fraction(b).compareTo(fraction(a)));
+      sorted.sort((a, b) => ties(a, b, fraction(b).compareTo(fraction(a))));
   }
   return sorted;
 }

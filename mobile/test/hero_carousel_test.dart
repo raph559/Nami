@@ -167,4 +167,39 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     expect(scale(), 1.0);
   });
+
+  testWidgets('the banner starts moving once a second anime arrives', (tester) async {
+    debugDesktopOverride = true;
+    addTearDown(() => debugDesktopOverride = null);
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    Widget app(List<HeroItem> list) => MaterialApp(
+      theme: Nami.desktopTheme(),
+      home: Scaffold(
+        body: ListView(
+          children: [HeroCarousel(items: list, onOpen: (_) {})],
+        ),
+      ),
+    );
+    await tester.pumpWidget(app(items.take(1).toList()));
+    await tester.pumpWidget(app(items));
+    await tester.pump(const Duration(seconds: 8));
+    await tester.pumpAndSettle();
+    expect(find.text('Anime 2'), findsOneWidget);
+  });
+
+  testWidgets('leaving the banner gives the slide its full 8 s', (tester) async {
+    await pumpHero(tester);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: tester.getCenter(find.byType(HeroCarousel)));
+    addTearDown(mouse.removePointer);
+    await tester.pump(const Duration(seconds: 7));
+    await mouse.moveTo(const Offset(1500, 880));
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('Anime 1'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 7));
+    await tester.pumpAndSettle();
+    expect(find.text('Anime 2'), findsOneWidget);
+  });
 }
