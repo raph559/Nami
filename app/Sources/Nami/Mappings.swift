@@ -12,7 +12,8 @@ struct Mappings: Decodable {
     }
 
     struct Episode: Decodable {
-        var title: [String: String]?
+        /// Per language. ani.zip sends null for a language with no title yet.
+        var title: [String: String?]?
         var image: String?
         var overview: String?
         var summary: String?
@@ -25,7 +26,10 @@ struct Mappings: Decodable {
         var absoluteEpisodeNumber: Int?
 
         func displayTitle(_ lang: String = "fr") -> String? {
-            title?[lang] ?? title?["en"] ?? title?["x-jat"]
+            for key in [lang, "en", "x-jat"] {
+                if let found = title?[key] ?? nil { return found }
+            }
+            return nil
         }
     }
 
@@ -33,6 +37,16 @@ struct Mappings: Decodable {
     var episodes: [String: Episode]?
 
     func episode(_ n: Int) -> Episode? { episodes?[String(n)] }
+
+    private enum CodingKeys: String, CodingKey { case mappings, episodes }
+
+    /// One odd entry only costs that entry, never the whole anime's pictures and titles.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        mappings = try? c.decodeIfPresent(Ids.self, forKey: .mappings)
+        episodes = (try? c.decodeIfPresent([String: Lossy<Episode>].self, forKey: .episodes))?
+            .compactMapValues(\.value)
+    }
 
     private static var cache: [Int: Mappings] = [:]
 
@@ -45,6 +59,12 @@ struct Mappings: Decodable {
         cache[anilistID] = m
         return m
     }
+}
+
+/// Decodes a value, or nil when it does not match, without failing what contains it.
+struct Lossy<T: Decodable>: Decodable {
+    var value: T?
+    init(from decoder: Decoder) throws { value = try? T(from: decoder) }
 }
 
 /// Decodes a JSON value that may be either a string or a number.
