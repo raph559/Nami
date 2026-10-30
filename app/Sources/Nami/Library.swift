@@ -99,6 +99,7 @@ struct ListEditorSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .presentationBackground(Nami.sheet)
     }
 
     private func setStatus(_ s: ListStatus) {

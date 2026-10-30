@@ -218,6 +218,7 @@ struct SourcesSheet: View {
         }
         .scrollIndicators(.hidden)
         .presentationDetents([.fraction(0.75), .large])
+        .presentationBackground(Nami.sheet)
         .presentationDragIndicator(.visible)
         .foregroundStyle(Nami.text)
         .task {

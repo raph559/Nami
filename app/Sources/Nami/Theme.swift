@@ -11,6 +11,8 @@ enum Nami {
     static let warning = Color(hex: "#F2C14E")!
     /// Card surface on the sources sheet.
     static let card = Color(hex: "#1B1B1E")!
+    /// Sheets are solid: iOS's glass lets the page behind show through their text.
+    static let sheet = Color(hex: "#131315")!
     /// Control borders: text at 45 %, 3.9:1 on the ground.
     static let border = text.opacity(0.45)
 

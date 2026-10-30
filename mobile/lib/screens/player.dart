@@ -243,12 +243,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               duration: Motion.of(context).medium,
               child: _flash == 0
                   ? const SizedBox.expand()
-                  : SeekFeedback(
-                      key: ValueKey(_flash > 0),
-                      seconds: _flash,
-                      step: AppSettings.instance.seekStep,
-                      pulse: _flashPulse,
-                    ),
+                  : SeekFeedback(key: ValueKey(_flash > 0), seconds: _flash, pulse: _flashPulse),
             ),
           ),
         ),
@@ -887,14 +882,11 @@ class SeekIcon extends StatelessWidget {
   );
 }
 
-/// The answer to a jump: a circular arrow with the step inside gives a turn with each
-/// jump and the total climbs under it. Nothing covers the picture.
+/// The answer to a jump: a circular arrow gives a turn with each jump, and the total
+/// climbs inside it. Nothing covers the picture.
 class SeekFeedback extends StatelessWidget {
-  const SeekFeedback({super.key, required this.seconds, required this.step, this.pulse = 0});
+  const SeekFeedback({super.key, required this.seconds, this.pulse = 0});
   final int seconds;
-
-  /// The seek length, written in the arrow.
-  final int step;
   final int pulse;
 
   @override
@@ -903,31 +895,15 @@ class SeekFeedback extends StatelessWidget {
     final motion = Motion.of(context);
     return Align(
       alignment: Alignment(forward ? 0.56 : -0.56, 0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TweenAnimationBuilder<double>(
-            key: ValueKey(pulse),
-            tween: Tween(begin: 0, end: 1),
-            duration: motion.medium * 1.75,
-            curve: Curves.linear,
-            // Quick out in the direction of the jump, then back with a small bounce.
-            builder: (context, t, child) =>
-                Transform.rotate(angle: (forward ? 1 : -1) * 0.9 * sin(t * pi * 2) * (1 - t), child: child),
-            child: SeekIcon(forward: forward, step: step, size: 60),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '${forward ? '+' : '-'}${seconds.abs()} s',
-            style: const TextStyle(
-              fontFamily: Nami.sans,
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              shadows: SeekIcon._shadow,
-            ),
-          ),
-        ],
+      child: TweenAnimationBuilder<double>(
+        key: ValueKey(pulse),
+        tween: Tween(begin: 0, end: 1),
+        duration: motion.medium * 1.75,
+        curve: Curves.linear,
+        // Quick out in the direction of the jump, then back with a small bounce.
+        builder: (context, t, child) =>
+            Transform.rotate(angle: (forward ? 1 : -1) * 0.9 * sin(t * pi * 2) * (1 - t), child: child),
+        child: SeekIcon(forward: forward, step: seconds.abs(), size: 68),
       ),
     );
   }

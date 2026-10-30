@@ -121,7 +121,7 @@ struct PlayerView: View {
 
                         if flash != 0 {
                             // A new view per direction, so changing side fades instead of sliding across.
-                            SeekFeedback(seconds: flash, step: seekStep, pulse: flashPulse)
+                            SeekFeedback(seconds: flash, pulse: flashPulse)
                                 .id(flash > 0)
                                 .transition(.opacity)
                         }
@@ -635,11 +635,10 @@ struct PlayerView: View {
     }
 }
 
-/// The answer to a double tap: a circular arrow with the step inside gives a turn with each
-/// jump and the total climbs under it. Nothing covers the picture.
+/// The answer to a double tap: a circular arrow gives a turn with each jump, and the total
+/// climbs inside it. Nothing covers the picture.
 private struct SeekFeedback: View {
     let seconds: Int
-    let step: Int
     let pulse: Int
 
     @State private var turn = 0.0
@@ -649,14 +648,15 @@ private struct SeekFeedback: View {
 
     var body: some View {
         GeometryReader { geo in
-            VStack(spacing: 6) {
-                Image(systemName: "\(forward ? "goforward" : "gobackward").\(step)")
-                    .font(.system(size: 52, weight: .light))
+            ZStack {
+                Image(systemName: forward ? "goforward" : "gobackward")
+                    .font(.system(size: 60, weight: .light))
                     .rotationEffect(.degrees(turn))
-                Text("\(forward ? "+" : "-")\(abs(seconds)) s")
-                    .font(.headline.weight(.bold))
+                Text("\(abs(seconds))")
+                    .font(.system(size: 17, weight: .bold))
                     .monospacedDigit()
                     .contentTransition(.numericText(value: Double(abs(seconds))))
+                    .offset(y: 2)
             }
             .foregroundStyle(.white)
             .shadow(color: .black.opacity(0.6), radius: 6)

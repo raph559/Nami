@@ -37,14 +37,13 @@ void main() {
   );
 
   testWidgets('the feedback says how far, on the side of the jump', (tester) async {
-    await tester.pumpWidget(host(const SeekFeedback(seconds: 20, step: 10, pulse: 1)));
-    expect(find.text('+20 s'), findsOneWidget);
-    expect(find.text('10'), findsOneWidget);
-    expect(tester.getCenter(find.text('+20 s')).dx, greaterThan(400));
+    await tester.pumpWidget(host(const SeekFeedback(seconds: 20, pulse: 1)));
+    expect(find.text('20'), findsOneWidget);
+    expect(tester.getCenter(find.text('20')).dx, greaterThan(400));
 
-    await tester.pumpWidget(host(const SeekFeedback(seconds: -30, step: 30, pulse: 2)));
-    expect(find.text('-30 s'), findsOneWidget);
-    expect(tester.getCenter(find.text('-30 s')).dx, lessThan(400));
+    await tester.pumpWidget(host(const SeekFeedback(seconds: -30, pulse: 2)));
+    expect(find.text('30'), findsOneWidget);
+    expect(tester.getCenter(find.text('30')).dx, lessThan(400));
   });
 
   double angle(WidgetTester tester) {
@@ -55,19 +54,19 @@ void main() {
   }
 
   testWidgets('the arrow turns with each jump and settles', (tester) async {
-    await tester.pumpWidget(host(const SeekFeedback(seconds: 10, step: 10, pulse: 1)));
+    await tester.pumpWidget(host(const SeekFeedback(seconds: 10, pulse: 1)));
     await tester.pump(const Duration(milliseconds: 80));
     expect(angle(tester), greaterThan(0.1));
     await tester.pump(const Duration(seconds: 1));
     expect(angle(tester), closeTo(0, 0.001));
 
-    await tester.pumpWidget(host(const SeekFeedback(seconds: 20, step: 10, pulse: 2)));
+    await tester.pumpWidget(host(const SeekFeedback(seconds: 20, pulse: 2)));
     await tester.pump(const Duration(milliseconds: 80));
     expect(angle(tester), greaterThan(0.1));
   });
 
   testWidgets('going back turns the other way', (tester) async {
-    await tester.pumpWidget(host(const SeekFeedback(seconds: -10, step: 10, pulse: 1)));
+    await tester.pumpWidget(host(const SeekFeedback(seconds: -10, pulse: 1)));
     await tester.pump(const Duration(milliseconds: 80));
     expect(angle(tester), lessThan(-0.1));
   });
@@ -77,9 +76,7 @@ void main() {
       MaterialApp(
         home: MediaQuery(
           data: const MediaQueryData(disableAnimations: true),
-          child: Scaffold(
-            body: SizedBox(width: 800, height: 400, child: const SeekFeedback(seconds: 10, step: 10, pulse: 1)),
-          ),
+          child: Scaffold(body: SizedBox(width: 800, height: 400, child: const SeekFeedback(seconds: 10, pulse: 1))),
         ),
       ),
     );
