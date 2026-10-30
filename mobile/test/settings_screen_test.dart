@@ -35,6 +35,7 @@ const sections = {
     'Qualité préférée',
     "Passer l'intro et le générique",
     "Enchaîner l'épisode suivant",
+    'Avancer et reculer de',
     'Raccourcis du lecteur',
   ],
   'Sous-titres': ['Langue des sous-titres', 'Taille des sous-titres'],
@@ -133,5 +134,16 @@ void main() {
     await tester.tap(find.text('À propos'));
     await tester.pump();
     expect(find.text('Code source'), findsOneWidget);
+  });
+
+  testWidgets('the seek length is saved and shown in the shortcuts', (tester) async {
+    await pumpSettings(tester, desktop: true);
+    await tester.tap(find.text('Lecture').first);
+    await tester.pump();
+    expect(find.text('Reculer / avancer de 10 s'), findsOneWidget);
+    await tester.tap(find.text('30 s'));
+    await tester.pumpAndSettle();
+    expect(AppSettings.instance.seekStep, 30);
+    expect(find.text('Reculer / avancer de 30 s'), findsOneWidget);
   });
 }

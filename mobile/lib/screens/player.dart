@@ -50,6 +50,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    _flashTimer?.cancel();
     _hideTimer?.cancel();
     windowChromeVisible.value = true;
     if (_windowFull) windowManager.setFullScreen(false);
@@ -96,6 +97,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
+  double _doubleTapX = 0;
+
+  /// The signed seconds shown after a double tap; 0 when nothing is shown.
+  int _flash = 0;
+  Timer? _flashTimer;
+
+  /// Double tap on a side jumps; several in a row add up in the flash.
+  void _seekFromDoubleTap() {
+    final side = seekSide(_doubleTapX, context.size?.width ?? 0);
+    if (side == 0) return _toggleControls();
+    final seconds = side * AppSettings.instance.seekStep;
+    s.seekBy(seconds);
+    _flashTimer?.cancel();
+    _flashTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) setState(() => _flash = 0);
+    });
+    // Changing direction starts the count again.
+    setState(() => _flash = _flash * seconds > 0 ? _flash + seconds : seconds);
+  }
+
   void _seekBy(int seconds) {
     s.seekBy(seconds);
     _scheduleHide();
@@ -117,8 +138,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
             _scheduleHide();
           },
           const SingleActivator(LogicalKeyboardKey.keyK): () => s.player.playOrPause(),
-          const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _seekBy(-10),
-          const SingleActivator(LogicalKeyboardKey.arrowRight): () => _seekBy(10),
+          const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _seekBy(-AppSettings.instance.seekStep),
+          const SingleActivator(LogicalKeyboardKey.arrowRight): () => _seekBy(AppSettings.instance.seekStep),
           const SingleActivator(LogicalKeyboardKey.keyS): s.skipNow,
           const SingleActivator(LogicalKeyboardKey.keyF): () => s.setFill(!s.fill),
           const SingleActivator(LogicalKeyboardKey.keyZ): () => s.setSubDelay(s.subDelay - 0.25),
@@ -164,7 +185,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: _toggleControls,
-            onDoubleTap: Platform.isWindows ? _toggleWindowFull : null,
+            onDoubleTapDown: (d) => _doubleTapX = d.localPosition.dx,
+            onDoubleTap: Platform.isWindows ? _toggleWindowFull : _seekFromDoubleTap,
             onScaleStart: (d) {
               _pointers = d.pointerCount;
               _pinch = 1;
@@ -204,6 +226,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ),
           ),
         if (s.phase == PlaybackPhase.playing && controls) _overlay(),
+        if (_flash != 0)
+          IgnorePointer(
+            child: Align(
+              alignment: _flash < 0 ? const Alignment(-0.7, 0) : const Alignment(0.7, 0),
+              child: SeekFlash(seconds: _flash),
+            ),
+          ),
         if (s.phase == PlaybackPhase.playing) _floating(),
         if (s.phase != PlaybackPhase.playing)
           SafeArea(
@@ -217,6 +246,43 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ),
           ),
       ],
+    );
+  }
+
+  /// Back or forward by [seconds], with the length written in the icon.
+  Widget _seekButton(int seconds) {
+    final step = seconds.abs();
+    return FocusOutline(
+      radius: 36,
+      child: IconButton(
+        tooltip: seconds < 0
+            ? t('Reculer de $step secondes', 'Back $step seconds')
+            : t('Avancer de $step secondes', 'Forward $step seconds'),
+        iconSize: 36,
+        style: IconButton.styleFrom(backgroundColor: const Color(0x8C000000)),
+        onPressed: () => _seekBy(seconds),
+        icon: Stack(
+          alignment: Alignment.center,
+          children: [
+            Transform.flip(
+              flipX: seconds > 0,
+              child: const Icon(Icons.replay, color: Colors.white),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '$step',
+                style: const TextStyle(
+                  fontFamily: Nami.sans,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -422,7 +488,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _roundButton(Icons.replay_10, 36, t('Reculer de 10 secondes', 'Back 10 seconds'), () => _seekBy(-10)),
+              _seekButton(-AppSettings.instance.seekStep),
               const SizedBox(width: 40),
               _roundButton(
                 s.player.state.playing ? Icons.pause : Icons.play_arrow,
@@ -434,7 +500,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 },
               ),
               const SizedBox(width: 40),
-              _roundButton(Icons.forward_10, 36, t('Avancer de 10 secondes', 'Forward 10 seconds'), () => _seekBy(10)),
+              _seekButton(AppSettings.instance.seekStep),
             ],
           ),
         ),
@@ -637,6 +703,32 @@ class _PlayerScreenState extends State<PlayerScreen> {
       ],
     );
   }
+}
+
+/// Which side of the video a double tap at [x] means: -1 back, 1 forward,
+/// 0 for the middle, which only shows the controls.
+int seekSide(double x, double width) {
+  if (x < width * 0.4) return -1;
+  if (x > width * 0.6) return 1;
+  return 0;
+}
+
+/// What a double tap did: the direction and how far, on a dark disc so it reads over any frame.
+class SeekFlash extends StatelessWidget {
+  const SeekFlash({super.key, required this.seconds});
+  final int seconds;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 96,
+    height: 96,
+    alignment: Alignment.center,
+    decoration: const BoxDecoration(color: Color(0x8C000000), shape: BoxShape.circle),
+    child: Text(
+      '${seconds > 0 ? '+' : ''}$seconds s',
+      style: const TextStyle(fontFamily: Nami.sans, fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
+    ),
+  );
 }
 
 /// Control over the video: a dark disc keeps the icon at 3:1 or more even

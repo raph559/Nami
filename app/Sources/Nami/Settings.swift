@@ -8,6 +8,7 @@ struct SettingsView: View {
     @AppStorage("titleLanguage") private var titleLanguage = TitleLanguage.romaji.rawValue
     @AppStorage("autoSkip") private var autoSkip = true
     @AppStorage("autoNext") private var autoNext = true
+    @AppStorage("seekStep") private var seekStep = 10
     @AppStorage("subtitleLanguage") private var subtitleLanguage = SubtitleLanguage.fr.rawValue
     @AppStorage("subtitleSize") private var subtitleSize = 100
     @State private var repoURL = ""
@@ -54,6 +55,11 @@ struct SettingsView: View {
                                          : nil,
                                      selection: $resolution,
                                      options: ["480", "720", "1080", "1440", "2160"].map { ($0, "\($0)p") })
+                    SegmentedSetting(label: t("Avancer et reculer de", "Seek by"),
+                                     detail: t("Double appui à gauche ou à droite de l'image.",
+                                               "Double tap on the left or right of the picture."),
+                                     selection: Binding(get: { String(seekStep) }, set: { seekStep = Int($0) ?? 10 }),
+                                     options: ["5", "10", "15", "30"].map { ($0, "\($0) s") })
                     Toggle(isOn: $autoSkip) {
                         VStack(alignment: .leading) {
                             Text(t("Passer l'intro et le générique", "Skip openings and endings"))

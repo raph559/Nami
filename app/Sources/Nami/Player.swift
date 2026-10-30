@@ -27,6 +27,10 @@ struct PlayerView: View {
     @State private var stats: Engine.Stats?
     @State private var speed: Double = 0
     @State private var controls = true
+    @AppStorage("seekStep") private var seekStep = 10
+    /// The signed seconds shown after a double tap; 0 when nothing is shown.
+    @State private var flash = 0
+    @State private var flashTask: Task<Void, Never>?
     @State private var hideTask: Task<Void, Never>?
     @State private var scrub: Double?
     @State private var markedWatched = false
@@ -93,6 +97,10 @@ struct PlayerView: View {
                         Color.clear
                             .contentShape(Rectangle())
                             .ignoresSafeArea()
+                            // Double tap on a side jumps; the middle only shows the controls.
+                            .onTapGesture(count: 2) { location in
+                                seekFromDoubleTap(x: location.x, width: fullSize(geo).width)
+                            }
                             .onTapGesture { toggleControls() }
                             .gesture(MagnifyGesture().onEnded { value in
                                 if value.magnification > 1.05 { model.setFill(true, screen: fullSize(geo)) }
@@ -101,6 +109,18 @@ struct PlayerView: View {
                             .simultaneousGesture(DragGesture(minimumDistance: 40).onEnded { v in
                                 if v.translation.height > 110, abs(v.translation.width) < v.translation.height { minimize() }
                             })
+
+                        if flash != 0 {
+                            Text("\(flash > 0 ? "+" : "")\(flash) s")
+                                .font(.headline.bold())
+                                .foregroundStyle(.white)
+                                .frame(width: 96, height: 96)
+                                .background(.black.opacity(0.55), in: Circle())
+                                .frame(maxWidth: .infinity, alignment: flash < 0 ? .leading : .trailing)
+                                .padding(.horizontal, 60)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                        }
 
                         switch phase {
                         case .connecting:
@@ -401,9 +421,9 @@ struct PlayerView: View {
 
             // Centred on the screen itself, not between the top bar and the taller bottom block.
             HStack(spacing: 56) {
-                roundButton("gobackward.10", size: 30) { model.jump(-10) }
+                roundButton("gobackward.\(seekStep)", size: 30) { model.jump(Int32(-seekStep)) }
                 roundButton(model.isPlaying ? "pause.fill" : "play.fill", size: 44) { model.togglePause() }
-                roundButton("goforward.10", size: 30) { model.jump(10) }
+                roundButton("goforward.\(seekStep)", size: 30) { model.jump(Int32(seekStep)) }
             }
             .ignoresSafeArea()
         }
@@ -440,6 +460,19 @@ struct PlayerView: View {
         Button { action(); scheduleHide() } label: {
             Image(systemName: icon).font(.system(size: size, weight: .semibold)).foregroundStyle(.white)
                 .frame(width: size * 1.8, height: size * 1.8)
+        }
+    }
+
+    /// Several double taps in a row add up in the flash; changing direction starts again.
+    private func seekFromDoubleTap(x: CGFloat, width: CGFloat) {
+        guard case .playing = phase, x < width * 0.4 || x > width * 0.6 else { return toggleControls() }
+        let seconds = x < width * 0.4 ? -seekStep : seekStep
+        model.jump(Int32(seconds))
+        flash = flash * seconds > 0 ? flash + seconds : seconds
+        flashTask?.cancel()
+        flashTask = Task {
+            try? await Task.sleep(for: .milliseconds(800))
+            if !Task.isCancelled { flash = 0 }
         }
     }
 

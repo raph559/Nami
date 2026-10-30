@@ -253,7 +253,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 control: Switch(value: settings.autoNext, onChanged: (v) => settings.autoNext = v),
                 inline: true,
               ),
-              if (isDesktop) const _Shortcuts(),
+              _Setting(
+                label: t('Avancer et reculer de', 'Seek by'),
+                detail: isDesktop
+                    ? t('Avec les flèches du clavier.', 'With the arrow keys.')
+                    : t(
+                        "Double appui à gauche ou à droite de l'image.",
+                        'Double tap on the left or right of the picture.',
+                      ),
+                control: _Segments<int>(
+                  value: settings.seekStep,
+                  onChanged: (v) => settings.seekStep = v,
+                  items: {for (final v in AppSettings.seekSteps) v: Text('$v s')},
+                ),
+              ),
+              if (isDesktop) _Shortcuts(seek: settings.seekStep),
             ],
           );
           final subtitles = _Section(
@@ -807,7 +821,10 @@ class _NavEntry extends StatelessWidget {
 
 /// The player's keyboard shortcuts, so they can be found (desktop only).
 class _Shortcuts extends StatelessWidget {
-  const _Shortcuts();
+  const _Shortcuts({required this.seek});
+
+  /// Seconds an arrow key moves by.
+  final int seek;
 
   @override
   Widget build(BuildContext context) {
@@ -815,7 +832,7 @@ class _Shortcuts extends StatelessWidget {
       ('Espace', t('Lecture / pause', 'Play / pause')),
       ('K', t('Lecture / pause', 'Play / pause')),
       // Words, not arrows: the app font has no arrow glyphs.
-      (t('Flèches', 'Arrows'), t('Reculer / avancer de 10 s', 'Back / forward 10 s')),
+      (t('Flèches', 'Arrows'), t('Reculer / avancer de $seek s', 'Back / forward $seek s')),
       ('S', t("Passer l'intro", 'Skip the opening')),
       ('F', t("Remplir l'écran", 'Fill the screen')),
       ('Z X', t('Décaler les sous-titres', 'Shift the subtitles')),

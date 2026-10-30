@@ -46,6 +46,20 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The lengths offered for seeking, in seconds.
+  static const seekSteps = [5, 10, 15, 30];
+
+  /// How far a double tap (or an arrow key) moves in the video.
+  int get seekStep {
+    final saved = _prefs.getInt('seekStep') ?? 10;
+    return seekSteps.contains(saved) ? saved : 10;
+  }
+
+  set seekStep(int v) {
+    _prefs.setInt('seekStep', v);
+    notifyListeners();
+  }
+
   /// Start the next episode after a countdown.
   bool get autoNext => _prefs.getBool('autoNext') ?? true;
   set autoNext(bool v) {
