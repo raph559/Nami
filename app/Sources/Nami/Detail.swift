@@ -194,8 +194,8 @@ struct MediaDetailView: View {
     }
 }
 
-/// Same layout as the Android and Windows sheet: a header, the recommended
-/// source on its own card, then this episode and the season packs.
+/// Same layout as the Android and Windows sheet: a header, then one plain list with
+/// the recommended source first, this episode, and the season packs.
 struct SourcesSheet: View {
     let media: Media
     let episode: Int
@@ -207,8 +207,6 @@ struct SourcesSheet: View {
     @State private var search: SourceSearch?
     @State private var releases: [ReleaseInfo] = []
     @State private var showFailures = false
-
-    private var accent: Color { Nami.accent(media.coverImage?.color) }
 
     var body: some View {
         ScrollView {
@@ -287,7 +285,7 @@ struct SourcesSheet: View {
         let single = rest.filter { !$0.batch }
         let packs = rest.filter(\.batch)
         return VStack(alignment: .leading, spacing: 0) {
-            if let best = releases.first { recommended(best) }
+            if let best = releases.first { row(best, reason: best.reason(resolution)) }
             if !single.isEmpty {
                 sectionLabel(t("Cet épisode", "This episode"))
                 ForEach(single) { row($0) }
@@ -317,49 +315,25 @@ struct SourcesSheet: View {
             .accessibilityAddTraits(.isHeader)
     }
 
-    /// The pick at the top: what it is, why it was chosen, and one button.
-    /// Tinted by the anime's color, like its page.
-    private func recommended(_ r: ReleaseInfo) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(t("Recommandée", "Recommended")).font(.caption).foregroundStyle(accent)
-            HStack(alignment: .firstTextBaseline) {
-                Text(r.title).font(.headline)
-                Spacer(minLength: 8)
-                if let size = r.result.size, size > 0 { Text(Self.bytes(size)).font(.subheadline).foregroundStyle(Nami.textSecondary) }
-            }
-            .padding(.top, 6)
-            FactTags(facts: r.facts).padding(.top, 6)
-            HealthLine(release: r).padding(.top, 8)
-            Text(r.reason(resolution)).font(.footnote).foregroundStyle(Nami.textSecondary).padding(.top, 4)
-            Button { onPick(r.result) } label: {
-                Label(t("Lire cette source", "Play this source"), systemImage: "play.fill")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .foregroundStyle(Nami.ground)
-                    .background(accent, in: RoundedRectangle(cornerRadius: 6))
-            }
-            .padding(.top, 14)
-        }
-        .padding(EdgeInsets(top: 14, leading: 16, bottom: 16, trailing: 16))
-        .background(Nami.card, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(accent.opacity(0.6)))
-        .padding(.horizontal, 16).padding(.top, 8)
-    }
-
-    private func row(_ r: ReleaseInfo) -> some View {
-        Button { onPick(r.result) } label: {
-            VStack(alignment: .leading, spacing: 0) {
+    /// One source; a tap plays it. The recommended one also says why it was chosen.
+    private func row(_ r: ReleaseInfo, reason: String? = nil) -> some View {
+        let facts = r.facts + (r.result.size.flatMap { $0 > 0 ? Self.bytes($0) : nil }.map { [$0] } ?? [])
+        return Button { onPick(r.result) } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                if reason != nil {
+                    Text(t("Recommandée", "Recommended")).font(.caption).foregroundStyle(Nami.textSecondary)
+                }
                 HStack(alignment: .firstTextBaseline) {
                     Text(r.title).font(.body.weight(.semibold))
                     Spacer(minLength: 8)
-                    if let size = r.result.size, size > 0 { Text(Self.bytes(size)).font(.subheadline).foregroundStyle(Nami.textSecondary) }
+                    if reason != nil { Image(systemName: "play.fill").font(.body) }
                 }
-                FactTags(facts: r.facts).padding(.top, 6)
+                Text(facts.joined(separator: " · ")).font(.subheadline).foregroundStyle(Nami.textSecondary)
                 HStack(spacing: 8) {
                     HealthLine(release: r)
                     if let source = r.result.source { Text("·  \(source)").font(.caption).foregroundStyle(Nami.textSecondary).lineLimit(1) }
                 }
-                .padding(.top, 8)
+                if let reason { Text(reason).font(.footnote).foregroundStyle(Nami.textSecondary) }
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -377,21 +351,6 @@ struct SourcesSheet: View {
     static func bytes(_ v: Double) -> String { ByteCountFormatter.string(fromByteCount: Int64(v), countStyle: .file) }
 }
 
-/// Facts as small outlined tags; they are real data from the release name.
-struct FactTags: View {
-    let facts: [String]
-
-    var body: some View {
-        FlowLayout(spacing: 6) {
-            ForEach(facts, id: \.self) { f in
-                Text(f).font(.caption).foregroundStyle(Nami.text)
-                    .padding(.horizontal, 7).padding(.vertical, 3)
-                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Nami.border))
-            }
-        }
-    }
-}
-
 /// Seeders with a signal icon and a word, in a color that matches the level.
 struct HealthLine: View {
     let release: ReleaseInfo
@@ -403,7 +362,7 @@ struct HealthLine: View {
             Text("\(release.seeders) seeders, \(h.label)")
         }
         .font(.caption.weight(.semibold))
-        .foregroundStyle(h.color)
+        .foregroundStyle(Nami.textSecondary)
     }
 }
 

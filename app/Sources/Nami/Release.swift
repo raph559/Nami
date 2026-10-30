@@ -112,15 +112,6 @@ enum SeedHealth {
         }
     }
 
-    // Measured on the dark sheet: 10.1, 11.1 and 8.1 to 1.
-    var color: Color {
-        switch self {
-        case .good: Color(red: 0x6F / 255, green: 0xD3 / 255, blue: 0x9B / 255)
-        case .fair: Color(red: 0xF2 / 255, green: 0xC1 / 255, blue: 0x4E / 255)
-        case .low: Color(red: 0xFF / 255, green: 0x8A / 255, blue: 0x80 / 255)
-        }
-    }
-
     /// How much of the "cellularbars" symbol is filled.
     var bars: Double {
         switch self {

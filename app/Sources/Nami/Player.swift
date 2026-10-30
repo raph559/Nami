@@ -30,8 +30,7 @@ struct PlayerView: View {
     @AppStorage("seekStep") private var seekStep = 10
     /// The signed seconds shown after a double tap; 0 when nothing is shown.
     @State private var flash = 0
-    @State private var flashTap = CGPoint.zero
-    /// Goes up with each double tap, so each one sends its own wave.
+    /// Goes up with each double tap, so each one turns the arrow.
     @State private var flashPulse = 0
     @State private var flashTask: Task<Void, Never>?
     @State private var hideTask: Task<Void, Never>?
@@ -109,7 +108,7 @@ struct PlayerView: View {
                             .ignoresSafeArea()
                             // Double tap on a side jumps; the middle only shows the controls.
                             .onTapGesture(count: 2) { location in
-                                seekFromDoubleTap(at: location, width: fullSize(geo).width)
+                                seekFromDoubleTap(x: location.x, width: fullSize(geo).width)
                             }
                             .onTapGesture { toggleControls() }
                             .gesture(MagnifyGesture().onEnded { value in
@@ -122,7 +121,7 @@ struct PlayerView: View {
 
                         if flash != 0 {
                             // A new view per direction, so changing side fades instead of sliding across.
-                            SeekFeedback(seconds: flash, tap: flashTap, pulse: flashPulse)
+                            SeekFeedback(seconds: flash, step: seekStep, pulse: flashPulse)
                                 .id(flash > 0)
                                 .transition(.opacity)
                         }
@@ -469,12 +468,10 @@ struct PlayerView: View {
     }
 
     /// Several double taps in a row add up in the flash; changing direction starts again.
-    private func seekFromDoubleTap(at location: CGPoint, width: CGFloat) {
-        let x = location.x
+    private func seekFromDoubleTap(x: CGFloat, width: CGFloat) {
         guard case .playing = phase, x < width * 0.4 || x > width * 0.6 else { return toggleControls() }
         let seconds = x < width * 0.4 ? -seekStep : seekStep
         model.jump(Int32(seconds))
-        flashTap = location
         flashPulse += 1
         withAnimation(.spring(duration: 0.3, bounce: 0.25)) {
             flash = flash * seconds > 0 ? flash + seconds : seconds
@@ -638,81 +635,46 @@ struct PlayerView: View {
     }
 }
 
-/// The answer to a double tap: that side of the picture lights up behind a curved edge,
-/// a wave leaves the finger, three arrows run in the direction of the jump, and the count climbs.
+/// The answer to a double tap: a circular arrow with the step inside gives a turn with each
+/// jump and the total climbs under it. Nothing covers the picture.
 private struct SeekFeedback: View {
     let seconds: Int
-    let tap: CGPoint
+    let step: Int
     let pulse: Int
+
+    @State private var turn = 0.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var forward: Bool { seconds > 0 }
 
     var body: some View {
         GeometryReader { geo in
-            let size = geo.size
-            let band = size.width * 0.46
-            let edge = Ellipse()
-                .frame(width: band * 2, height: size.height * 1.7)
-                .position(x: forward ? size.width : 0, y: size.height / 2)
-            ZStack {
-                ZStack {
-                    Color.white.opacity(0.12)
-                    SeekWave(at: tap).id(pulse)
-                }
-                .mask(edge)
-                VStack(spacing: 8) {
-                    SeekArrows(forward: forward)
-                    Text("\(forward ? "+" : "-")\(abs(seconds)) s")
-                        .font(.headline.weight(.bold))
-                        .monospacedDigit()
-                        .contentTransition(.numericText(value: Double(abs(seconds))))
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.6), radius: 6)
-                }
-                .position(x: forward ? size.width - band * 0.52 : band * 0.52, y: size.height / 2)
+            VStack(spacing: 6) {
+                Image(systemName: "\(forward ? "goforward" : "gobackward").\(step)")
+                    .font(.system(size: 52, weight: .light))
+                    .rotationEffect(.degrees(turn))
+                Text("\(forward ? "+" : "-")\(abs(seconds)) s")
+                    .font(.headline.weight(.bold))
+                    .monospacedDigit()
+                    .contentTransition(.numericText(value: Double(abs(seconds))))
             }
+            .foregroundStyle(.white)
+            .shadow(color: .black.opacity(0.6), radius: 6)
+            .position(x: geo.size.width * (forward ? 0.78 : 0.22), y: geo.size.height / 2)
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+        .onAppear(perform: kick)
+        .onChange(of: pulse) { kick() }
     }
-}
 
-/// A soft circle growing out of the finger and fading.
-private struct SeekWave: View {
-    let at: CGPoint
-    @State private var grown = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        Circle()
-            .fill(.white.opacity(grown ? 0 : 0.28))
-            .frame(width: 260, height: 260)
-            .scaleEffect(grown ? 2.2 : 0.2)
-            .position(at)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeOut(duration: 0.6)) { grown = true }
-            }
-    }
-}
-
-/// Three arrows lighting up one after the other, in the direction of the jump.
-private struct SeekArrows: View {
-    let forward: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        PhaseAnimator(reduceMotion ? [2] : [0, 1, 2]) { phase in
-            HStack(spacing: 2) {
-                ForEach(0..<3, id: \.self) { i in
-                    Image(systemName: forward ? "arrowtriangle.forward.fill" : "arrowtriangle.backward.fill")
-                        .font(.system(size: 18))
-                        .foregroundStyle(.white)
-                        .opacity((forward ? i : 2 - i) == phase ? 1 : 0.4)
-                        .shadow(color: .black.opacity(0.5), radius: 4)
-                }
-            }
-        } animation: { _ in .easeInOut(duration: 0.17) }
+    private func kick() {
+        guard !reduceMotion else { return }
+        withAnimation(.easeOut(duration: 0.12)) {
+            turn = forward ? 35 : -35
+        } completion: {
+            withAnimation(.spring(duration: 0.4, bounce: 0.45)) { turn = 0 }
+        }
     }
 }

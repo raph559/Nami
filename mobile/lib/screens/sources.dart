@@ -267,7 +267,7 @@ class _SourcesSheetState extends State<SourcesSheet> {
 
     return [
       SliverToBoxAdapter(
-        child: _Recommended(release: best, reason: best.reason(pref), accent: Nami.accentOf(widget.media.color)),
+        child: _SourceRow(release: best, reason: best.reason(pref)),
       ),
       if (single.isNotEmpty) ...[
         SliverToBoxAdapter(child: _SectionLabel(t('Cet épisode', 'This episode'))),
@@ -322,115 +322,27 @@ class _SectionLabel extends StatelessWidget {
   );
 }
 
-/// The pick at the top: what it is, why it was chosen, and one button.
-/// Tinted by the anime's color, like its page.
-class _Recommended extends StatelessWidget {
-  const _Recommended({required this.release, required this.reason, required this.accent});
-  final ReleaseInfo release;
-  final String reason;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final size = release.result.size;
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1B1B1E),
-        border: Border.all(color: accent.withValues(alpha: 0.6)),
-        borderRadius: BorderRadius.circular(Nami.radiusButton + 2),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(t('Recommandée', 'Recommended'), style: Nami.caption.copyWith(color: accent)),
-          const SizedBox(height: 6),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(release.title, style: Nami.body.copyWith(fontWeight: FontWeight.w700, fontSize: 17)),
-              ),
-              if (size != null && size > 0) Text(formatBytes(size), style: Nami.meta),
-            ],
-          ),
-          const SizedBox(height: 6),
-          _Facts(release.facts),
-          const SizedBox(height: 8),
-          _Health(release),
-          const SizedBox(height: 4),
-          Text(reason, style: Nami.caption.copyWith(fontSize: 13)),
-          const SizedBox(height: 14),
-          FocusOutline(
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(48),
-                backgroundColor: accent,
-                foregroundColor: Nami.ground,
-              ),
-              onPressed: () => Navigator.pop(context, release.result),
-              icon: const Icon(Icons.play_arrow_rounded),
-              label: Text(t('Lire cette source', 'Play this source')),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Facts as small outlined tags; they are real data from the release name.
-class _Facts extends StatelessWidget {
-  const _Facts(this.facts);
-  final List<String> facts;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: [
-        for (final f in facts)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-            decoration: BoxDecoration(
-              border: Border.all(color: Nami.border),
-              borderRadius: BorderRadius.circular(Nami.radiusImage),
-            ),
-            child: Text(f, style: Nami.caption.copyWith(color: Nami.text)),
-          ),
-      ],
-    );
-  }
-}
-
-/// Seeders with a signal icon and a word, in a color that matches the level.
-/// The word and the bar count carry the meaning, the color only repeats it.
+/// Seeders with a signal icon and a word.
 class _Health extends StatelessWidget {
   const _Health(this.release);
   final ReleaseInfo release;
 
-  static const _good = Color(0xFF6FD39B);
-  static const _fair = Color(0xFFF2C14E);
-  static const _low = Color(0xFFFF8A80);
-
   @override
   Widget build(BuildContext context) {
-    final (color, icon) = switch (release.health) {
-      SeedHealth.good => (_good, Icons.signal_cellular_alt),
-      SeedHealth.fair => (_fair, Icons.signal_cellular_alt_2_bar),
-      SeedHealth.low => (_low, Icons.signal_cellular_alt_1_bar),
+    final icon = switch (release.health) {
+      SeedHealth.good => Icons.signal_cellular_alt,
+      SeedHealth.fair => Icons.signal_cellular_alt_2_bar,
+      SeedHealth.low => Icons.signal_cellular_alt_1_bar,
     };
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 15, color: color),
+        Icon(icon, size: 15, color: Nami.textSecondary),
         const SizedBox(width: 5),
         Flexible(
           child: Text(
             '${release.result.seeders} seeders, ${release.health.label}',
-            style: Nami.caption.copyWith(color: color, fontWeight: FontWeight.w600),
+            style: Nami.caption.copyWith(fontWeight: FontWeight.w600),
           ),
         ),
       ],
@@ -438,9 +350,13 @@ class _Health extends StatelessWidget {
   }
 }
 
+/// One source; a tap plays it. The recommended one also says why it was chosen.
 class _SourceRow extends StatelessWidget {
-  const _SourceRow({required this.release});
+  const _SourceRow({required this.release, this.reason});
   final ReleaseInfo release;
+
+  /// Set on the recommended source.
+  final String? reason;
 
   void _details(BuildContext context) {
     showDialog<void>(
@@ -481,18 +397,25 @@ class _SourceRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (reason != null) ...[
+                  Text(t('Recommandée', 'Recommended'), style: Nami.caption),
+                  const SizedBox(height: 4),
+                ],
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
                       child: Text(release.title, style: Nami.body.copyWith(fontWeight: FontWeight.w600)),
                     ),
-                    if (r.size != null && r.size! > 0) Text(formatBytes(r.size!), style: Nami.meta),
+                    if (reason != null) const Icon(Icons.play_arrow_rounded, size: 22, color: Nami.text),
                   ],
                 ),
-                const SizedBox(height: 6),
-                _Facts(release.facts),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
+                Text(
+                  [...release.facts, if (r.size != null && r.size! > 0) formatBytes(r.size!)].join(' · '),
+                  style: Nami.meta,
+                ),
+                const SizedBox(height: 4),
                 Wrap(
                   spacing: 8,
                   crossAxisAlignment: WrapCrossAlignment.center,
@@ -501,6 +424,10 @@ class _SourceRow extends StatelessWidget {
                     Text('·  ${r.source}', style: Nami.caption),
                   ],
                 ),
+                if (reason != null) ...[
+                  const SizedBox(height: 4),
+                  Text(reason!, style: Nami.caption.copyWith(fontSize: 13)),
+                ],
               ],
             ),
           ),
