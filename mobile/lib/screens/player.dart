@@ -12,6 +12,7 @@ import '../playback.dart';
 import '../player_center.dart';
 import '../settings.dart';
 import '../theme.dart';
+import '../ui/motion.dart';
 import '../widgets.dart';
 
 /// The full-screen player: a view of the [PlaybackSession], which keeps playing
@@ -97,24 +98,36 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  double _doubleTapX = 0;
+  Offset _doubleTapAt = Offset.zero;
 
   /// The signed seconds shown after a double tap; 0 when nothing is shown.
   int _flash = 0;
   Timer? _flashTimer;
 
-  /// Double tap on a side jumps; several in a row add up in the flash.
+  Offset? _flashTap;
+
+  /// Goes up with each jump, so each one sends its own wave.
+  int _flashPulse = 0;
+
+  /// Double tap on a side jumps; several in a row add up in the feedback.
   void _seekFromDoubleTap() {
-    final side = seekSide(_doubleTapX, context.size?.width ?? 0);
+    final side = seekSide(_doubleTapAt.dx, context.size?.width ?? 0);
     if (side == 0) return _toggleControls();
-    final seconds = side * AppSettings.instance.seekStep;
-    s.seekBy(seconds);
+    _jump(side * AppSettings.instance.seekStep, _doubleTapAt);
+  }
+
+  void _jump(int seconds, Offset? tap) {
+    _seekBy(seconds);
     _flashTimer?.cancel();
-    _flashTimer = Timer(const Duration(milliseconds: 800), () {
+    _flashTimer = Timer(const Duration(milliseconds: 900), () {
       if (mounted) setState(() => _flash = 0);
     });
     // Changing direction starts the count again.
-    setState(() => _flash = _flash * seconds > 0 ? _flash + seconds : seconds);
+    setState(() {
+      _flash = _flash * seconds > 0 ? _flash + seconds : seconds;
+      _flashTap = tap;
+      _flashPulse++;
+    });
   }
 
   void _seekBy(int seconds) {
@@ -138,8 +151,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
             _scheduleHide();
           },
           const SingleActivator(LogicalKeyboardKey.keyK): () => s.player.playOrPause(),
-          const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _seekBy(-AppSettings.instance.seekStep),
-          const SingleActivator(LogicalKeyboardKey.arrowRight): () => _seekBy(AppSettings.instance.seekStep),
+          const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _jump(-AppSettings.instance.seekStep, null),
+          const SingleActivator(LogicalKeyboardKey.arrowRight): () => _jump(AppSettings.instance.seekStep, null),
           const SingleActivator(LogicalKeyboardKey.keyS): s.skipNow,
           const SingleActivator(LogicalKeyboardKey.keyF): () => s.setFill(!s.fill),
           const SingleActivator(LogicalKeyboardKey.keyZ): () => s.setSubDelay(s.subDelay - 0.25),
@@ -185,7 +198,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: _toggleControls,
-            onDoubleTapDown: (d) => _doubleTapX = d.localPosition.dx,
+            onDoubleTapDown: (d) => _doubleTapAt = d.localPosition,
             onDoubleTap: Platform.isWindows ? _toggleWindowFull : _seekFromDoubleTap,
             onScaleStart: (d) {
               _pointers = d.pointerCount;
@@ -226,13 +239,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ),
           ),
         if (s.phase == PlaybackPhase.playing && controls) _overlay(),
-        if (_flash != 0)
-          IgnorePointer(
-            child: Align(
-              alignment: _flash < 0 ? const Alignment(-0.7, 0) : const Alignment(0.7, 0),
-              child: SeekFlash(seconds: _flash),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: AnimatedSwitcher(
+              duration: Motion.of(context).medium,
+              child: _flash == 0
+                  ? const SizedBox.expand()
+                  : SeekFeedback(key: ValueKey(_flash > 0), seconds: _flash, tap: _flashTap, pulse: _flashPulse),
             ),
           ),
+        ),
         if (s.phase == PlaybackPhase.playing) _floating(),
         if (s.phase != PlaybackPhase.playing)
           SafeArea(
@@ -713,24 +729,6 @@ int seekSide(double x, double width) {
   return 0;
 }
 
-/// What a double tap did: the direction and how far, on a dark disc so it reads over any frame.
-class SeekFlash extends StatelessWidget {
-  const SeekFlash({super.key, required this.seconds});
-  final int seconds;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 96,
-    height: 96,
-    alignment: Alignment.center,
-    decoration: const BoxDecoration(color: Color(0x8C000000), shape: BoxShape.circle),
-    child: Text(
-      '${seconds > 0 ? '+' : ''}$seconds s',
-      style: const TextStyle(fontFamily: Nami.sans, fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
-    ),
-  );
-}
-
 /// Control over the video: a dark disc keeps the icon at 3:1 or more even
 /// over a white frame.
 Widget _roundButton(IconData icon, double size, String label, VoidCallback onPressed) => FocusOutline(
@@ -870,4 +868,164 @@ class _MiniPlayer extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The answer to a jump: that side of the picture lights up behind a curved edge,
+/// a wave leaves the finger, three arrows run in the direction of the jump, and the count climbs.
+class SeekFeedback extends StatelessWidget {
+  const SeekFeedback({super.key, required this.seconds, this.tap, this.pulse = 0});
+  final int seconds;
+
+  /// Where the finger was; the wave starts from the middle of the side without one (arrow keys).
+  final Offset? tap;
+  final int pulse;
+
+  @override
+  Widget build(BuildContext context) {
+    final forward = seconds > 0;
+    return LayoutBuilder(
+      builder: (context, box) {
+        final size = box.biggest;
+        final band = size.width * 0.46;
+        final oval = Rect.fromLTWH(
+          forward ? size.width - band : -band,
+          -size.height * 0.35,
+          band * 2,
+          size.height * 1.7,
+        );
+        final from = (tap ?? Offset(forward ? size.width - band / 2 : band / 2, size.height / 2)) - oval.topLeft;
+        return Stack(
+          children: [
+            Positioned.fromRect(
+              rect: oval,
+              child: ClipOval(
+                child: Stack(
+                  children: [
+                    const Positioned.fill(child: ColoredBox(color: Color(0x1FFFFFFF))),
+                    _SeekWave(key: ValueKey(pulse), at: from),
+                  ],
+                ),
+              ),
+            ),
+            Positioned(
+              left: forward ? null : 0,
+              right: forward ? 0 : null,
+              top: 0,
+              bottom: 0,
+              width: band,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _SeekArrows(forward: forward),
+                    const SizedBox(height: 8),
+                    TweenAnimationBuilder<double>(
+                      key: ValueKey(pulse),
+                      tween: Tween(begin: 1.25, end: 1),
+                      duration: Motion.of(context).medium,
+                      curve: Curves.easeOutBack,
+                      builder: (context, scale, child) => Transform.scale(scale: scale, child: child),
+                      child: Text(
+                        '${forward ? '+' : '-'}${seconds.abs()} s',
+                        style: const TextStyle(
+                          fontFamily: Nami.sans,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          shadows: [Shadow(color: Color(0x99000000), blurRadius: 6)],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// A soft circle growing out of the finger and fading.
+class _SeekWave extends StatelessWidget {
+  const _SeekWave({super.key, required this.at});
+  final Offset at;
+
+  @override
+  Widget build(BuildContext context) {
+    final motion = Motion.of(context);
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: motion.medium == Duration.zero ? 1 : 0, end: 1),
+      duration: motion.medium * 2.5,
+      curve: Curves.easeOut,
+      builder: (context, t, _) {
+        final radius = 26 + 260 * t;
+        return Positioned(
+          left: at.dx - radius,
+          top: at.dy - radius,
+          width: radius * 2,
+          height: radius * 2,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: 0.28 * (1 - t)),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Three arrows lighting up one after the other, in the direction of the jump.
+class _SeekArrows extends StatefulWidget {
+  const _SeekArrows({required this.forward});
+  final bool forward;
+
+  @override
+  State<_SeekArrows> createState() => _SeekArrowsState();
+}
+
+class _SeekArrowsState extends State<_SeekArrows> with SingleTickerProviderStateMixin {
+  late final _run = AnimationController(vsync: this, duration: const Duration(milliseconds: 520));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _run.stop();
+    } else if (!_run.isAnimating) {
+      _run.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _run.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _run,
+    builder: (context, _) {
+      final lit = (_run.value * 3).floor().clamp(0, 2);
+      return Transform.flip(
+        flipX: !widget.forward,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < 3; i++)
+              Icon(
+                Icons.play_arrow_rounded,
+                size: 28,
+                color: Colors.white.withValues(alpha: i == lit ? 1 : 0.4),
+                shadows: const [Shadow(color: Color(0x80000000), blurRadius: 4)],
+              ),
+          ],
+        ),
+      );
+    },
+  );
 }
