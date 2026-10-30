@@ -75,6 +75,23 @@ void main() {
     expect(MediaQuery.paddingOf(ctx).left, 60);
   });
 
+  testWidgets('the rail starts at the top, its buttons below the window strip', (tester) async {
+    debugDesktopOverride = true;
+    addTearDown(() => debugDesktopOverride = null);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: Nami.theme(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(padding: const EdgeInsets.only(top: WindowChrome.height)),
+          child: child!,
+        ),
+        home: const RootScreen(pages: pages),
+      ),
+    );
+    expect(tester.getTopLeft(find.text('n')).dy, lessThan(20));
+    expect(tester.getTopLeft(find.byTooltip('Accueil')).dy, greaterThanOrEqualTo(WindowChrome.height));
+  });
+
   testWidgets('touch keeps the bottom bar', (tester) async {
     await pumpRoot(tester, desktop: false, size: const Size(390, 844));
     expect(find.byType(DesktopShell), findsNothing);

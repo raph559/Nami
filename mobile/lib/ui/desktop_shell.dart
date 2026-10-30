@@ -62,7 +62,8 @@ class DesktopShell extends StatelessWidget {
                 ),
               ),
               child: Padding(
-                padding: EdgeInsets.only(top: media.padding.top + 10, bottom: 14),
+                // Above the window strip: only the buttons on the right need it, and "n" is not clickable.
+                padding: const EdgeInsets.only(top: 10, bottom: 14),
                 child: Column(
                   children: [
                     ExcludeSemantics(
