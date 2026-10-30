@@ -94,6 +94,18 @@ struct HomeFeed {
     }
 }
 
+/// The home's data, kept outside the view: rebuilding the page (language change)
+/// shows it at once instead of asking AniList for everything again.
+@MainActor
+final class HomeStore: ObservableObject {
+    static let shared = HomeStore()
+    @Published var feed: HomeFeed?
+    @Published var loaded = false
+    var inputs: HomeInputs?
+    var loadedFor: Int?
+    var revision = -1
+}
+
 /// What the home was built from, kept so a refresh can reuse what it does not fetch again.
 struct HomeInputs {
     var watching: [WatchingEntry] = []

@@ -211,6 +211,9 @@ struct SegmentedSetting: View {
     var warning: String?
     @Binding var selection: String
     let options: [(value: String, label: String)]
+    /// What the control shows. The setting itself is written once the control has finished
+    /// moving: saving redraws the whole page, which would stutter in the middle of its animation.
+    @State private var shown: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -221,13 +224,19 @@ struct SegmentedSetting: View {
                     .font(.caption)
                     .foregroundStyle(Nami.warning)
             }
-            Picker(label, selection: $selection) {
+            Picker(label, selection: Binding(get: { shown ?? selection }, set: { shown = $0 })) {
                 ForEach(options, id: \.value) { Text($0.label).tag($0.value) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
         }
         .padding(.vertical, 4)
+        .task(id: shown) {
+            guard let shown, shown != selection else { return }
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            selection = shown
+        }
     }
 }
 

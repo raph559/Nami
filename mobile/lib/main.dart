@@ -49,12 +49,8 @@ class NamiApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final settings = AppSettings.instance;
-    return ListenableBuilder(
-      listenable: settings,
-      builder: (context, _) => MaterialApp(
-        // Strings are read when widgets build, so rebuild everything on change.
-        key: ValueKey('${settings.language}-${settings.titleLanguage}'),
+    return LanguageScope(
+      child: MaterialApp(
         title: 'Nami',
         debugShowCheckedModeBanner: false,
         // Dark by design: Nami is a viewing room (DESIGN.md), so there is no light theme.
@@ -69,6 +65,50 @@ class NamiApp extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Strings and titles are read when widgets build, so changing the language
+/// rebuilds every widget below, in place: the page, the tab, the scroll position
+/// and the player all stay where they are.
+class LanguageScope extends StatefulWidget {
+  const LanguageScope({super.key, required this.child});
+  final Widget child;
+
+  @override
+  State<LanguageScope> createState() => _LanguageScopeState();
+}
+
+class _LanguageScopeState extends State<LanguageScope> {
+  AppLanguage language = AppSettings.instance.language;
+  TitleLanguage titles = AppSettings.instance.titleLanguage;
+
+  @override
+  void initState() {
+    super.initState();
+    AppSettings.instance.addListener(_onSettings);
+  }
+
+  @override
+  void dispose() {
+    AppSettings.instance.removeListener(_onSettings);
+    super.dispose();
+  }
+
+  void _onSettings() {
+    final settings = AppSettings.instance;
+    if (settings.language == language && settings.titleLanguage == titles) return;
+    language = settings.language;
+    titles = settings.titleLanguage;
+    void rebuild(Element element) {
+      element.markNeedsBuild();
+      element.visitChildren(rebuild);
+    }
+
+    (context as Element).visitChildren(rebuild);
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class RootScreen extends StatefulWidget {

@@ -5,7 +5,6 @@ import SwiftUI
 struct NamiApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.fr.rawValue
-    @AppStorage("titleLanguage") private var titleLanguage = TitleLanguage.romaji.rawValue
 
     init() {
         // Before any store reads UserDefaults: a reinstall in LiveContainer starts empty.
@@ -18,8 +17,6 @@ struct NamiApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                // Language strings are read when views are built, so rebuild on change.
-                .id("\(appLanguage)-\(titleLanguage)")
                 .environment(\.locale, Locale(identifier: appLanguage))
                 .preferredColorScheme(.dark)
                 .tint(Color(red: 0.36, green: 0.62, blue: 1.0))
@@ -55,14 +52,20 @@ struct RootView: View {
     @StateObject private var anilist = AniList.shared
     @StateObject private var extensions = ExtensionStore.shared
     @StateObject private var center = PlayerCenter.shared
+    @AppStorage("appLanguage") private var appLanguage = AppLanguage.fr.rawValue
+    @AppStorage("titleLanguage") private var titleLanguage = TitleLanguage.romaji.rawValue
+
+    /// Strings are read when views are built, so the other tabs are rebuilt on a language
+    /// change. Settings is left alone: it redraws itself, and you stay where you are.
+    private var language: String { "\(appLanguage)-\(titleLanguage)" }
 
     var body: some View {
         TabView {
-            HomeView()
+            HomeView().id(language)
                 .tabItem { Label(t("Accueil", "Home"), systemImage: "house.fill") }
-            SearchView()
+            SearchView().id(language)
                 .tabItem { Label(t("Recherche", "Search"), systemImage: "magnifyingglass") }
-            LibraryView()
+            LibraryView().id(language)
                 .tabItem { Label(t("Ma liste", "My list"), systemImage: "bookmark.fill") }
             SettingsView()
                 .tabItem { Label(t("Réglages", "Settings"), systemImage: "gearshape.fill") }
