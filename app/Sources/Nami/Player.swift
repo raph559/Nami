@@ -73,9 +73,16 @@ struct PlayerView: View {
 
                 // One video surface for both shapes, so mpv keeps playing while it shrinks.
                 HStack(spacing: 12) {
-                    MPVSurface(model: model)
+                    Color.black
                         .frame(maxWidth: mini ? 112 : .infinity, maxHeight: mini ? 63 : .infinity)
                         .frame(width: mini ? 112 : nil, height: mini ? 63 : nil)
+                        // mpv keeps drawing at the size it started with and MoltenVK shows that
+                        // unscaled, so the surface stays full size and is only scaled down.
+                        .overlay {
+                            MPVSurface(model: model)
+                                .frame(width: surfaceSize.width, height: surfaceSize.height)
+                                .scaleEffect(mini ? 63 / surfaceSize.height : 1)
+                        }
                         .clipShape(RoundedRectangle(cornerRadius: mini ? 8 : 0))
                         .ignoresSafeArea(.all, edges: mini ? [] : .all)
                         .allowsHitTesting(false)
@@ -606,6 +613,12 @@ struct PlayerView: View {
 
     /// Near-black panel: white text stays readable over any frame.
     private static let panel = Color(red: 0x13 / 255, green: 0x13 / 255, blue: 0x15 / 255).opacity(0.9)
+
+    /// The landscape screen, whatever the phone's orientation right now.
+    private var surfaceSize: CGSize {
+        let screen = UIScreen.main.bounds.size
+        return CGSize(width: max(screen.width, screen.height), height: min(screen.width, screen.height))
+    }
 
     /// The whole screen, safe areas included: the video ignores them.
     private func fullSize(_ geo: GeometryProxy) -> CGSize {
