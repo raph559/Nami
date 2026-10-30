@@ -128,6 +128,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                 )
+              else if (anilist.isLoggedIn)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        anilist.viewerFailed
+                            ? t(
+                                "Tu es connecté, mais ton profil n'a pas pu être chargé. AniList limite peut-être les requêtes : réessaie dans une minute.",
+                                "You are logged in, but your profile couldn't be loaded. AniList may be limiting requests: try again in a minute.",
+                              )
+                            : t('Chargement de ton profil…', 'Loading your profile…'),
+                        style: Nami.meta,
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          FocusOutline(
+                            child: FilledButton(
+                              onPressed: anilist.loadViewer,
+                              child: Text(t('Réessayer', 'Try again')),
+                            ),
+                          ),
+                          FocusOutline(
+                            child: OutlinedButton(
+                              onPressed: anilist.logout,
+                              child: Text(t('Se déconnecter', 'Log out')),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                )
               else
                 Padding(
                   padding: const EdgeInsets.all(16),

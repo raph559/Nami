@@ -224,23 +224,42 @@ class AniList extends ChangeNotifier {
 
   Viewer? viewer;
 
+  /// The last profile request failed although the login is valid.
+  bool viewerFailed = false;
+
   /// Goes up each time Nami changes the viewer's list, so screens showing it reload.
   int listRevision = 0;
 
   String get _token => AppSettings.instance.prefs.getString('anilistToken') ?? '';
   bool get isLoggedIn => _token.isNotEmpty;
 
+  /// Replaces the network in tests.
+  @visibleForTesting
+  Future<http.Response> Function(Uri uri, Map<String, String> headers, String body)? post;
+
+  static const _rateLimitRetries = 2;
+
   Future<Map<String, dynamic>> query(String q, [Map<String, dynamic> variables = const {}]) async {
-    final res = await http.post(
-      Uri.parse('https://graphql.anilist.co'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        if (_token.isNotEmpty) 'Authorization': 'Bearer $_token',
-      },
-      body: jsonEncode({'query': q, 'variables': variables}),
-    );
-    if (res.statusCode == 401) logout();
+    final token = _token;
+    final url = Uri.parse('https://graphql.anilist.co');
+    final headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+    final payload = jsonEncode({'query': q, 'variables': variables});
+    Future<http.Response> send() =>
+        post?.call(url, headers, payload) ?? http.post(url, headers: headers, body: payload);
+
+    var res = await send();
+    // AniList limits requests per minute; it says how long to wait.
+    for (var i = 0; res.statusCode == 429 && i < _rateLimitRetries; i++) {
+      final wait = int.tryParse(res.headers['retry-after'] ?? '') ?? 5;
+      await Future<void>.delayed(Duration(seconds: wait.clamp(0, 65)));
+      res = await send();
+    }
+    // A late answer for an older token must not end the session of a newer one.
+    if (res.statusCode == 401 && token == _token) logout();
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final errors = body['errors'] as List?;
     if (errors != null && errors.isNotEmpty) throw AniListException(errors.first['message']);
@@ -350,6 +369,7 @@ class AniList extends ChangeNotifier {
   Future<void> loadViewer() async {
     if (!isLoggedIn) {
       viewer = null;
+      viewerFailed = false;
     } else {
       try {
         viewer = Viewer(
@@ -357,8 +377,11 @@ class AniList extends ChangeNotifier {
             'query { Viewer { id name avatar { large } bannerImage statistics { anime { count episodesWatched minutesWatched } } } }',
           ))['Viewer'],
         );
+        viewerFailed = false;
       } catch (_) {
-        viewer = null;
+        // Still logged in: a failed refresh keeps what is on screen, and the
+        // screens offer to try again when there is no profile yet.
+        viewerFailed = true;
       }
     }
     notifyListeners();

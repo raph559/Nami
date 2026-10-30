@@ -183,6 +183,8 @@ struct LibraryView: View {
                     }
                     .ignoresSafeArea(edges: .top)
                     .refreshable { await load() }
+                } else if anilist.isLoggedIn {
+                    ProfileRetry().padding(32).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     loggedOut
                 }
@@ -331,6 +333,32 @@ struct LibraryView: View {
         let total = e.media.episodes ?? e.media.availableEpisodes
         guard !e.media.isMovie, total > 0, e.entry.status != ListStatus.COMPLETED.rawValue else { return nil }
         return Double(e.entry.progress ?? 0) / Double(total)
+    }
+}
+
+/// A stored login whose profile did not load: says so, with the reason, and offers to try again.
+struct ProfileRetry: View {
+    @EnvironmentObject private var anilist: AniList
+    @State private var busy = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let error = anilist.viewerError {
+                Text(t("Tu es connecté, mais ton profil n'a pas pu être chargé.",
+                       "You are logged in, but your profile couldn't be loaded.")).font(.subheadline)
+                Text(error).font(.caption).foregroundStyle(Nami.textSecondary)
+            } else {
+                Text(t("Chargement de ton profil…", "Loading your profile…")).font(.subheadline)
+            }
+            Button(t("Réessayer", "Try again")) {
+                busy = true
+                Task {
+                    await anilist.loadViewer()
+                    busy = false
+                }
+            }
+            .disabled(busy)
+        }
     }
 }
 

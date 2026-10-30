@@ -253,6 +253,8 @@ final class AniList: ObservableObject {
     /// AniList API client registered for Nami (redirect URL nami://auth).
     private let clientID = "55284"
     @Published var viewer: Viewer?
+    /// Why the last profile request failed although the login is valid.
+    @Published var viewerError: String?
     /// Goes up each time Nami changes the viewer's list, so screens showing it reload.
     @Published var listRevision = 0
 
@@ -274,10 +276,19 @@ final class AniList: ObservableObject {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        if !token.isEmpty { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        let sent = token
+        if !sent.isEmpty { req.setValue("Bearer \(sent)", forHTTPHeaderField: "Authorization") }
         req.httpBody = try JSONSerialization.data(withJSONObject: ["query": query, "variables": variables])
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        if (resp as? HTTPURLResponse)?.statusCode == 401 { logout() }
+        var (data, resp) = try await URLSession.shared.data(for: req)
+        // AniList limits requests per minute; it says how long to wait.
+        for _ in 0..<2 {
+            guard let http = resp as? HTTPURLResponse, http.statusCode == 429 else { break }
+            let wait = Int(http.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 5
+            try await Task.sleep(for: .seconds(min(max(wait, 0), 65)))
+            (data, resp) = try await URLSession.shared.data(for: req)
+        }
+        // A late answer for an older token must not end the session of a newer one.
+        if (resp as? HTTPURLResponse)?.statusCode == 401, sent == token { logout() }
         let decoded = try JSONDecoder().decode(GQLResponse<T>.self, from: data)
         if let err = decoded.errors?.first { throw AniListError.api(err.message) }
         guard let value = decoded.data else { throw AniListError.api("réponse vide") }
@@ -373,13 +384,20 @@ final class AniList: ObservableObject {
     // MARK: Account
 
     func loadViewer() async {
-        guard isLoggedIn else { viewer = nil; return }
+        guard isLoggedIn else { viewer = nil; viewerError = nil; return }
         struct D: Decodable { var Viewer: Viewer }
-        viewer = try? await query("""
-        query { Viewer { id name about avatar { large } bannerImage siteUrl
-          options { titleLanguage displayAdultContent profileColor } mediaListOptions { scoreFormat }
-          statistics { anime { count episodesWatched minutesWatched meanScore } } } }
-        """, as: D.self).Viewer
+        do {
+            viewer = try await query("""
+            query { Viewer { id name about avatar { large } bannerImage siteUrl
+              options { titleLanguage displayAdultContent profileColor } mediaListOptions { scoreFormat }
+              statistics { anime { count episodesWatched minutesWatched meanScore } } } }
+            """, as: D.self).Viewer
+            viewerError = nil
+        } catch {
+            // Still logged in: a failed refresh keeps what is on screen, and the
+            // screens offer to try again when there is no profile yet.
+            viewerError = error.localizedDescription
+        }
     }
 
     func watching() async throws -> [WatchingEntry] {
@@ -471,6 +489,7 @@ final class AniList: ObservableObject {
     func logout() {
         token = ""
         viewer = nil
+        viewerError = nil
     }
 }
 

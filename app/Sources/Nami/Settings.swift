@@ -25,6 +25,9 @@ struct SettingsView: View {
                             Spacer()
                             Button(t("Déconnexion", "Log out"), role: .destructive) { anilist.logout() }
                         }
+                    } else if anilist.isLoggedIn {
+                        ProfileRetry()
+                        Button(t("Déconnexion", "Log out"), role: .destructive) { anilist.logout() }
                     } else {
                         Button(t("Se connecter à AniList", "Log in to AniList")) {
                             Task {
