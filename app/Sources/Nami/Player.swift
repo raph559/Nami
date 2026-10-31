@@ -14,6 +14,82 @@ struct PlayerExit {
 }
 
 /// Resolves a source into a stream and plays it.
+/// Subtitles, their delay and audio, in a small panel beside the video. Unlike a system
+/// menu it stays open while the video plays, and it scrolls when the list is long.
+struct TrackPanel: View {
+    @ObservedObject var model: PlayerModel
+    let onClose: () -> Void
+
+    var body: some View {
+        ViewThatFits(in: .vertical) {
+            content
+            ScrollView { content }.scrollIndicators(.hidden)
+        }
+        .frame(width: 300)
+        .background(Nami.sheet, in: RoundedRectangle(cornerRadius: 16))
+        .foregroundStyle(Nami.text)
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            group(t("Sous-titres", "Subtitles")) {
+                ForEach(model.subtitleTracks) { track in
+                    row(track, selected: track.id == model.subtitleTrack) { model.setSubtitle(track.id) }
+                }
+            }
+            group(t("Décalage des sous-titres", "Subtitle delay")) {
+                HStack(spacing: 4) {
+                    delayButton(t("Plus tôt", "Earlier"), icon: "minus") { model.setSubDelay(model.subDelay - 0.25) }
+                    Text("\(PlayerView.signed(model.subDelay)) s")
+                        .monospacedDigit()
+                        .frame(maxWidth: .infinity)
+                    delayButton(t("Plus tard", "Later"), icon: "plus") { model.setSubDelay(model.subDelay + 0.25) }
+                    if model.subDelay != 0 {
+                        delayButton(t("Remettre à zéro", "Reset"), icon: "arrow.counterclockwise") { model.setSubDelay(0) }
+                    }
+                }
+            }
+            group("Audio") {
+                ForEach(model.audioTracks) { track in
+                    row(track, selected: track.id == model.audioTrack) { model.setAudio(track.id) }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+    }
+
+    private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title).font(.footnote.weight(.semibold)).foregroundStyle(Nami.textSecondary)
+            content()
+        }
+    }
+
+    private func row(_ track: Track, selected: Bool, pick: @escaping () -> Void) -> some View {
+        Button {
+            pick()
+            onClose()
+        } label: {
+            HStack {
+                Text(track.name).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                if selected { Image(systemName: "checkmark").font(.subheadline.weight(.semibold)) }
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func delayButton(_ label: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon).frame(width: 44, height: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+}
+
 struct PlayerView: View {
     let media: Media
     let episode: Int
@@ -34,6 +110,7 @@ struct PlayerView: View {
     @State private var flashPulse = 0
     @State private var flashTask: Task<Void, Never>?
     @State private var hideTask: Task<Void, Never>?
+    @State private var tracksShown = false
     @State private var scrub: Double?
     @State private var markedWatched = false
     // Resume
@@ -58,6 +135,8 @@ struct PlayerView: View {
     }
 
     private var hasNext: Bool { onNext != nil && !media.isMovie && episode < media.availableEpisodes }
+    /// Paused, or at the end of the episode, the phone may sleep as usual.
+    private var keepAwake: Bool { phase == .connecting || (model.isPlaying && !model.ended) }
 
     enum Phase: Equatable {
         case connecting, chooseFile, playing
@@ -143,6 +222,7 @@ struct PlayerView: View {
                             }
                             if controls { overlay(size: fullSize(geo)).transition(.opacity) }
                             floating
+                            if tracksShown { trackPanel.transition(.opacity) }
                         }
 
                         if phase != .playing || !controls {
@@ -165,6 +245,7 @@ struct PlayerView: View {
         .persistentSystemOverlays(center.minimized ? .automatic : .hidden)
         .task { await start() }
         .task(id: torrent?.hash) { await pollStats() }
+        .onChange(of: keepAwake, initial: true) { _, awake in UIApplication.shared.isIdleTimerDisabled = awake }
         .onChange(of: model.timeMs) { _, ms in onTime(ms) }
         .onChange(of: model.lengthMs) { _, ms in onLength(ms) }
         .onChange(of: model.ended) { _, ended in
@@ -174,6 +255,7 @@ struct PlayerView: View {
         }
         .onAppear { Orientation.set(.landscape) }
         .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
             saveResume()
             countdownTask?.cancel()
             model.stop()
@@ -434,30 +516,31 @@ struct PlayerView: View {
     }
 
     private var trackMenu: some View {
-        Menu {
-            Section(t("Sous-titres", "Subtitles")) {
-                ForEach(model.subtitleTracks) { t in
-                    Button { model.setSubtitle(t.id) } label: {
-                        if t.id == model.subtitleTrack { Label(t.name, systemImage: "checkmark") } else { Text(t.name) }
-                    }
-                }
-            }
-            Section(model.subDelay == 0 ? t("Décalage des sous-titres", "Subtitle delay")
-                                        : t("Décalage : \(Self.signed(model.subDelay)) s", "Delay: \(Self.signed(model.subDelay)) s")) {
-                Button { model.setSubDelay(model.subDelay + 0.25) } label: { Label(t("Plus tard (+0,25 s)", "Later (+0.25 s)"), systemImage: "plus") }
-                Button { model.setSubDelay(model.subDelay - 0.25) } label: { Label(t("Plus tôt (−0,25 s)", "Earlier (−0.25 s)"), systemImage: "minus") }
-                if model.subDelay != 0 { Button(t("Remettre à zéro", "Reset")) { model.setSubDelay(0) } }
-            }
-            Section("Audio") {
-                ForEach(model.audioTracks) { t in
-                    Button { model.setAudio(t.id) } label: {
-                        if t.id == model.audioTrack { Label(t.name, systemImage: "checkmark") } else { Text(t.name) }
-                    }
-                }
-            }
+        Button {
+            hideTask?.cancel()
+            withAnimation(.easeOut(duration: 0.15)) { tracksShown = true }
         } label: {
             Image(systemName: "captions.bubble").font(.title3).foregroundStyle(.white).frame(width: 44, height: 44)
         }
+        .accessibilityLabel(t("Sous-titres et audio", "Subtitles and audio"))
+    }
+
+    /// Under the button that opens it, with a tap anywhere else to close it.
+    private var trackPanel: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.clear
+                .contentShape(Rectangle())
+                .ignoresSafeArea()
+                .onTapGesture { closeTracks() }
+            TrackPanel(model: model, onClose: closeTracks)
+                .padding(.top, 64).padding(.trailing, 48).padding(.bottom, 16)
+                .ignoresSafeArea()
+        }
+    }
+
+    private func closeTracks() {
+        withAnimation(.easeOut(duration: 0.15)) { tracksShown = false }
+        scheduleHide()
     }
 
     private func roundButton(_ icon: String, size: CGFloat, action: @escaping () -> Void) -> some View {
@@ -493,7 +576,7 @@ struct PlayerView: View {
         hideTask?.cancel()
         hideTask = Task {
             try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled, model.isPlaying, scrub == nil else { return }
+            guard !Task.isCancelled, model.isPlaying, scrub == nil, !tracksShown else { return }
             withAnimation(.easeInOut(duration: 0.3)) { controls = false }
         }
     }

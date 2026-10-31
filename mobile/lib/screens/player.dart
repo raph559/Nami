@@ -32,6 +32,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool controls = true;
   double? scrub;
   Timer? _hideTimer;
+
+  /// The track menu needs its button mounted: a choice made after it left would be lost.
+  bool _menuOpen = false;
   // Pinch and swipe-down, read from one scale gesture.
   int _pointers = 0;
   double _pinch = 1;
@@ -78,9 +81,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _scheduleHide() {
     _hideTimer?.cancel();
+    if (_menuOpen) return;
     _hideTimer = Timer(const Duration(seconds: 4), () {
       if (mounted && s.player.state.playing && scrub == null) _setControls(false);
     });
+  }
+
+  void _holdControls(bool held) {
+    _menuOpen = held;
+    _scheduleHide();
   }
 
   Future<void> _toggleWindowFull() async {
@@ -669,7 +678,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
     return PopupMenuButton<void Function()>(
       tooltip: t('Sous-titres et audio', 'Subtitles and audio'),
       icon: const Icon(Icons.subtitles, color: Colors.white),
-      onSelected: (apply) => apply(),
+      onOpened: () => _holdControls(true),
+      onCanceled: () => _holdControls(false),
+      onSelected: (apply) {
+        _holdControls(false);
+        apply();
+      },
       itemBuilder: (_) => [
         PopupMenuItem(enabled: false, child: Text(t('Sous-titres', 'Subtitles'))),
         for (final sub in tracks.subtitle.where((s) => s.id != 'auto'))

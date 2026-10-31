@@ -36,7 +36,7 @@
 
 ## More
 
-- [ ] Airing calendar for your list.
+- [x] Airing calendar for your list.
 - [ ] Notifications when a new episode of an anime on your list airs.
 - [ ] Offline downloads.
 
