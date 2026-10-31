@@ -15,7 +15,7 @@ class AiringRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final side = isDesktop ? MediaQuery.paddingOf(context).left + 36 : 20.0;
+    final side = isDesktop ? MediaQuery.paddingOf(context).left + 24 : 20.0;
     final scaler = MediaQuery.textScalerOf(context);
     final height = 90 + (scaler.scale(12) - 12) * 4;
     return SizedBox(

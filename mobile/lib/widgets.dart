@@ -617,7 +617,7 @@ class _MediaRowState extends State<MediaRow> {
     final textFactor = (MediaQuery.textScalerOf(context).scale(10) / 10).clamp(1.0, 1.6);
     final width = (isDesktop ? 120.0 : (screen >= 700 ? 140.0 : 108.0)) * textFactor;
     // Desktop rows line up with the page text, beside the rail.
-    final side = isDesktop ? MediaQuery.paddingOf(context).left + 36 : (screen >= 900 ? 48.0 : 20.0);
+    final side = isDesktop ? MediaQuery.paddingOf(context).left + 24 : (screen >= 900 ? 48.0 : 20.0);
     final height = MediaCard.heightFor(
       context,
       width,
@@ -665,10 +665,33 @@ class _MediaRowState extends State<MediaRow> {
                   child: Stack(
                     children: [
                       list,
-                      if (hovered) ...[
-                        _RowArrow(left: true, height: width * 1.45, onPressed: () => _page(-1)),
-                        _RowArrow(left: false, height: width * 1.45, onPressed: () => _page(1)),
-                      ],
+                      // Each arrow only exists while there is something that way.
+                      ListenableBuilder(
+                        listenable: scroll,
+                        builder: (context, _) {
+                          final known = scroll.hasClients && scroll.position.hasContentDimensions;
+                          final before = known && scroll.position.pixels > 1;
+                          final after = known && scroll.position.pixels < scroll.position.maxScrollExtent - 1;
+                          return Stack(
+                            children: [
+                              _RowArrow(
+                                left: true,
+                                shown: hovered && before,
+                                inset: side - 20,
+                                top: 8 + width * 0.75 - _RowArrow.size / 2,
+                                onPressed: () => _page(-1),
+                              ),
+                              _RowArrow(
+                                left: false,
+                                shown: hovered && after,
+                                inset: 16,
+                                top: 8 + width * 0.75 - _RowArrow.size / 2,
+                                onPressed: () => _page(1),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -678,27 +701,49 @@ class _MediaRowState extends State<MediaRow> {
   }
 }
 
+/// A small round button over the middle of the covers, fading in with the mouse.
 class _RowArrow extends StatelessWidget {
-  const _RowArrow({required this.left, required this.height, required this.onPressed});
+  const _RowArrow({
+    required this.left,
+    required this.shown,
+    required this.inset,
+    required this.top,
+    required this.onPressed,
+  });
   final bool left;
-  final double height;
+  final bool shown;
+  final double inset;
+  final double top;
   final VoidCallback onPressed;
+
+  static const size = 40.0;
 
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      left: left ? 0 : null,
-      right: left ? null : 0,
-      top: 8,
-      height: height,
-      width: 44,
-      child: Material(
-        color: Nami.ground.withValues(alpha: 0.82),
-        child: InkWell(
-          onTap: onPressed,
-          child: Tooltip(
-            message: left ? t('Précédents', 'Previous') : t('Suivants', 'Next'),
-            child: Icon(left ? Icons.chevron_left : Icons.chevron_right, color: Nami.text, size: 30),
+      left: left ? inset : null,
+      right: left ? null : inset,
+      top: top,
+      child: IgnorePointer(
+        ignoring: !shown,
+        child: ExcludeFocus(
+          excluding: !shown,
+          child: AnimatedOpacity(
+            opacity: shown ? 1 : 0,
+            duration: Motion.of(context).fast,
+            curve: Motion.curve,
+            child: IconButton(
+              tooltip: left ? t('Précédents', 'Previous') : t('Suivants', 'Next'),
+              onPressed: onPressed,
+              style: IconButton.styleFrom(
+                fixedSize: const Size.square(size),
+                minimumSize: const Size.square(size),
+                padding: EdgeInsets.zero,
+                backgroundColor: Nami.text,
+                foregroundColor: Nami.ground,
+              ),
+              icon: Icon(left ? Icons.chevron_left : Icons.chevron_right, size: 24),
+            ),
           ),
         ),
       ),

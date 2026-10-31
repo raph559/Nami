@@ -357,7 +357,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 /// Left edge shared by every home section: beside the rail on desktop.
-double _side(BuildContext context) => isDesktop ? MediaQuery.paddingOf(context).left + 36 : 20;
+double _side(BuildContext context) => isDesktop ? MediaQuery.paddingOf(context).left + 24 : 20;
 
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle(this.text, {this.trailing});

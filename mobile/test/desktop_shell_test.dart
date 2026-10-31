@@ -1,10 +1,13 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nami/anilist.dart';
 import 'package:nami/main.dart';
 import 'package:nami/platform.dart';
 import 'package:nami/settings.dart';
 import 'package:nami/theme.dart';
 import 'package:nami/ui/desktop_shell.dart';
+import 'package:nami/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const pages = [Text('page home'), Text('page search'), Text('page list'), Text('page settings')];
@@ -90,6 +93,51 @@ void main() {
     );
     expect(tester.getTopLeft(find.text('n')).dy, lessThan(20));
     expect(tester.getTopLeft(find.byTooltip('Accueil')).dy, greaterThanOrEqualTo(WindowChrome.height));
+  });
+
+  testWidgets('row arrows appear with the mouse, only where there is more', (tester) async {
+    debugDesktopOverride = true;
+    addTearDown(() => debugDesktopOverride = null);
+    tester.view.physicalSize = const Size(800, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: Nami.theme(),
+        home: Scaffold(
+          body: MediaRow(
+            title: 'Row',
+            items: [
+              for (var i = 0; i < 20; i++)
+                Media({
+                  'id': i,
+                  'title': {'romaji': 'Anime $i'},
+                  'format': 'TV',
+                }),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    double opacity(String tip) => tester
+        .widget<AnimatedOpacity>(find.ancestor(of: find.byTooltip(tip), matching: find.byType(AnimatedOpacity)))
+        .opacity;
+
+    expect(opacity('Suivants'), 0);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: const Offset(400, 100));
+    await tester.pump();
+    expect(opacity('Suivants'), 1);
+    expect(opacity('Précédents'), 0);
+    expect(tester.getSize(find.byTooltip('Suivants')), const Size.square(40));
+
+    await tester.tap(find.byTooltip('Suivants'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(opacity('Précédents'), 1);
   });
 
   testWidgets('touch keeps the bottom bar', (tester) async {

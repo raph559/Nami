@@ -207,7 +207,7 @@ class _Slide extends StatelessWidget {
     final pad = MediaQuery.paddingOf(context);
     final size = MediaQuery.sizeOf(context);
     final height = desktop ? (size.height * 0.58).clamp(380.0, 620.0) : 440.0 + pad.top;
-    final left = desktop ? pad.left + 36 : 20.0;
+    final left = desktop ? pad.left + 24 : 20.0;
     final textEnd = ((left + 560) / size.width).clamp(0.0, 1.0);
     final accent = Nami.accentOf(media.color);
     final status = media.listEntry?.status;

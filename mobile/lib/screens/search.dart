@@ -139,7 +139,7 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final desktop = isDesktop;
-    final side = desktop ? MediaQuery.paddingOf(context).left + 36 : 16.0;
+    final side = desktop ? MediaQuery.paddingOf(context).left + 24 : 16.0;
     final field = CallbackShortcuts(
       bindings: {const SingleActivator(LogicalKeyboardKey.escape): _clear},
       child: TextField(

@@ -88,7 +88,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           final viewer = anilist.viewer;
           if (viewer == null) return _loggedOut(context, anilist.isLoggedIn);
           final entries = sortLibrary(lists[status] ?? const <LibraryEntry>[], sort);
-          final side = isDesktop ? MediaQuery.paddingOf(context).left + 36 : 16.0;
+          final side = isDesktop ? MediaQuery.paddingOf(context).left + 24 : 16.0;
           return RefreshIndicator(
             onRefresh: _load,
             child: CustomScrollView(

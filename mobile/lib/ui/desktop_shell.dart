@@ -60,6 +60,8 @@ class DesktopShell extends StatelessWidget {
                 gradient: LinearGradient(
                   colors: [Nami.ground.withValues(alpha: 0.94), Nami.ground.withValues(alpha: 0.6)],
                 ),
+                // Without an edge, the rail and the page margin read as one wide bar.
+                border: Border(right: BorderSide(color: Nami.line)),
               ),
               child: Padding(
                 // Above the window strip: only the buttons on the right need it, and "n" is not clickable.

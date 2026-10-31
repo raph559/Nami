@@ -374,7 +374,7 @@ class _DetailScreenState extends State<DetailScreen> {
   Widget _desktopHeader() {
     final pad = MediaQuery.paddingOf(context);
     final width = MediaQuery.sizeOf(context).width;
-    final left = pad.left + 36;
+    final left = pad.left + 24;
     final showCard = facts.isNotEmpty && width >= 1100;
     final meta = animeMetaLine(media);
     final info = Column(
@@ -457,7 +457,7 @@ class _DetailScreenState extends State<DetailScreen> {
   Widget _episodes(bool desktop) {
     if (media.isMovie) return const SizedBox(height: 32);
     final accent = Nami.accentOf(media.color);
-    final side = desktop ? MediaQuery.paddingOf(context).left + 36 : 20.0;
+    final side = desktop ? MediaQuery.paddingOf(context).left + 24 : 20.0;
     final header = Padding(
       padding: EdgeInsets.fromLTRB(side, desktop ? 32 : 0, side, 12),
       child: Semantics(
