@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nami/anilist.dart';
+import 'package:nami/platform.dart';
 import 'package:nami/screens/calendar.dart';
 import 'package:nami/settings.dart';
 import 'package:nami/widgets.dart';
@@ -93,6 +94,41 @@ void main() {
     await tester.pump();
     expect(find.text('0'), findsNothing);
     expect(tester.widget<Badge>(find.byType(Badge)).isLabelVisible, isFalse);
+  });
+
+  testWidgets('times follow the language of the app', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+    final context = tester.element(find.byType(SizedBox));
+    expect(clockTime(context, DateTime(2026, 10, 31, 0, 30)), '12:30 AM');
+
+    SharedPreferences.setMockInitialValues({'appLanguage': 'fr'});
+    await AppSettings.load();
+    expect(clockTime(context, DateTime(2026, 10, 31, 0, 30)), '00:30');
+    expect(clockTime(context, DateTime(2026, 10, 31, 21, 5)), '21:05');
+  });
+
+  testWidgets('on desktop the day fills the width, with the filter beside the tabs', (tester) async {
+    debugDesktopOverride = true;
+    addTearDown(() => debugDesktopOverride = null);
+    tester.view.physicalSize = const Size(1300, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final now = DateTime.now();
+    final at = DateTime(now.year, now.month, now.day, 23, 59);
+    await tester.pumpWidget(
+      host(
+        CalendarScreen(
+          listIds: const {1},
+          load: () async => [AiringItem(anime(1), 1, at), AiringItem(anime(2), 2, at), AiringItem(anime(3), 3, at)],
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.getTopLeft(find.text('Anime 2')).dy, tester.getTopLeft(find.text('Anime 1')).dy);
+    expect(tester.getTopLeft(find.text('Anime 3')).dx, greaterThan(800));
+    expect(tester.getTopLeft(find.text('Only my list')).dy, lessThan(tester.getTopLeft(find.text('Anime 1')).dy));
+    expect(find.byType(SwitchListTile), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('no list means no filter', (tester) async {

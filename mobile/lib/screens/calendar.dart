@@ -72,24 +72,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final side = isDesktop ? MediaQuery.paddingOf(context).left + 24 : 20.0;
     final days = weekDays([...?items?.where(_shown)], DateTime.now());
     return Scaffold(
-      appBar: AppBar(titleSpacing: side, title: Text(t('Calendrier', 'Calendar'))),
+      // The app bar already keeps clear of the rail, through the same padding as `side`.
+      appBar: AppBar(titleSpacing: isDesktop ? 24 : null, title: Text(t('Calendrier', 'Calendar'))),
       body: Align(
-        alignment: isDesktop ? Alignment.topLeft : Alignment.topCenter,
+        alignment: Alignment.topCenter,
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 760 + side),
+          constraints: BoxConstraints(maxWidth: isDesktop ? double.infinity : 760),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding: EdgeInsets.fromLTRB(side, 8, side, 0),
+                padding: EdgeInsets.fromLTRB(side, 8, isDesktop ? 24 : side, 0),
                 child: UnderlineTabs(
                   labels: [for (var i = 0; i < 7; i++) dayLabel(days[i].$1, i)],
                   counts: [for (final d in days) items == null ? null : d.$2.length],
                   selected: day,
                   onSelect: (i) => setState(() => day = i),
+                  trailing: isDesktop && widget.listIds.isNotEmpty ? _desktopFilter() : null,
                 ),
               ),
-              if (widget.listIds.isNotEmpty)
+              if (!isDesktop && widget.listIds.isNotEmpty)
                 SwitchListTile.adaptive(
                   value: onlyMine,
                   onChanged: (v) => setState(() => onlyMine = v),
@@ -103,6 +105,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
     );
   }
+
+  Widget _desktopFilter() => InkWell(
+    borderRadius: BorderRadius.circular(Nami.radiusButton),
+    onTap: () => setState(() => onlyMine = !onlyMine),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(t('Seulement ma liste', 'Only my list'), style: Nami.meta),
+        const SizedBox(width: 8),
+        Switch.adaptive(
+          value: onlyMine,
+          onChanged: (v) => setState(() => onlyMine = v),
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ],
+    ),
+  );
 
   Widget _content(List<AiringItem> shown, double side) {
     if (failed) {
@@ -123,6 +142,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
             : t('Aucun épisode ce jour-là', 'No episodes that day'),
       );
     }
+    if (isDesktop) {
+      // As many columns as the window holds, so the page does not stop halfway.
+      return GridView.builder(
+        padding: EdgeInsets.fromLTRB(side, 12, 24, 12),
+        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 420,
+          crossAxisSpacing: 24,
+          mainAxisExtent: MediaQuery.textScalerOf(context).scale(98),
+        ),
+        itemCount: shown.length,
+        itemBuilder: (context, i) =>
+            _CalendarRow(item: shown[i], inList: widget.listIds.contains(shown[i].media.id), side: 0, titleLines: 1),
+      );
+    }
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: shown.length,
@@ -133,14 +166,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
 }
 
 class _CalendarRow extends StatelessWidget {
-  const _CalendarRow({required this.item, required this.inList, required this.side});
+  const _CalendarRow({required this.item, required this.inList, required this.side, this.titleLines = 2});
   final AiringItem item;
   final bool inList;
   final double side;
+  final int titleLines;
 
   @override
   Widget build(BuildContext context) {
-    final time = TimeOfDay.fromDateTime(item.airingAt).format(context);
+    final time = clockTime(context, item.airingAt);
     return FocusOutline(
       radius: 0,
       gap: -2,
@@ -162,7 +196,7 @@ class _CalendarRow extends StatelessWidget {
                     ),
                     Text(
                       item.media.title.display,
-                      maxLines: 2,
+                      maxLines: titleLines,
                       overflow: TextOverflow.ellipsis,
                       style: Nami.body.copyWith(fontWeight: FontWeight.w600),
                     ),

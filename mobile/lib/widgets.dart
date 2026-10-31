@@ -12,6 +12,12 @@ import 'theme.dart';
 import 'ui/hover_card.dart';
 import 'ui/motion.dart';
 
+/// A time of day the way the app's language writes it: 00:30 in French, 12:30 AM in English.
+String clockTime(BuildContext context, DateTime time) {
+  String two(int v) => v.toString().padLeft(2, '0');
+  return t('${two(time.hour)}:${two(time.minute)}', TimeOfDay.fromDateTime(time).format(context));
+}
+
 /// The number of anime of your list with an episode to watch, over a tab's icon.
 class NewEpisodesBadge extends StatelessWidget {
   const NewEpisodesBadge({super.key, required this.child});
@@ -28,6 +34,8 @@ class NewEpisodesBadge extends StatelessWidget {
         isLabelVisible: count > 0,
         backgroundColor: Nami.text,
         textColor: Nami.ground,
+        // Beside the icon's corner, so the icon stays readable.
+        offset: const Offset(12, -8),
         child: child,
       ),
     ),

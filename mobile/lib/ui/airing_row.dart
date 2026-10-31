@@ -38,7 +38,7 @@ class _AiringCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final time = TimeOfDay.fromDateTime(item.airingAt).format(context);
+    final time = clockTime(context, item.airingAt);
     final when = item.aired ? t('$time · sorti', '$time · out') : time;
     return FocusOutline(
       radius: Nami.radiusButton,
