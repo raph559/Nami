@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nami/anilist.dart';
+import 'package:nami/mappings.dart';
 import 'package:nami/platform.dart';
 import 'package:nami/screens/calendar.dart';
 import 'package:nami/settings.dart';
@@ -18,7 +19,9 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({'appLanguage': 'en'});
     await AppSettings.load();
+    debugDesktopOverride = false;
   });
+  tearDown(() => debugDesktopOverride = null);
 
   test('episodes land on their local day, and the week has seven days', () {
     final now = DateTime(2026, 10, 30, 22);
@@ -41,34 +44,54 @@ void main() {
     expect([for (final d in days) d.$1.day], [24, 25, 26, 27, 28, 29, 30]);
   });
 
-  test('days read today, tomorrow, then weekday and date', () {
-    expect(dayLabel(DateTime(2026, 10, 30), 0), 'Today');
-    expect(dayLabel(DateTime(2026, 10, 31), 1), 'Tomorrow');
-    expect(dayLabel(DateTime(2026, 11, 1), 2), 'Sun 1');
+  test('a week reads as its days, across two months too', () {
+    expect(weekRange(DateTime(2026, 11, 2)), 'Nov 2 – 8');
+    expect(weekRange(DateTime(2026, 10, 26)), 'Oct 26 – Nov 1');
+    expect(mondayOf(DateTime(2026, 11, 1, 23)), DateTime(2026, 10, 26));
+    expect(mondayOf(DateTime(2026, 10, 26, 1)), DateTime(2026, 10, 26));
+  });
+
+  test('the fanart comes from the images of the mappings', () {
+    expect(Mappings({}).fanart, isNull);
+    expect(
+      Mappings({
+        'images': [
+          {'coverType': 'Banner', 'url': 'banner'},
+          {'coverType': 'Fanart', 'url': 'wide'},
+        ],
+      }).fanart,
+      'wide',
+    );
+  });
+
+  test('months read in full, in the language of the app', () {
+    expect(monthTitle(DateTime(2026, 11, 2)), 'November 2026');
   });
 
   Widget host(CalendarScreen screen) => MaterialApp(home: screen);
 
-  testWidgets('a day tab shows that day, and the list filter hides the rest', (tester) async {
+  testWidgets('the phone shows the strip of days, opens on today, and a day shows that day', (tester) async {
     final now = DateTime.now();
-    final tomorrow = DateTime(now.year, now.month, now.day + 1, 12);
+    final other = mondayOf(now).add(Duration(days: now.weekday % 7, hours: 12));
     await tester.pumpWidget(
       host(
         CalendarScreen(
           listIds: const {2},
-          load: () async => [
+          load: (_) async => [
             AiringItem(anime(1), 1, DateTime(now.year, now.month, now.day, 23, 59)),
-            AiringItem(anime(2), 2, tomorrow),
-            AiringItem(anime(3), 3, tomorrow),
+            AiringItem(anime(2), 2, other),
+            AiringItem(anime(3), 3, other),
           ],
         ),
       ),
     );
     await tester.pump();
+    expect(find.text(monthTitle(now)), findsOneWidget);
     expect(find.text('Anime 1'), findsOneWidget);
     expect(find.text('Anime 2'), findsNothing);
+    expect(find.text('Today'), findsNothing);
 
-    await tester.tap(find.text('Tomorrow'));
+    await tester.tap(find.text('${other.day}'));
     await tester.pump();
     expect(find.text('Anime 2'), findsOneWidget);
     expect(find.text('Anime 3'), findsOneWidget);
@@ -78,6 +101,46 @@ void main() {
     await tester.pump();
     expect(find.text('Anime 2'), findsOneWidget);
     expect(find.text('Anime 3'), findsNothing);
+
+    await tester.tap(find.text('Today'));
+    await tester.pump();
+    expect(find.text('Today'), findsNothing);
+  });
+
+  testWidgets('a swipe moves to the next or previous week, keeping the weekday', (tester) async {
+    final monday = mondayOf(DateTime.now());
+    final asked = <DateTime>[];
+    await tester.pumpWidget(
+      host(
+        CalendarScreen(
+          load: (start) async {
+            asked.add(start);
+            return [];
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.fling(find.text('${DateTime.now().day}'), const Offset(-300, 0), 1000);
+    await tester.pump();
+    await tester.pump();
+    expect(asked.last, DateTime(monday.year, monday.month, monday.day + 7));
+    expect(find.text('Today'), findsOneWidget);
+
+    await tester.tap(find.text('Today'));
+    await tester.pump();
+    await tester.pump();
+    expect(asked.last, monday);
+  });
+
+  testWidgets('today has a line for the current time, other days do not', (tester) async {
+    final now = DateTime.now();
+    final past = now.subtract(const Duration(minutes: 1));
+    await tester.pumpWidget(
+      host(CalendarScreen(load: (_) async => [AiringItem(anime(1), 1, past.day == now.day ? past : now)])),
+    );
+    await tester.pump();
+    expect(find.byType(NowLine), findsOneWidget);
   });
 
   testWidgets('the badge shows the count, and nothing at zero', (tester) async {
@@ -107,32 +170,90 @@ void main() {
     expect(clockTime(context, DateTime(2026, 10, 31, 21, 5)), '21:05');
   });
 
-  testWidgets('on desktop the day fills the width, with the filter beside the tabs', (tester) async {
-    debugDesktopOverride = true;
-    addTearDown(() => debugDesktopOverride = null);
-    tester.view.physicalSize = const Size(1300, 700);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final now = DateTime.now();
-    final at = DateTime(now.year, now.month, now.day, 23, 59);
-    await tester.pumpWidget(
-      host(
-        CalendarScreen(
-          listIds: const {1},
-          load: () async => [AiringItem(anime(1), 1, at), AiringItem(anime(2), 2, at), AiringItem(anime(3), 3, at)],
+  group('desktop week', () {
+    final monday = mondayOf(DateTime.now());
+    DateTime at(int day, int hour) => DateTime(monday.year, monday.month, monday.day + day, hour);
+
+    Future<List<DateTime>> pumpWeek(WidgetTester tester, {Size size = const Size(1300, 700), double text = 1}) async {
+      debugDesktopOverride = true;
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final asked = <DateTime>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(text)),
+            child: child!,
+          ),
+          home: CalendarScreen(
+            listIds: const {2},
+            load: (start) async {
+              asked.add(start);
+              return [
+                AiringItem(anime(1), 1, at(0, 12)),
+                AiringItem(anime(2), 2, at(1, 12)),
+                AiringItem(anime(3), 3, at(6, 12)),
+              ];
+            },
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    expect(tester.getTopLeft(find.text('Anime 2')).dy, tester.getTopLeft(find.text('Anime 1')).dy);
-    expect(tester.getTopLeft(find.text('Anime 3')).dx, greaterThan(800));
-    expect(tester.getTopLeft(find.text('Only my list')).dy, lessThan(tester.getTopLeft(find.text('Anime 1')).dy));
-    expect(find.byType(SwitchListTile), findsNothing);
-    expect(tester.takeException(), isNull);
+      );
+      await tester.pump();
+      return asked;
+    }
+
+    testWidgets('starts on Monday, with one column per day in order', (tester) async {
+      final asked = await pumpWeek(tester);
+      expect(asked, [monday]);
+      for (final name in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']) {
+        expect(find.text(name), findsOneWidget);
+      }
+      double x(String text) => tester.getTopLeft(find.text(text)).dx;
+      expect(x('Anime 1'), lessThan(x('Anime 2')));
+      expect(x('Anime 2'), lessThan(x('Anime 3')));
+      // Under its own day.
+      expect(x('Anime 3') - x('Sun'), inInclusiveRange(0, 60));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('pages through the weeks and comes back', (tester) async {
+      final asked = await pumpWeek(tester);
+      expect(find.text('This week'), findsNothing);
+
+      await tester.tap(find.byTooltip('Next week'));
+      await tester.pump();
+      await tester.pump();
+      expect(asked.last, DateTime(monday.year, monday.month, monday.day + 7));
+
+      await tester.tap(find.text('This week'));
+      await tester.pump();
+      await tester.pump();
+      expect(asked.last, monday);
+
+      await tester.tap(find.byTooltip('Previous week'));
+      await tester.pump();
+      await tester.pump();
+      expect(asked.last, DateTime(monday.year, monday.month, monday.day - 7));
+    });
+
+    testWidgets('the list filter works from its label', (tester) async {
+      await pumpWeek(tester);
+      await tester.tap(find.text('Only my list'));
+      await tester.pump();
+      expect(find.text('Anime 2'), findsOneWidget);
+      expect(find.text('Anime 1'), findsNothing);
+      expect(find.byIcon(Icons.bookmark), findsOneWidget);
+    });
+
+    testWidgets('holds in a small window and at large text', (tester) async {
+      await pumpWeek(tester, size: const Size(900, 600), text: 2);
+      expect(tester.takeException(), isNull);
+    });
   });
 
   testWidgets('no list means no filter', (tester) async {
-    await tester.pumpWidget(host(CalendarScreen(load: () async => [])));
+    await tester.pumpWidget(host(CalendarScreen(load: (_) async => [])));
     await tester.pump();
     expect(find.text('Only my list'), findsNothing);
     expect(find.text('No episodes that day'), findsOneWidget);
@@ -143,7 +264,7 @@ void main() {
     await tester.pumpWidget(
       host(
         CalendarScreen(
-          load: () async {
+          load: (_) async {
             if (calls++ == 0) throw Exception('down');
             return [AiringItem(anime(1), 1, DateTime.now())];
           },

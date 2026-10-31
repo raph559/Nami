@@ -259,7 +259,8 @@ final class AniList: ObservableObject {
     @Published var listRevision = 0
     /// How many anime of your list have an episode to watch. The home keeps it up to date.
     @Published var newEpisodes = 0
-    private var week: (at: Date, items: [AiringItem])?
+    /// Weeks already asked for, by first day.
+    private var weeks: [Date: (at: Date, items: [AiringItem])] = [:]
 
     var isLoggedIn: Bool { !token.isEmpty }
 
@@ -337,13 +338,13 @@ final class AniList: ObservableObject {
         return try await airing(from: start, to: end, page: 1).items
     }
 
-    /// Episodes of the seven days from today, in time order. A week is more than one page,
-    /// so it is kept for a while: going back to the calendar should not ask for it again.
-    func airingWeek(now: Date = .now) async throws -> [AiringItem] {
-        if let week, Calendar.current.isDate(week.at, inSameDayAs: now), now.timeIntervalSince(week.at) < 15 * 60 {
-            return week.items
+    /// Episodes of the seven days from `from`, in time order. A week is more than one page,
+    /// so it is kept for a while: coming back to it should not ask for it again.
+    func airingWeek(from: Date = .now, now: Date = .now) async throws -> [AiringItem] {
+        let start = Calendar.current.startOfDay(for: from)
+        if let kept = weeks[start], Calendar.current.isDate(kept.at, inSameDayAs: now), now.timeIntervalSince(kept.at) < 15 * 60 {
+            return kept.items
         }
-        let start = Calendar.current.startOfDay(for: now)
         let end = Calendar.current.date(byAdding: .day, value: 7, to: start) ?? now
         var items: [AiringItem] = []
         for page in 1...6 {
@@ -351,7 +352,7 @@ final class AniList: ObservableObject {
             items += found.items
             if !found.more { break }
         }
-        week = (now, items)
+        weeks[start] = (now, items)
         return items
     }
 

@@ -267,7 +267,7 @@ class _Slide extends StatelessWidget {
                 curve: Curves.easeOut,
                 builder: (context, scale, child) =>
                     Transform.scale(key: HeroCarousel.zoomKey, scale: scale, child: child),
-                child: CoverImage(media.banner ?? media.cover, radius: 0, alignment: const Alignment(0.4, -0.3)),
+                child: BannerPicture(media, key: ValueKey(media.id), alignment: const Alignment(0.4, -0.3)),
               ),
             ),
           ),

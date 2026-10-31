@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nami/anilist.dart';
 import 'package:nami/platform.dart';
+import 'package:nami/screens/calendar.dart';
 import 'package:nami/screens/home.dart';
 import 'package:nami/settings.dart';
 import 'package:nami/theme.dart';
@@ -114,8 +115,7 @@ void main() {
     await tester.tap(find.text('Calendrier complet'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    expect(find.text('Calendrier'), findsOneWidget);
-    expect(find.text('Demain'), findsOneWidget);
+    expect(find.byType(CalendarScreen), findsOneWidget);
   });
 
   testWidgets('suggestions leave out anime already in the list', (tester) async {

@@ -236,8 +236,8 @@ class AniList extends ChangeNotifier {
   /// The anime of your list, for the calendar tab. The home keeps it up to date too.
   final listIds = ValueNotifier<Set<int>>(const {});
 
-  List<AiringItem>? _week;
-  DateTime? _weekAt;
+  /// Weeks already asked for, by first day, with when they were asked.
+  final _weeks = <DateTime, (DateTime, List<AiringItem>)>{};
 
   String get _token => AppSettings.instance.prefs.getString('anilistToken') ?? '';
   bool get isLoggedIn => _token.isNotEmpty;
@@ -336,13 +336,13 @@ class AniList extends ChangeNotifier {
     return parseAiring(d['Page']['airingSchedules'] as List);
   }
 
-  /// Episodes of the seven days from today, in time order. A week is more than one page,
-  /// so it is kept for a while: going back to the calendar should not ask for it again.
-  Future<List<AiringItem>> airingWeek() async {
+  /// Episodes of the seven days from [from] (today by default), in time order. A week is more
+  /// than one page, so it is kept for a while: coming back to it should not ask for it again.
+  Future<List<AiringItem>> airingWeek({DateTime? from}) async {
     final now = DateTime.now();
-    final kept = _weekAt;
-    if (_week != null && kept != null && kept.day == now.day && now.difference(kept).inMinutes < 15) return _week!;
-    final (start, _) = dayBounds(now);
+    final (start, _) = dayBounds(from ?? now);
+    final kept = _weeks[start];
+    if (kept != null && kept.$1.day == now.day && now.difference(kept.$1).inMinutes < 15) return kept.$2;
     final end = DateTime(start.year, start.month, start.day + 7);
     final items = <AiringItem>[];
     for (var page = 1; page <= 6; page++) {
@@ -355,8 +355,8 @@ class AniList extends ChangeNotifier {
       items.addAll(parseAiring(d['Page']['airingSchedules'] as List));
       if (d['Page']['pageInfo']?['hasNextPage'] != true) break;
     }
-    _weekAt = now;
-    return _week = items;
+    _weeks[start] = (now, items);
+    return items;
   }
 
   /// Today's schedule entries, without adult anime and without entries AniList sent without an anime.

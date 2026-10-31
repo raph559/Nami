@@ -14,6 +14,14 @@ class Mappings {
   String? get tmdbId => ids['themoviedb_id']?.toString();
   String? get imdbId => ids['imdb_id'];
 
+  /// A wide background picture, sharper on a big screen than AniList's banners (about 1900×400).
+  String? get fanart {
+    for (final image in (json['images'] as List?) ?? const []) {
+      if (image is Map && image['coverType'] == 'Fanart' && image['url'] is String) return image['url'];
+    }
+    return null;
+  }
+
   EpisodeInfo? episode(int n) {
     final e = (json['episodes'] as Map<String, dynamic>?)?['$n'];
     return e == null ? null : EpisodeInfo(e as Map<String, dynamic>);

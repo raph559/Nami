@@ -324,10 +324,7 @@ class _DetailScreenState extends State<DetailScreen> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: CoverImage(media.banner ?? media.cover, radius: 0),
-              ),
+              Padding(padding: const EdgeInsets.only(bottom: 2), child: BannerPicture(media)),
               const GroundFade(from: 0.3),
             ],
           ),
@@ -409,7 +406,7 @@ class _DetailScreenState extends State<DetailScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.only(bottom: 2),
-                child: CoverImage(media.banner ?? media.cover, radius: 0, alignment: const Alignment(0.4, -0.3)),
+                child: BannerPicture(media, alignment: const Alignment(0.4, -0.3)),
               ),
               DecoratedBox(
                 decoration: BoxDecoration(

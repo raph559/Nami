@@ -1,13 +1,20 @@
 import SwiftUI
 
-/// The seven days from `now`, each with its episodes in time order.
-func weekDays(_ items: [AiringItem], now: Date = .now) -> [(day: Date, items: [AiringItem])] {
+/// The seven days from `start`, each with its episodes in time order.
+func weekDays(_ items: [AiringItem], from start: Date) -> [(day: Date, items: [AiringItem])] {
     let calendar = Calendar.current
-    let first = calendar.startOfDay(for: now)
     return (0..<7).compactMap { i in
-        guard let day = calendar.date(byAdding: .day, value: i, to: first) else { return nil }
+        guard let day = calendar.date(byAdding: .day, value: i, to: start) else { return nil }
         return (day, items.filter { calendar.isDate($0.airingAt, inSameDayAs: day) })
     }
+}
+
+/// The Monday of the week holding `day`, and how many days it is after that Monday.
+func mondayOf(_ day: Date) -> (monday: Date, index: Int) {
+    let calendar = Calendar.current
+    let start = calendar.startOfDay(for: day)
+    let index = (calendar.component(.weekday, from: start) + 5) % 7
+    return (calendar.date(byAdding: .day, value: -index, to: start) ?? start, index)
 }
 
 /// The calendar as a tab of the app, with its own navigation.
@@ -26,77 +33,99 @@ struct CalendarTab: View {
     }
 }
 
-/// The week's episodes, one tab per day, with the anime of your list marked (same as Android and Windows).
+/// The week's episodes, Apple Calendar style: a strip of days you swipe through the weeks, over
+/// the chosen day with its times on the left (the Android calendar has the same layout).
 struct CalendarView: View {
     let listIDs: Set<Int>
     let ns: Namespace.ID
 
     @EnvironmentObject private var anilist: AniList
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.fr.rawValue
+    @State private var start = mondayOf(.now).monday
+    @State private var selected = mondayOf(.now).index
     @State private var items: [AiringItem]?
     @State private var failed = false
-    @State private var selected = 0
     @State private var onlyMine = false
 
     private var days: [(day: Date, items: [AiringItem])] {
-        weekDays((items ?? []).filter { !onlyMine || listIDs.contains($0.media.id) })
+        weekDays((items ?? []).filter { !onlyMine || listIDs.contains($0.media.id) }, from: start)
     }
 
     var body: some View {
         let days = days
+        let chosen = days.indices.contains(selected) ? days[selected] : nil
         VStack(alignment: .leading, spacing: 0) {
-            tabs(days)
+            strip(days)
             if !listIDs.isEmpty {
                 Toggle(t("Seulement ma liste", "Only my list"), isOn: $onlyMine)
                     .font(.subheadline)
                     .tint(Nami.textSecondary)
                     .padding(.horizontal).padding(.top, 8)
             }
-            content(days.indices.contains(selected) ? days[selected].items : [])
+            content(chosen)
         }
         .background(Nami.ground)
         .foregroundStyle(Nami.text)
-        .navigationTitle(t("Calendrier", "Calendar"))
+        .navigationTitle(chosen.map { month($0.day) } ?? t("Calendrier", "Calendar"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
-        .task { await load() }
-    }
-
-    private func label(_ day: Date, _ index: Int) -> String {
-        if index == 0 { return t("Aujourd'hui", "Today") }
-        if index == 1 { return t("Demain", "Tomorrow") }
-        return day.formatted(Date.FormatStyle(locale: Locale(identifier: appLanguage)).weekday(.abbreviated).day())
-    }
-
-    private func tabs(_ days: [(day: Date, items: [AiringItem])]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .bottom, spacing: 22) {
-                ForEach(Array(days.enumerated()), id: \.offset) { i, d in
-                    Button { selected = i } label: {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Text(label(d.day, i)).font(.subheadline.weight(selected == i ? .bold : .medium))
-                                    .foregroundStyle(selected == i ? Nami.text : Nami.textSecondary)
-                                if items != nil {
-                                    Text("\(d.items.count)").font(.caption).foregroundStyle(Nami.textMuted)
-                                }
-                            }
-                            Capsule().fill(selected == i ? Nami.text : .clear).frame(height: 2)
-                        }
-                        .fixedSize()
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(selected == i ? .isSelected : [])
-                }
+        .toolbar {
+            if let chosen, !Calendar.current.isDateInToday(chosen.day) {
+                Button(t("Aujourd'hui", "Today")) { goToday() }.tint(Nami.text)
             }
-            .padding(.horizontal)
         }
-        .padding(.top, 8)
-        .overlay(alignment: .bottom) { Rectangle().fill(Nami.text.opacity(0.1)).frame(height: 1) }
+        .task(id: start) { await load() }
+    }
+
+    private func month(_ day: Date) -> String {
+        day.formatted(Date.FormatStyle(locale: Locale(identifier: appLanguage)).month(.wide).year()).capitalized
+    }
+
+    private func goToday() {
+        let today = mondayOf(.now)
+        start = today.monday
+        selected = today.index
+    }
+
+    private func shift(_ weeks: Int) {
+        if let next = Calendar.current.date(byAdding: .day, value: 7 * weeks, to: start) { start = next }
+    }
+
+    private func strip(_ days: [(day: Date, items: [AiringItem])]) -> some View {
+        let letters = t("L M M J V S D", "M T W T F S S").split(separator: " ").map(String.init)
+        return HStack(spacing: 0) {
+            ForEach(Array(days.enumerated()), id: \.offset) { i, d in
+                let today = Calendar.current.isDateInToday(d.day)
+                let marked = listIDs.isEmpty ? !d.items.isEmpty : d.items.contains { listIDs.contains($0.media.id) }
+                Button { selected = i } label: {
+                    VStack(spacing: 4) {
+                        Text(letters[i]).font(.caption2).foregroundStyle(Nami.textSecondary)
+                        Text(d.day.formatted(.dateTime.day()))
+                            .font(.subheadline.weight(selected == i || today ? .bold : .medium))
+                            .foregroundStyle(selected == i ? Nami.ground : Nami.text)
+                            .frame(width: 36, height: 36)
+                            .background(Circle().fill(selected == i ? Nami.text : .clear))
+                            .overlay(Circle().strokeBorder(today && selected != i ? Nami.text : .clear, lineWidth: 1.5))
+                        Circle().fill(marked ? Nami.textSecondary : .clear).frame(width: 5, height: 5)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(d.day.formatted(Date.FormatStyle(locale: Locale(identifier: appLanguage)).weekday(.wide).day()))
+                .accessibilityAddTraits(selected == i ? .isSelected : [])
+            }
+        }
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .gesture(DragGesture(minimumDistance: 30).onEnded { v in
+            guard abs(v.translation.width) > abs(v.translation.height) else { return }
+            shift(v.translation.width < 0 ? 1 : -1)
+        })
     }
 
     @ViewBuilder
-    private func content(_ shown: [AiringItem]) -> some View {
+    private func content(_ chosen: (day: Date, items: [AiringItem])?) -> some View {
+        let shown = chosen?.items ?? []
         if failed {
             VStack(spacing: 12) {
                 Text(t("Calendrier indisponible", "Calendar unavailable")).font(.headline)
@@ -116,26 +145,37 @@ struct CalendarView: View {
                 .font(.subheadline).foregroundStyle(Nami.textSecondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
+            let today = chosen.map { Calendar.current.isDateInToday($0.day) } ?? false
+            let aired = today ? shown.filter(\.aired).count : -1
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(shown) { item in
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { i, item in
+                        if i == aired { nowLine }
                         let route = MediaRoute(media: item.media, source: "calendar-\(item.id)")
                         NavigationLink(value: route) { row(item).zoomSource(route.source, in: ns) }
                             .buttonStyle(.plain)
                     }
+                    if aired == shown.count { nowLine }
                 }
                 .padding(.vertical, 8)
             }
         }
     }
 
+    /// The current time, between what is out and what is to come.
+    private var nowLine: some View {
+        Rectangle().fill(Nami.text).frame(height: 2)
+            .padding(.horizontal).padding(.vertical, 4)
+            .accessibilityLabel(t("Maintenant", "Now"))
+    }
+
     private func row(_ item: AiringItem) -> some View {
-        let time = item.airingAt.formatted(date: .omitted, time: .shortened)
-        return HStack(spacing: 12) {
-            CoverImageView(url: item.media.coverImage?.large, corner: 4).frame(width: 52, height: 74)
+        HStack(alignment: .top, spacing: 12) {
+            Text(item.airingAt.formatted(date: .omitted, time: .shortened))
+                .font(.caption.bold()).foregroundStyle(Nami.textSecondary)
+                .frame(minWidth: 44, alignment: .leading)
+            CoverImageView(url: item.media.coverImage?.large, corner: 4).frame(width: 44, height: 62)
             VStack(alignment: .leading, spacing: 1) {
-                Text(item.aired ? t("\(time) · sorti", "\(time) · out") : time)
-                    .font(.caption.bold()).foregroundStyle(Nami.textSecondary)
                 Text(item.media.title.display).font(.subheadline.weight(.semibold)).lineLimit(2)
                 Text(t("Épisode \(item.episode)", "Episode \(item.episode)")).font(.caption).foregroundStyle(Nami.textSecondary)
                 if listIDs.contains(item.media.id) {
@@ -149,7 +189,14 @@ struct CalendarView: View {
     }
 
     private func load() async {
+        let wanted = start
         failed = false
-        do { items = try await anilist.airingWeek() } catch { failed = items == nil }
+        items = nil
+        do {
+            let found = try await anilist.airingWeek(from: wanted)
+            if wanted == start { items = found }
+        } catch {
+            if wanted == start { failed = true }
+        }
     }
 }

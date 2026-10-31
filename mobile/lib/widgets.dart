@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'anilist.dart';
+import 'mappings.dart';
 import 'platform.dart';
 import 'screens/detail.dart';
 import 'settings.dart';
@@ -40,6 +41,44 @@ class NewEpisodesBadge extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// A banner that fills its space. On desktop it moves to the sharper fanart once that has
+/// loaded, so nothing flashes and the banner simply stays when there is none.
+class BannerPicture extends StatefulWidget {
+  const BannerPicture(this.media, {super.key, this.alignment = Alignment.center});
+  final Media media;
+  final Alignment alignment;
+
+  @override
+  State<BannerPicture> createState() => _BannerPictureState();
+}
+
+class _BannerPictureState extends State<BannerPicture> {
+  String? sharper;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (isDesktop && sharper == null) _find();
+  }
+
+  Future<void> _find() async {
+    final url = (await Mappings.load(widget.media.id))?.fanart;
+    if (url == null || !mounted) return;
+    var ok = true;
+    await precacheImage(NetworkImage(url), context, onError: (_, _) => ok = false);
+    if (ok && mounted) setState(() => sharper = url);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = sharper ?? widget.media.banner ?? widget.media.cover;
+    return AnimatedSwitcher(
+      duration: Motion.of(context).medium,
+      child: CoverImage(url, key: ValueKey(url), radius: 0, alignment: widget.alignment),
+    );
+  }
 }
 
 /// Network image that fills the space it is given.
