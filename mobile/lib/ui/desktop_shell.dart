@@ -102,6 +102,21 @@ class DesktopShell extends StatelessWidget {
   }
 }
 
+/// Names a rail button beside it, not over the button below.
+class RailLabel extends StatelessWidget {
+  const RailLabel({super.key, required this.message, required this.child});
+  final String message;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: message,
+    positionDelegate: (place) =>
+        Offset(place.target.dx + place.targetSize.width / 2 + 14, place.target.dy - place.tooltipSize.height / 2),
+    child: child,
+  );
+}
+
 class _RailButton extends StatelessWidget {
   const _RailButton({required this.item, required this.selected, required this.onTap, this.badged = false});
   final RailItem item;
@@ -126,30 +141,32 @@ class _RailButton extends StatelessWidget {
                   color: Nami.text.withValues(alpha: selected ? 0.10 : (hovered ? 0.06 : 0)),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: IconButton(
-                  tooltip: item.label,
-                  onPressed: onTap,
-                  style: IconButton.styleFrom(
-                    fixedSize: const Size(40, 40),
-                    minimumSize: const Size(40, 40),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    overlayColor: Colors.transparent,
-                  ),
-                  icon: TweenAnimationBuilder<Color?>(
-                    tween: ColorTween(end: selected || hovered ? Nami.text : Nami.textMuted),
-                    duration: motion.fast,
-                    builder: (context, color, _) {
-                      final glyph = AnimatedSwitcher(
-                        duration: motion.fast,
-                        child: Icon(
-                          selected ? item.selectedIcon : item.icon,
-                          key: ValueKey(selected),
-                          size: 20,
-                          color: color,
-                        ),
-                      );
-                      return badged ? NewEpisodesBadge(child: glyph) : glyph;
-                    },
+                child: RailLabel(
+                  message: item.label,
+                  child: IconButton(
+                    onPressed: onTap,
+                    style: IconButton.styleFrom(
+                      fixedSize: const Size(40, 40),
+                      minimumSize: const Size(40, 40),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      overlayColor: Colors.transparent,
+                    ),
+                    icon: TweenAnimationBuilder<Color?>(
+                      tween: ColorTween(end: selected || hovered ? Nami.text : Nami.textMuted),
+                      duration: motion.fast,
+                      builder: (context, color, _) {
+                        final glyph = AnimatedSwitcher(
+                          duration: motion.fast,
+                          child: Icon(
+                            selected ? item.selectedIcon : item.icon,
+                            key: ValueKey(selected),
+                            size: 20,
+                            color: color,
+                          ),
+                        );
+                        return badged ? NewEpisodesBadge(child: glyph) : glyph;
+                      },
+                    ),
                   ),
                 ),
               );
@@ -172,13 +189,15 @@ class _Account extends StatelessWidget {
       builder: (context, _) {
         final viewer = AniList.instance.viewer;
         return FocusOutline(
-          child: IconButton(
-            tooltip: viewer?.name ?? t('Se connecter à AniList', 'Log in to AniList'),
-            onPressed: onTap,
-            style: IconButton.styleFrom(fixedSize: const Size(40, 40), minimumSize: const Size(40, 40)),
-            icon: viewer?.avatar != null
-                ? SizedBox(width: 30, height: 30, child: CoverImage(viewer!.avatar, radius: 15))
-                : Icon(Icons.account_circle_outlined, size: 24, color: Nami.textMuted),
+          child: RailLabel(
+            message: viewer?.name ?? t('Se connecter à AniList', 'Log in to AniList'),
+            child: IconButton(
+              onPressed: onTap,
+              style: IconButton.styleFrom(fixedSize: const Size(40, 40), minimumSize: const Size(40, 40)),
+              icon: viewer?.avatar != null
+                  ? SizedBox(width: 30, height: 30, child: CoverImage(viewer!.avatar, radius: 15))
+                  : Icon(Icons.account_circle_outlined, size: 24, color: Nami.textMuted),
+            ),
           ),
         );
       },

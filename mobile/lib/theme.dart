@@ -182,6 +182,17 @@ abstract final class Nami {
     const padding = EdgeInsets.symmetric(horizontal: 14);
     return base.copyWith(
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      // Part of the dark room, not the light block Material draws by default.
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: const Color(0xFF1B1B1E),
+          border: Border.all(color: line),
+          borderRadius: BorderRadius.circular(radiusButton),
+        ),
+        textStyle: const TextStyle(fontFamily: sans, fontSize: 13, fontWeight: FontWeight.w500, color: text),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        waitDuration: const Duration(milliseconds: 250),
+      ),
       visualDensity: VisualDensity.compact,
       // A mouse gets a faint highlight, not the touch ripple.
       splashFactory: NoSplash.splashFactory,

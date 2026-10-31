@@ -95,6 +95,27 @@ void main() {
     expect(tester.getTopLeft(find.byTooltip('Accueil')).dy, greaterThanOrEqualTo(WindowChrome.height));
   });
 
+  testWidgets('a rail label sits beside its button, on the dark theme', (tester) async {
+    debugDesktopOverride = true;
+    addTearDown(() => debugDesktopOverride = null);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: Nami.desktopTheme(),
+        home: const RootScreen(pages: pages),
+      ),
+    );
+    final button = find.byTooltip('Recherche');
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: tester.getCenter(button));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    final label = find.text('Recherche');
+    expect(label, findsOneWidget);
+    expect(tester.getTopLeft(label).dx, greaterThan(tester.getTopRight(button).dx));
+    expect(tester.getCenter(label).dy, closeTo(tester.getCenter(button).dy, 1));
+  });
+
   testWidgets('row arrows appear with the mouse, only where there is more', (tester) async {
     debugDesktopOverride = true;
     addTearDown(() => debugDesktopOverride = null);
