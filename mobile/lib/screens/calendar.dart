@@ -24,8 +24,8 @@ List<(DateTime, List<AiringItem>)> weekDays(List<AiringItem> items, DateTime sta
     }(),
 ];
 
-/// The Monday of the week holding [day].
-DateTime mondayOf(DateTime day) => DateTime(day.year, day.month, day.day - (day.weekday - 1));
+/// The start of [day].
+DateTime dayStart(DateTime day) => DateTime(day.year, day.month, day.day);
 
 String weekdayName(DateTime day) =>
     t('Lun Mar Mer Jeu Ven Sam Dim', 'Mon Tue Wed Thu Fri Sat Sun').split(' ')[day.weekday - 1];
@@ -39,23 +39,23 @@ String monthTitle(DateTime day) {
   return '${names[day.month - 1]} ${day.year}';
 }
 
-/// The days a week covers: "2 – 8 nov.", or "26 oct. – 1 nov." across two months.
-String weekRange(DateTime monday) {
-  final sunday = DateTime(monday.year, monday.month, monday.day + 6);
+/// The seven days from [first]: "2 – 8 nov.", or "26 oct. – 1 nov." across two months.
+String weekRange(DateTime first) {
+  final last = DateTime(first.year, first.month, first.day + 6);
   final months = t(
     'janv. févr. mars avr. mai juin juil. août sept. oct. nov. déc.',
     'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec',
   ).split(' ');
   String month(DateTime d) => months[d.month - 1];
-  final sameMonth = monday.month == sunday.month;
+  final sameMonth = first.month == last.month;
   return t(
-    '${monday.day}${sameMonth ? '' : ' ${month(monday)}'} – ${sunday.day} ${month(sunday)}',
-    '${month(monday)} ${monday.day} – ${sameMonth ? '' : '${month(sunday)} '}${sunday.day}',
+    '${first.day}${sameMonth ? '' : ' ${month(first)}'} – ${last.day} ${month(last)}',
+    '${month(first)} ${first.day} – ${sameMonth ? '' : '${month(last)} '}${last.day}',
   );
 }
 
-/// The week's episodes with the anime of your list marked: a strip of days over the
-/// chosen day on a phone, a Monday to Sunday grid on desktop. Both page through the weeks.
+/// Seven days of episodes with the anime of your list marked, today first: a strip of days
+/// over the chosen day on a phone, a grid on desktop. Both page by seven days.
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key, this.listIds = const {}, this.load});
   final Set<int> listIds;
@@ -68,13 +68,16 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
-  DateTime start = mondayOf(DateTime.now());
+  DateTime start = dayStart(DateTime.now());
   List<AiringItem>? items;
   bool failed = false;
 
-  /// The chosen day of the week on a phone, 0 for Monday.
-  int day = DateTime.now().weekday - 1;
+  /// The chosen day on a phone, 0 for the first of the seven.
+  int day = 0;
   bool onlyMine = false;
+
+  /// Where the next content comes from: 1 from the right, -1 from the left, 0 in place.
+  int _direction = 0;
 
   @override
   void initState() {
@@ -97,17 +100,53 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _shift(int weeks) {
+    _direction = weeks.sign;
     start = DateTime(start.year, start.month, start.day + 7 * weeks);
     _load();
   }
 
+  void _selectDay(int i) => setState(() {
+    _direction = (i - day).sign;
+    day = i;
+  });
+
   void _goToday() {
-    final now = DateTime.now();
-    day = now.weekday - 1;
-    if (start == mondayOf(now)) return setState(() {});
-    start = mondayOf(now);
+    final today = dayStart(DateTime.now());
+    if (start == today) return _selectDay(0);
+    _direction = today.isAfter(start) ? 1 : -1;
+    day = 0;
+    start = today;
     _load();
   }
+
+  void _setOnlyMine(bool value) => setState(() {
+    _direction = 0;
+    onlyMine = value;
+  });
+
+  /// Swaps [child] when [id] changes: the old one leaves as the new one comes from [_direction].
+  Widget _moving(Object id, Widget child, {bool fill = true}) => AnimatedSwitcher(
+    duration: Motion.of(context).medium,
+    switchInCurve: Motion.curve,
+    switchOutCurve: Motion.curve,
+    layoutBuilder: fill
+        ? (current, previous) => Stack(fit: StackFit.expand, children: [...previous, ?current])
+        : AnimatedSwitcher.defaultLayoutBuilder,
+    transitionBuilder: (child, animation) {
+      final incoming = child.key == ValueKey(id);
+      return FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: Tween(
+            begin: Offset(0.04 * (incoming ? _direction : -_direction), 0),
+            end: Offset.zero,
+          ).animate(animation),
+          child: child,
+        ),
+      );
+    },
+    child: KeyedSubtree(key: ValueKey(id), child: child),
+  );
 
   bool _shown(AiringItem item) => !onlyMine || widget.listIds.contains(item.media.id);
 
@@ -119,7 +158,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       // The app bar already keeps clear of the rail.
       appBar: AppBar(
         titleSpacing: isDesktop ? 24 : null,
-        title: Text(isDesktop ? t('Calendrier', 'Calendar') : monthTitle(days[day].$1)),
+        title: isDesktop
+            ? Text(t('Calendrier', 'Calendar'))
+            : _moving(monthTitle(days[day].$1), Text(monthTitle(days[day].$1)), fill: false),
         actions: [
           if (!isDesktop && !DateUtils.isSameDay(days[day].$1, now))
             FocusOutline(
@@ -138,21 +179,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _WeekStrip(
-            days: days,
-            selected: day,
-            listIds: widget.listIds,
-            onSelect: (i) => setState(() => day = i),
-            onSwipe: _shift,
+          _moving(
+            start,
+            _WeekStrip(days: days, selected: day, listIds: widget.listIds, onSelect: _selectDay, onSwipe: _shift),
+            fill: false,
           ),
           if (widget.listIds.isNotEmpty)
             SwitchListTile.adaptive(
               value: onlyMine,
-              onChanged: (v) => setState(() => onlyMine = v),
+              onChanged: _setOnlyMine,
               contentPadding: const EdgeInsets.symmetric(horizontal: 20),
               title: Text(t('Seulement ma liste', 'Only my list'), style: Nami.meta),
             ),
-          Expanded(child: _state(_agenda(days[day]))),
+          Expanded(
+            child: _moving(
+              (start, day, onlyMine),
+              AnimatedSwitcher(
+                duration: Motion.of(context).medium,
+                child: KeyedSubtree(key: ValueKey((items == null, failed)), child: _state(_agenda(days[day]))),
+              ),
+            ),
+          ),
         ],
       ),
     ),
@@ -221,30 +268,47 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 onPressed: () => _shift(1),
               ),
               const SizedBox(width: 12),
-              Flexible(
-                child: Text(
-                  weekRange(start),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Nami.section.copyWith(fontSize: 17),
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: _moving(
+                        weekRange(start),
+                        Text(
+                          weekRange(start),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Nami.section.copyWith(fontSize: 17),
+                        ),
+                        fill: false,
+                      ),
+                    ),
+                    if (start != dayStart(DateTime.now())) ...[
+                      const SizedBox(width: 12),
+                      FocusOutline(
+                        child: TextButton(onPressed: _goToday, child: Text(t("Aujourd'hui", 'Today'))),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              if (start != mondayOf(DateTime.now())) ...[
+              if (widget.listIds.isNotEmpty) ...[
                 const SizedBox(width: 12),
-                FocusOutline(
-                  child: TextButton(onPressed: _goToday, child: Text(t('Cette semaine', 'This week'))),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 260),
+                  child: _ListFilter(value: onlyMine, onChanged: _setOnlyMine),
                 ),
               ],
-              const Spacer(),
-              if (widget.listIds.isNotEmpty)
-                Flexible(
-                  child: _ListFilter(value: onlyMine, onChanged: (v) => setState(() => onlyMine = v)),
-                ),
             ],
           ),
         ),
         Expanded(
-          child: _state(_WeekGrid(days: days, listIds: widget.listIds, left: side)),
+          child: _moving(
+            (start, onlyMine, failed),
+            failed
+                ? _state(const SizedBox.shrink())
+                : _WeekGrid(days: days, loading: items == null, listIds: widget.listIds, left: side),
+          ),
         ),
       ],
     );
@@ -343,7 +407,7 @@ class _WeekStrip extends StatelessWidget {
             for (var i = 0; i < 7; i++)
               Expanded(
                 child: _StripDay(
-                  letter: letters[i],
+                  letter: letters[days[i].$1.weekday - 1],
                   label: weekdayName(days[i].$1),
                   day: days[i].$1,
                   selected: i == selected,
@@ -434,8 +498,9 @@ class _StripDay extends StatelessWidget {
 
 /// Seven columns under fixed day headers. Below the width they need, the whole week scrolls sideways.
 class _WeekGrid extends StatelessWidget {
-  const _WeekGrid({required this.days, required this.listIds, required this.left});
+  const _WeekGrid({required this.days, required this.loading, required this.listIds, required this.left});
   final List<(DateTime, List<AiringItem>)> days;
+  final bool loading;
   final Set<int> listIds;
   final double left;
 
@@ -466,9 +531,16 @@ class _WeekGrid extends StatelessWidget {
             children: [
               row((d) => _DayHeader(day: d.$1, count: d.$2.length)),
               Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.only(top: 8, bottom: 16),
-                  child: row((d) => _DayColumn(day: d.$1, items: d.$2, listIds: listIds)),
+                child: AnimatedSwitcher(
+                  duration: Motion.of(context).medium,
+                  layoutBuilder: (current, previous) => Stack(fit: StackFit.expand, children: [...previous, ?current]),
+                  child: SingleChildScrollView(
+                    key: ValueKey(loading),
+                    padding: const EdgeInsets.only(top: 8, bottom: 16),
+                    child: row(
+                      (d) => loading ? const _WaitingCards() : _DayColumn(day: d.$1, items: d.$2, listIds: listIds),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -476,6 +548,29 @@ class _WeekGrid extends StatelessWidget {
         ),
       );
     },
+  );
+}
+
+/// The shape of a day while its episodes load.
+class _WaitingCards extends StatelessWidget {
+  const _WaitingCards();
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: t('Chargement du calendrier…', 'Loading the calendar…'),
+    child: Column(
+      children: [
+        for (var i = 0; i < 4; i++)
+          Container(
+            height: 66,
+            margin: const EdgeInsets.only(bottom: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF131315),
+              borderRadius: BorderRadius.circular(Nami.radiusButton),
+            ),
+          ),
+      ],
+    ),
   );
 }
 
@@ -501,34 +596,39 @@ class _DayHeader extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 8),
           child: Row(
             children: [
-              Flexible(
-                child: Text(
-                  weekdayName(day),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Nami.meta.copyWith(
-                    color: today ? Nami.text : Nami.textSecondary,
-                    fontWeight: today ? FontWeight.w700 : FontWeight.w500,
-                  ),
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        weekdayName(day),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Nami.meta.copyWith(
+                          color: today ? Nami.text : Nami.textSecondary,
+                          fontWeight: today ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      alignment: Alignment.center,
+                      decoration: today ? BoxDecoration(color: Nami.text, shape: BoxShape.circle) : null,
+                      child: Text(
+                        '${day.day}',
+                        style: Nami.body.copyWith(
+                          fontSize: 16,
+                          height: 1,
+                          fontWeight: FontWeight.w700,
+                          color: today ? Nami.ground : Nami.text,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 6),
-              Container(
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                alignment: Alignment.center,
-                decoration: today ? BoxDecoration(color: Nami.text, shape: BoxShape.circle) : null,
-                child: Text(
-                  '${day.day}',
-                  style: Nami.body.copyWith(
-                    fontSize: 16,
-                    height: 1,
-                    fontWeight: FontWeight.w700,
-                    color: today ? Nami.ground : Nami.text,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              if (count > 0) Flexible(child: Text('$count', maxLines: 1, style: Nami.caption)),
+              if (count > 0) Text('$count', maxLines: 1, style: Nami.caption),
             ],
           ),
         ),

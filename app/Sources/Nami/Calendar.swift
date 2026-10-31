@@ -9,14 +9,6 @@ func weekDays(_ items: [AiringItem], from start: Date) -> [(day: Date, items: [A
     }
 }
 
-/// The Monday of the week holding `day`, and how many days it is after that Monday.
-func mondayOf(_ day: Date) -> (monday: Date, index: Int) {
-    let calendar = Calendar.current
-    let start = calendar.startOfDay(for: day)
-    let index = (calendar.component(.weekday, from: start) + 5) % 7
-    return (calendar.date(byAdding: .day, value: -index, to: start) ?? start, index)
-}
-
 /// The calendar as a tab of the app, with its own navigation.
 struct CalendarTab: View {
     @ObservedObject private var store = HomeStore.shared
@@ -33,19 +25,29 @@ struct CalendarTab: View {
     }
 }
 
-/// The week's episodes, Apple Calendar style: a strip of days you swipe through the weeks, over
-/// the chosen day with its times on the left (the Android calendar has the same layout).
+/// Seven days of episodes, today first, Apple Calendar style: a strip of days you swipe by seven
+/// days, over the chosen day with its times on the left (the Android calendar has the same layout).
 struct CalendarView: View {
     let listIDs: Set<Int>
     let ns: Namespace.ID
 
     @EnvironmentObject private var anilist: AniList
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.fr.rawValue
-    @State private var start = mondayOf(.now).monday
-    @State private var selected = mondayOf(.now).index
+    @State private var start = Calendar.current.startOfDay(for: .now)
+    @State private var selected = 0
     @State private var items: [AiringItem]?
     @State private var failed = false
     @State private var onlyMine = false
+    @State private var forward = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var motion: Animation? { reduceMotion ? nil : .easeInOut(duration: 0.28) }
+
+    /// What is new comes from the side you are going to.
+    private var slide: AnyTransition {
+        .asymmetric(insertion: .move(edge: forward ? .trailing : .leading).combined(with: .opacity),
+                    removal: .move(edge: forward ? .leading : .trailing).combined(with: .opacity))
+    }
 
     private var days: [(day: Date, items: [AiringItem])] {
         weekDays((items ?? []).filter { !onlyMine || listIDs.contains($0.media.id) }, from: start)
@@ -55,15 +57,16 @@ struct CalendarView: View {
         let days = days
         let chosen = days.indices.contains(selected) ? days[selected] : nil
         VStack(alignment: .leading, spacing: 0) {
-            strip(days)
+            strip(days).id(start).transition(slide)
             if !listIDs.isEmpty {
-                Toggle(t("Seulement ma liste", "Only my list"), isOn: $onlyMine)
+                Toggle(t("Seulement ma liste", "Only my list"), isOn: $onlyMine.animation(motion))
                     .font(.subheadline)
                     .tint(Nami.textSecondary)
                     .padding(.horizontal).padding(.top, 8)
             }
-            content(chosen)
+            content(chosen).id("\(start)-\(selected)").transition(slide)
         }
+        .clipped()
         .background(Nami.ground)
         .foregroundStyle(Nami.text)
         .navigationTitle(chosen.map { month($0.day) } ?? t("Calendrier", "Calendar"))
@@ -82,13 +85,18 @@ struct CalendarView: View {
     }
 
     private func goToday() {
-        let today = mondayOf(.now)
-        start = today.monday
-        selected = today.index
+        let today = Calendar.current.startOfDay(for: .now)
+        forward = today > start
+        withAnimation(motion) {
+            start = today
+            selected = 0
+        }
     }
 
     private func shift(_ weeks: Int) {
-        if let next = Calendar.current.date(byAdding: .day, value: 7 * weeks, to: start) { start = next }
+        guard let next = Calendar.current.date(byAdding: .day, value: 7 * weeks, to: start) else { return }
+        forward = weeks > 0
+        withAnimation(motion) { start = next }
     }
 
     private func strip(_ days: [(day: Date, items: [AiringItem])]) -> some View {
@@ -97,9 +105,13 @@ struct CalendarView: View {
             ForEach(Array(days.enumerated()), id: \.offset) { i, d in
                 let today = Calendar.current.isDateInToday(d.day)
                 let marked = listIDs.isEmpty ? !d.items.isEmpty : d.items.contains { listIDs.contains($0.media.id) }
-                Button { selected = i } label: {
+                Button {
+                    forward = i > selected
+                    withAnimation(motion) { selected = i }
+                } label: {
                     VStack(spacing: 4) {
-                        Text(letters[i]).font(.caption2).foregroundStyle(Nami.textSecondary)
+                        Text(letters[(Calendar.current.component(.weekday, from: d.day) + 5) % 7])
+                            .font(.caption2).foregroundStyle(Nami.textSecondary)
                         Text(d.day.formatted(.dateTime.day()))
                             .font(.subheadline.weight(selected == i || today ? .bold : .medium))
                             .foregroundStyle(selected == i ? Nami.ground : Nami.text)
@@ -194,7 +206,7 @@ struct CalendarView: View {
         items = nil
         do {
             let found = try await anilist.airingWeek(from: wanted)
-            if wanted == start { items = found }
+            if wanted == start { withAnimation(motion) { items = found } }
         } catch {
             if wanted == start { failed = true }
         }

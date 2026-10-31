@@ -47,8 +47,6 @@ void main() {
   test('a week reads as its days, across two months too', () {
     expect(weekRange(DateTime(2026, 11, 2)), 'Nov 2 – 8');
     expect(weekRange(DateTime(2026, 10, 26)), 'Oct 26 – Nov 1');
-    expect(mondayOf(DateTime(2026, 11, 1, 23)), DateTime(2026, 10, 26));
-    expect(mondayOf(DateTime(2026, 10, 26, 1)), DateTime(2026, 10, 26));
   });
 
   test('the fanart comes from the images of the mappings', () {
@@ -72,7 +70,7 @@ void main() {
 
   testWidgets('the phone shows the strip of days, opens on today, and a day shows that day', (tester) async {
     final now = DateTime.now();
-    final other = mondayOf(now).add(Duration(days: now.weekday % 7, hours: 12));
+    final other = DateTime(now.year, now.month, now.day + 1, 12);
     await tester.pumpWidget(
       host(
         CalendarScreen(
@@ -93,22 +91,25 @@ void main() {
 
     await tester.tap(find.text('${other.day}'));
     await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('Anime 2'), findsOneWidget);
     expect(find.text('Anime 3'), findsOneWidget);
     expect(find.text('In your list'), findsOneWidget);
 
     await tester.tap(find.text('Only my list'));
     await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('Anime 2'), findsOneWidget);
     expect(find.text('Anime 3'), findsNothing);
 
     await tester.tap(find.text('Today'));
     await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('Today'), findsNothing);
   });
 
   testWidgets('a swipe moves to the next or previous week, keeping the weekday', (tester) async {
-    final monday = mondayOf(DateTime.now());
+    final today = dayStart(DateTime.now());
     final asked = <DateTime>[];
     await tester.pumpWidget(
       host(
@@ -124,13 +125,15 @@ void main() {
     await tester.fling(find.text('${DateTime.now().day}'), const Offset(-300, 0), 1000);
     await tester.pump();
     await tester.pump();
-    expect(asked.last, DateTime(monday.year, monday.month, monday.day + 7));
+    await tester.pump(const Duration(seconds: 1));
+    expect(asked.last, DateTime(today.year, today.month, today.day + 7));
     expect(find.text('Today'), findsOneWidget);
 
     await tester.tap(find.text('Today'));
     await tester.pump();
     await tester.pump();
-    expect(asked.last, monday);
+    await tester.pump(const Duration(seconds: 1));
+    expect(asked.last, today);
   });
 
   testWidgets('today has a line for the current time, other days do not', (tester) async {
@@ -171,8 +174,8 @@ void main() {
   });
 
   group('desktop week', () {
-    final monday = mondayOf(DateTime.now());
-    DateTime at(int day, int hour) => DateTime(monday.year, monday.month, monday.day + day, hour);
+    final today = dayStart(DateTime.now());
+    DateTime at(int day, int hour) => DateTime(today.year, today.month, today.day + day, hour);
 
     Future<List<DateTime>> pumpWeek(WidgetTester tester, {Size size = const Size(1300, 700), double text = 1}) async {
       debugDesktopOverride = true;
@@ -203,44 +206,67 @@ void main() {
       return asked;
     }
 
-    testWidgets('starts on Monday, with one column per day in order', (tester) async {
+    testWidgets('today comes first, with one column per day in order', (tester) async {
       final asked = await pumpWeek(tester);
-      expect(asked, [monday]);
-      for (final name in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']) {
-        expect(find.text(name), findsOneWidget);
+      expect(asked, [today]);
+      for (var i = 0; i < 7; i++) {
+        expect(find.text(weekdayName(at(i, 12))), findsOneWidget);
       }
       double x(String text) => tester.getTopLeft(find.text(text)).dx;
       expect(x('Anime 1'), lessThan(x('Anime 2')));
       expect(x('Anime 2'), lessThan(x('Anime 3')));
       // Under its own day.
-      expect(x('Anime 3') - x('Sun'), inInclusiveRange(0, 60));
+      expect(x('Anime 3') - x(weekdayName(at(6, 12))), inInclusiveRange(0, 60));
+      expect(x(weekdayName(at(0, 12))), lessThan(x(weekdayName(at(1, 12)))));
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('pages through the weeks and comes back', (tester) async {
       final asked = await pumpWeek(tester);
-      expect(find.text('This week'), findsNothing);
+      expect(find.text('Today'), findsNothing);
 
       await tester.tap(find.byTooltip('Next week'));
       await tester.pump();
       await tester.pump();
-      expect(asked.last, DateTime(monday.year, monday.month, monday.day + 7));
+      await tester.pump(const Duration(seconds: 1));
+      expect(asked.last, DateTime(today.year, today.month, today.day + 7));
 
-      await tester.tap(find.text('This week'));
+      await tester.tap(find.text('Today'));
       await tester.pump();
       await tester.pump();
-      expect(asked.last, monday);
+      await tester.pump(const Duration(seconds: 1));
+      expect(asked.last, today);
 
       await tester.tap(find.byTooltip('Previous week'));
       await tester.pump();
       await tester.pump();
-      expect(asked.last, DateTime(monday.year, monday.month, monday.day - 7));
+      await tester.pump(const Duration(seconds: 1));
+      expect(asked.last, DateTime(today.year, today.month, today.day - 7));
+    });
+
+    testWidgets('the filter sits at the right end, and a new week slides in', (tester) async {
+      await pumpWeek(tester);
+      await tester.pump(const Duration(seconds: 1));
+      expect(tester.getTopRight(find.byType(Switch)).dx, greaterThan(1300 - 40));
+
+      SlideTransition? moving() => tester
+          .widgetList<SlideTransition>(find.byType(SlideTransition))
+          .where((t) => t.position.value != Offset.zero)
+          .firstOrNull;
+      expect(moving(), isNull);
+      await tester.tap(find.byTooltip('Next week'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(moving(), isNotNull);
+      await tester.pump(const Duration(seconds: 1));
+      expect(moving(), isNull);
     });
 
     testWidgets('the list filter works from its label', (tester) async {
       await pumpWeek(tester);
       await tester.tap(find.text('Only my list'));
       await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
       expect(find.text('Anime 2'), findsOneWidget);
       expect(find.text('Anime 1'), findsNothing);
       expect(find.byIcon(Icons.bookmark), findsOneWidget);
@@ -277,6 +303,7 @@ void main() {
     await tester.tap(find.text('Try again'));
     await tester.pump();
     await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('Anime 1'), findsOneWidget);
   });
 }
