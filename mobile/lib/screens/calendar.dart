@@ -124,23 +124,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
     onlyMine = value;
   });
 
-  /// Swaps [child] when [id] changes: the old one leaves as the new one comes from [_direction].
+  /// Swaps [child] when [id] changes: the old one is gone before the new one fades in, so two
+  /// weeks are never on screen at once. Real episodes arrive with a small move from [_direction].
   Widget _moving(Object id, Widget child, {bool fill = true}) => AnimatedSwitcher(
-    duration: Motion.of(context).medium,
-    switchInCurve: Motion.curve,
-    switchOutCurve: Motion.curve,
-    layoutBuilder: fill
-        ? (current, previous) => Stack(fit: StackFit.expand, children: [...previous, ?current])
-        : AnimatedSwitcher.defaultLayoutBuilder,
+    duration: Motion.of(context).medium * 1.25,
+    layoutBuilder: (current, previous) => Stack(
+      alignment: Alignment.centerLeft,
+      fit: fill ? StackFit.expand : StackFit.loose,
+      children: [...previous, ?current],
+    ),
     transitionBuilder: (child, animation) {
       final incoming = child.key == ValueKey(id);
+      final shown = animation.drive(CurveTween(curve: Interval(incoming ? 0.4 : 0.6, 1, curve: Curves.easeOut)));
+      final move = incoming && items != null ? _direction : 0;
       return FadeTransition(
-        opacity: animation,
+        opacity: shown,
         child: SlideTransition(
-          position: Tween(
-            begin: Offset(0.04 * (incoming ? _direction : -_direction), 0),
-            end: Offset.zero,
-          ).animate(animation),
+          position: shown.drive(Tween(begin: Offset(0.02 * move, 0), end: Offset.zero)),
           child: child,
         ),
       );
@@ -158,9 +158,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       // The app bar already keeps clear of the rail.
       appBar: AppBar(
         titleSpacing: isDesktop ? 24 : null,
-        title: isDesktop
-            ? Text(t('Calendrier', 'Calendar'))
-            : _moving(monthTitle(days[day].$1), Text(monthTitle(days[day].$1)), fill: false),
+        title: Text(isDesktop ? t('Calendrier', 'Calendar') : monthTitle(days[day].$1)),
         actions: [
           if (!isDesktop && !DateUtils.isSameDay(days[day].$1, now))
             FocusOutline(
@@ -191,15 +189,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 20),
               title: Text(t('Seulement ma liste', 'Only my list'), style: Nami.meta),
             ),
-          Expanded(
-            child: _moving(
-              (start, day, onlyMine),
-              AnimatedSwitcher(
-                duration: Motion.of(context).medium,
-                child: KeyedSubtree(key: ValueKey((items == null, failed)), child: _state(_agenda(days[day]))),
-              ),
-            ),
-          ),
+          Expanded(child: _moving((start, day, onlyMine, items == null, failed), _state(_agenda(days[day])))),
         ],
       ),
     ),
@@ -272,15 +262,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 child: Row(
                   children: [
                     Flexible(
-                      child: _moving(
+                      child: Text(
                         weekRange(start),
-                        Text(
-                          weekRange(start),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Nami.section.copyWith(fontSize: 17),
-                        ),
-                        fill: false,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Nami.section.copyWith(fontSize: 17),
                       ),
                     ),
                     if (start != dayStart(DateTime.now())) ...[
@@ -303,12 +289,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
         ),
         Expanded(
-          child: _moving(
-            (start, onlyMine, failed),
-            failed
-                ? _state(const SizedBox.shrink())
-                : _WeekGrid(days: days, loading: items == null, listIds: widget.listIds, left: side),
-          ),
+          child: failed
+              ? _state(const SizedBox.shrink())
+              : _WeekGrid(
+                  days: days,
+                  loading: items == null,
+                  listIds: widget.listIds,
+                  left: side,
+                  body: (cards) => _moving((start, onlyMine, items == null), cards),
+                ),
         ),
       ],
     );
@@ -498,11 +487,20 @@ class _StripDay extends StatelessWidget {
 
 /// Seven columns under fixed day headers. Below the width they need, the whole week scrolls sideways.
 class _WeekGrid extends StatelessWidget {
-  const _WeekGrid({required this.days, required this.loading, required this.listIds, required this.left});
+  const _WeekGrid({
+    required this.days,
+    required this.loading,
+    required this.listIds,
+    required this.left,
+    required this.body,
+  });
   final List<(DateTime, List<AiringItem>)> days;
   final bool loading;
   final Set<int> listIds;
   final double left;
+
+  /// Animates the cards when they change; the day headers stay where they are.
+  final Widget Function(Widget cards) body;
 
   static const gap = 10.0;
   static const narrowest = 150.0;
@@ -531,11 +529,8 @@ class _WeekGrid extends StatelessWidget {
             children: [
               row((d) => _DayHeader(day: d.$1, count: d.$2.length)),
               Expanded(
-                child: AnimatedSwitcher(
-                  duration: Motion.of(context).medium,
-                  layoutBuilder: (current, previous) => Stack(fit: StackFit.expand, children: [...previous, ?current]),
-                  child: SingleChildScrollView(
-                    key: ValueKey(loading),
+                child: body(
+                  SingleChildScrollView(
                     padding: const EdgeInsets.only(top: 8, bottom: 16),
                     child: row(
                       (d) => loading ? const _WaitingCards() : _DayColumn(day: d.$1, items: d.$2, listIds: listIds),
