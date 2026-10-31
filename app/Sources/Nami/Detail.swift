@@ -8,6 +8,7 @@ struct MediaDetailView: View {
     /// Once the main button has scrolled away, the top bar offers it instead.
     @State private var showBarButton = false
     @State private var editingList = false
+    @State private var saveFailed = false
     @EnvironmentObject private var center: PlayerCenter
 
     private var progress: Int { media.mediaListEntry?.progress ?? 0 }
@@ -82,6 +83,7 @@ struct MediaDetailView: View {
         .sheet(isPresented: $editingList) {
             ListEditorSheet(media: media) { media = $0 }
         }
+        .alert(t("L'enregistrement a échoué. Réessaie.", "Saving failed. Try again."), isPresented: $saveFailed) {}
         .task {
             if let fresh = try? await anilist.media(id: media.id) { media = fresh }
             mappings = await Mappings.load(anilistID: media.id)
@@ -191,6 +193,27 @@ struct MediaDetailView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            if anilist.isLoggedIn {
+                if n <= progress {
+                    Button(t("Non vu à partir d'ici", "Unwatched from here"), systemImage: "eye.slash") { setWatched(n - 1) }
+                } else {
+                    Button(t("Vu jusqu'ici", "Watched up to here"), systemImage: "checkmark.circle") { setWatched(n) }
+                }
+            }
+        }
+    }
+
+    /// Sets how many episodes are watched: AniList keeps one number, not a list of episodes.
+    private func setWatched(_ progress: Int) {
+        Task {
+            do {
+                media.mediaListEntry = try await anilist.saveEntry(media: media, status: media.status(atProgress: progress),
+                                                                   progress: progress, score: media.mediaListEntry?.score ?? 0)
+            } catch {
+                saveFailed = true
+            }
+        }
     }
 }
 

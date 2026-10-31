@@ -4,7 +4,7 @@
 
 - [x] Edit your AniList entry from the app: status, progress (−/+), score, remove from list.
 - [ ] More entry fields: rewatches, start/finish dates, notes.
-- [ ] Long-press an episode: "watched up to here" / "mark as unwatched".
+- [x] Long-press an episode: "watched up to here" / "unwatched from here".
 - [x] Profile page with banner, avatar, stats and your list by status ("My list" tab).
 - [ ] Mean score in the profile stats.
 - [ ] Edit your profile: bio, profile color, title language, score format, adult content.

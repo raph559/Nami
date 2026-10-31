@@ -103,6 +103,12 @@ class Media {
   /// The same anime with another list entry (null when removed from the list).
   Media withEntry(ListEntry? entry) => Media({...json, 'mediaListEntry': entry?.toJson()});
 
+  /// The list status that goes with having watched [progress] episodes.
+  String statusAt(int progress) {
+    if (episodes != null && progress >= episodes!) return 'COMPLETED';
+    return listEntry?.status == 'REPEATING' ? 'REPEATING' : 'CURRENT';
+  }
+
   /// Episodes that can be watched now (aired so far for ongoing shows).
   int get availableEpisodes {
     final next = nextEpisode;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../anilist.dart';
 import '../mappings.dart';
@@ -521,7 +522,7 @@ class _DetailScreenState extends State<DetailScreen> {
   ({EpisodeInfo? ep, bool watched, bool isNext, String? state, double? resume, int? runtime}) _episode(int n) {
     final watched = n <= media.progress;
     final isNext = n == nextEpisode && !watched && (AniList.instance.isLoggedIn || n > 1);
-    final resume = AppSettings.instance.resumeFraction(media.id, n);
+    final resume = watched ? null : AppSettings.instance.resumeFraction(media.id, n);
     final ep = mappings?.episode(n);
     final runtime = ep?.runtime ?? media.json['duration'] as int?;
     final left = resume != null && runtime != null ? ((1 - resume) * runtime).round() : null;
@@ -578,22 +579,76 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
-  Widget _episodeRow(int n, Color accent) {
-    final e = _episode(n);
+  /// Sets how many episodes are watched: AniList keeps one number, not a list of episodes.
+  Future<void> _setWatched(int progress) async {
+    try {
+      final entry = await AniList.instance.saveEntry(
+        media,
+        status: media.statusAt(progress),
+        progress: progress,
+        score: media.listEntry?.score ?? 0,
+      );
+      if (mounted) setState(() => media = media.withEntry(entry));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t("L'enregistrement a échoué. Réessaie.", 'Saving failed. Try again.'))));
+    }
+  }
+
+  /// Opens at [at], or on [anchor] when there is no pointer (long press, menu key).
+  Future<void> _episodeMenu(BuildContext anchor, int n, [Offset? at]) async {
+    if (!AniList.instance.isLoggedIn) return;
+    HapticFeedback.mediumImpact();
+    final box = anchor.findRenderObject()! as RenderBox;
+    final screen = Overlay.of(anchor).context.findRenderObject()! as RenderBox;
+    final origin = at ?? box.localToGlobal(box.size.center(Offset.zero));
+    final watched = n <= media.progress;
+    final progress = await showMenu<int>(
+      context: anchor,
+      position: RelativeRect.fromSize(origin & Size.zero, screen.size),
+      items: [
+        PopupMenuItem(
+          value: watched ? n - 1 : n,
+          child: Text(watched ? t("Non vu à partir d'ici", 'Unwatched from here') : t("Vu jusqu'ici", 'Watched up to here')),
+        ),
+      ],
+    );
+    if (progress != null) _setWatched(progress);
+  }
+
+  /// Tap to watch; long press, right click or the menu key to mark as watched.
+  Widget _episodeTappable(int n, {required Widget child}) {
     return FocusOutline(
       radius: Nami.radiusImage,
-      child: InkWell(
-        onTap: () => _watch(n),
-        borderRadius: BorderRadius.circular(Nami.radiusImage),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 7),
-          child: Row(
-            children: [
-              _thumb(n, accent, 120, 68),
-              const SizedBox(width: 14),
-              Expanded(child: _episodeText(n, e, accent)),
-            ],
+      child: Builder(
+        builder: (anchor) => CallbackShortcuts(
+          bindings: {const SingleActivator(LogicalKeyboardKey.contextMenu): () => _episodeMenu(anchor, n)},
+          child: InkWell(
+            onTap: () => _watch(n),
+            onLongPress: () => _episodeMenu(anchor, n),
+            onSecondaryTapUp: (d) => _episodeMenu(anchor, n, d.globalPosition),
+            borderRadius: BorderRadius.circular(Nami.radiusImage),
+            child: child,
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _episodeRow(int n, Color accent) {
+    final e = _episode(n);
+    return _episodeTappable(
+      n,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Row(
+          children: [
+            _thumb(n, accent, 120, 68),
+            const SizedBox(width: 14),
+            Expanded(child: _episodeText(n, e, accent)),
+          ],
         ),
       ),
     );
@@ -601,19 +656,15 @@ class _DetailScreenState extends State<DetailScreen> {
 
   Widget _episodeCard(int n, Color accent) {
     final e = _episode(n);
-    return FocusOutline(
-      radius: Nami.radiusImage,
-      child: InkWell(
-        onTap: () => _watch(n),
-        borderRadius: BorderRadius.circular(Nami.radiusImage),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            AspectRatio(aspectRatio: 16 / 9, child: _thumb(n, accent, null, double.infinity)),
-            const SizedBox(height: 8),
-            _episodeText(n, e, accent),
-          ],
-        ),
+    return _episodeTappable(
+      n,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AspectRatio(aspectRatio: 16 / 9, child: _thumb(n, accent, null, double.infinity)),
+          const SizedBox(height: 8),
+          _episodeText(n, e, accent),
+        ],
       ),
     );
   }

@@ -132,6 +132,12 @@ struct Media: Codable, Identifiable, Hashable {
 
     var isMovie: Bool { format == "MOVIE" }
 
+    /// The list status that goes with having watched `progress` episodes.
+    func status(atProgress progress: Int) -> ListStatus {
+        if let episodes, progress >= episodes { return .COMPLETED }
+        return mediaListEntry?.status == ListStatus.REPEATING.rawValue ? .REPEATING : .CURRENT
+    }
+
     var plainDescription: String {
         guard let description else { return "" }
         return description
