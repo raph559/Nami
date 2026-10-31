@@ -203,6 +203,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _inputs = inputs;
         feed = inputs.feed(loggedIn: loggedIn);
         anilist.newEpisodes.value = inputs.watching.where((w) => w.hasNewEpisode).length;
+        anilist.listIds.value = feed!.listIds;
       }
     });
   }

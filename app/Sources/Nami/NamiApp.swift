@@ -65,6 +65,8 @@ struct RootView: View {
                 .tabItem { Label(t("Accueil", "Home"), systemImage: "house.fill") }
             SearchView().id(language)
                 .tabItem { Label(t("Recherche", "Search"), systemImage: "magnifyingglass") }
+            CalendarTab().id(language)
+                .tabItem { Label(t("Calendrier", "Calendar"), systemImage: "calendar") }
             LibraryView().id(language)
                 .tabItem { Label(t("Ma liste", "My list"), systemImage: "bookmark.fill") }
                 .badge(anilist.newEpisodes)

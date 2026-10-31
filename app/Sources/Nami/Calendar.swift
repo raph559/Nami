@@ -10,6 +10,22 @@ func weekDays(_ items: [AiringItem], now: Date = .now) -> [(day: Date, items: [A
     }
 }
 
+/// The calendar as a tab of the app, with its own navigation.
+struct CalendarTab: View {
+    @ObservedObject private var store = HomeStore.shared
+    @State private var path: [MediaRoute] = []
+    @Namespace private var ns
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            CalendarView(listIDs: store.feed?.listIDs ?? [], ns: ns)
+                .navigationDestination(for: MediaRoute.self) { r in
+                    MediaDetailView(media: r.media).zoomDestination(r.source, in: ns)
+                }
+        }
+    }
+}
+
 /// The week's episodes, one tab per day, with the anime of your list marked (same as Android and Windows).
 struct CalendarView: View {
     let listIDs: Set<Int>

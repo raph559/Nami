@@ -31,6 +31,7 @@ String dayLabel(DateTime day, int index) {
 }
 
 /// The week's episodes, one tab per day, with the anime of your list marked.
+/// Both a tab of the app and a page opened from the home's Today row.
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key, this.listIds = const {}, this.load});
   final Set<int> listIds;
@@ -68,13 +69,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final side = isDesktop ? 36.0 : 20.0;
+    final side = isDesktop ? MediaQuery.paddingOf(context).left + 24 : 20.0;
     final days = weekDays([...?items?.where(_shown)], DateTime.now());
     return Scaffold(
-      appBar: AppBar(title: Text(t('Calendrier', 'Calendar'))),
-      body: Center(
+      appBar: AppBar(titleSpacing: side, title: Text(t('Calendrier', 'Calendar'))),
+      body: Align(
+        alignment: isDesktop ? Alignment.topLeft : Alignment.topCenter,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
+          constraints: BoxConstraints(maxWidth: 760 + side),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

@@ -13,6 +13,7 @@ import 'engine.dart';
 import 'extensions.dart';
 import 'player_center.dart';
 import 'screens/player.dart';
+import 'screens/calendar.dart';
 import 'screens/home.dart';
 import 'screens/library.dart';
 import 'screens/search.dart';
@@ -124,6 +125,9 @@ class RootScreen extends StatefulWidget {
 
 class _RootScreenState extends State<RootScreen> {
   int tab = 0;
+
+  /// The calendar asks AniList for a whole week, so it waits until it is opened.
+  bool _calendarOpened = false;
   final _searchFocus = FocusNode(debugLabel: 'search field');
 
   @override
@@ -131,6 +135,11 @@ class _RootScreenState extends State<RootScreen> {
     _searchFocus.dispose();
     super.dispose();
   }
+
+  void _select(int i) => setState(() {
+    tab = i;
+    if (i == 2) _calendarOpened = true;
+  });
 
   void _openSearch() {
     setState(() => tab = 1);
@@ -159,19 +168,34 @@ class _RootScreenState extends State<RootScreen> {
     final items = [
       (Icons.home_outlined, Icons.home, t('Accueil', 'Home')),
       (Icons.search, Icons.search, t('Recherche', 'Search')),
+      (Icons.calendar_today_outlined, Icons.calendar_today, t('Calendrier', 'Calendar')),
       (Icons.bookmark_border, Icons.bookmark, t('Ma liste', 'My list')),
       (Icons.tune_outlined, Icons.tune, t('Réglages', 'Settings')),
     ];
-    final children = widget.pages ?? const [HomeScreen(), SearchScreen(), LibraryScreen(), SettingsScreen()];
+    final children =
+        widget.pages ??
+        [
+          const HomeScreen(),
+          const SearchScreen(),
+          if (_calendarOpened)
+            ValueListenableBuilder(
+              valueListenable: AniList.instance.listIds,
+              builder: (context, ids, _) => CalendarScreen(listIds: ids),
+            )
+          else
+            const SizedBox.shrink(),
+          const LibraryScreen(),
+          const SettingsScreen(),
+        ];
     if (isDesktop) {
       final shell = DesktopShell(
         items: [for (final i in items) (icon: i.$1, selectedIcon: i.$2, label: i.$3)],
         index: tab,
-        onSelect: (i) => setState(() => tab = i),
+        onSelect: _select,
         pages: children,
-        badgedIndex: 2,
+        badgedIndex: 3,
         onAccount: () => AniList.instance.isLoggedIn
-            ? setState(() => tab = 2)
+            ? _select(3)
             : Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginScreen())),
       );
       return SearchFocus(
@@ -185,9 +209,9 @@ class _RootScreenState extends State<RootScreen> {
       label: items[i].$3,
       selected: tab == i,
       vertical: vertical,
-      badged: i == 2,
+      badged: i == 3,
       showLabel: showLabel,
-      onTap: () => setState(() => tab = i),
+      onTap: () => _select(i),
     );
     // Wide windows (tablet landscape, desktop) get a side rail so the
     // content keeps its height; phones keep the bottom bar.

@@ -233,6 +233,9 @@ class AniList extends ChangeNotifier {
   /// How many anime of your list have an episode to watch. The home keeps it up to date.
   final newEpisodes = ValueNotifier<int>(0);
 
+  /// The anime of your list, for the calendar tab. The home keeps it up to date too.
+  final listIds = ValueNotifier<Set<int>>(const {});
+
   List<AiringItem>? _week;
   DateTime? _weekAt;
 

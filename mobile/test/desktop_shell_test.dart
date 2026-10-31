@@ -10,7 +10,7 @@ import 'package:nami/ui/desktop_shell.dart';
 import 'package:nami/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const pages = [Text('page home'), Text('page search'), Text('page list'), Text('page settings')];
+const pages = [Text('page home'), Text('page search'), Text('page calendar'), Text('page list'), Text('page settings')];
 
 Future<void> pumpRoot(WidgetTester tester, {required bool desktop, Size size = const Size(1600, 900)}) async {
   debugDesktopOverride = desktop;
@@ -35,7 +35,7 @@ void main() {
   testWidgets('desktop shows a slim rail with a tooltip per page', (tester) async {
     await pumpRoot(tester, desktop: true);
     expect(find.byType(DesktopShell), findsOneWidget);
-    for (final label in ['Accueil', 'Recherche', 'Ma liste', 'Réglages']) {
+    for (final label in ['Accueil', 'Recherche', 'Calendrier', 'Ma liste', 'Réglages']) {
       expect(find.byTooltip(label), findsOneWidget);
     }
     expect(find.byType(VerticalDivider), findsNothing);
