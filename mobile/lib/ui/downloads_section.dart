@@ -43,6 +43,21 @@ String downloadLabel(DownloadEntry e) {
   };
 }
 
+/// Shows why a download stopped, from anywhere.
+final downloadMessages = GlobalKey<ScaffoldMessengerState>();
+
+void announceFailure(DownloadEntry e) {
+  downloadMessages.currentState
+    ?..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: Text('${t('Épisode ${e.episode}', 'Episode ${e.episode}')} : ${e.error}'),
+        showCloseIcon: true,
+        action: SnackBarAction(label: t('Réessayer', 'Retry'), onPressed: () => Downloads.instance.retry(e)),
+      ),
+    );
+}
+
 /// Eases progress between two readings, a second apart, so it never jumps.
 class SmoothProgress extends StatelessWidget {
   const SmoothProgress({super.key, required this.value, required this.builder});
@@ -89,7 +104,10 @@ Future<bool> _ask(
 /// The answer that means "let me pick the release myself".
 const _chooseSource = 'source';
 
-/// Asks which quality; null when refused.
+String qualityLabel(String quality) => quality == bestQuality ? t('Meilleure', 'Best') : '${quality}p';
+
+/// Asks which quality; null when refused. With [found], a quality no source
+/// has is greyed out, and with no source at all the question says so.
 Future<String?> _askQuality(
   BuildContext context, {
   required String title,
@@ -97,41 +115,75 @@ Future<String?> _askQuality(
   required String accept,
   required String refuse,
   bool source = false,
+  Future<SourceQualities>? found,
 }) {
   var quality = AppSettings.instance.downloadResolution;
   return showDialog<String>(
     context: context,
     builder: (_) => StatefulBuilder(
-      builder: (dialog, setState) => AlertDialog(
-        title: Text(title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(body),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
+      builder: (dialog, setState) => FutureBuilder<SourceQualities>(
+        future: found,
+        builder: (context, sources) {
+          final known = sources.data?.qualities ?? const <String>[];
+          final problem = sources.data?.problem;
+          final noSources = sources.data?.noSources ?? false;
+          bool available(String q) => known.isEmpty || q == bestQuality || known.contains(q);
+          final picked = available(quality) ? quality : bestQuality;
+          final missing = downloadQualities.where((q) => !available(q)).map(qualityLabel).join(', ');
+          return AlertDialog(
+            title: Text(title),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final q in downloadQualities())
-                  ChoiceChip(
-                    label: Text('${q}p'),
-                    selected: q == quality,
-                    onSelected: (_) => setState(() => quality = q),
+                Text(problem ?? body),
+                if (problem == null) ...[
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final q in downloadQualities)
+                        ChoiceChip(
+                          label: Text(qualityLabel(q)),
+                          selected: q == picked,
+                          onSelected: available(q) ? (_) => setState(() => quality = q) : null,
+                        ),
+                    ],
                   ),
+                ],
+                if (found != null && sources.connectionState != ConnectionState.done) ...[
+                  const SizedBox(height: 8),
+                  Text(t('Recherche des qualités disponibles…', 'Looking for available qualities…'), style: Nami.caption),
+                ],
+                if (missing.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(t('Aucune source en $missing.', 'No source in $missing.'), style: Nami.caption),
+                ],
               ],
             ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialog), child: Text(refuse)),
-          if (source)
-            TextButton(
-              onPressed: () => Navigator.pop(dialog, _chooseSource),
-              child: Text(t('Choisir la source', 'Choose source')),
-            ),
-          FilledButton(onPressed: () => Navigator.pop(dialog, quality), child: Text(accept)),
-        ],
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialog), child: Text(refuse)),
+              if (source && problem == null)
+                TextButton(
+                  onPressed: () => Navigator.pop(dialog, _chooseSource),
+                  child: Text(t('Choisir la source', 'Choose source')),
+                ),
+              if (noSources)
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(dialog);
+                    Downloads.instance.onOpenSources?.call();
+                  },
+                  child: Text(t('Ajouter des sources', 'Add sources')),
+                )
+              else
+                FilledButton(
+                  onPressed: problem != null ? null : () => Navigator.pop(dialog, picked),
+                  child: Text(accept),
+                ),
+            ],
+          );
+        },
       ),
     ),
   );
@@ -139,25 +191,34 @@ Future<String?> _askQuality(
 
 /// Asks first: a download can take a lot of space and data.
 Future<void> confirmDownload(BuildContext context, Media media, int episode) async {
-  final answer = await _askQuality(
-    context,
-    title: t("Télécharger l'épisode $episode ?", 'Download episode $episode?'),
-    body: t(
-      'Nami prend la meilleure source dans cette qualité et garde cet épisode sur cet appareil.',
-      'Nami takes the best source in this quality and keeps this episode on this device.',
-    ),
-    refuse: t('Annuler', 'Cancel'),
-    accept: t('Télécharger', 'Download'),
-    source: true,
-  );
-  if (answer == null) return;
-  if (answer != _chooseSource) {
-    Downloads.instance.start(media, episode, resolution: answer);
-    return;
+  final found = Downloads.instance.qualities(media, episode);
+  // Closing the sources comes back to this question.
+  while (true) {
+    if (!context.mounted) return;
+    final answer = await _askQuality(
+      context,
+      title: t("Télécharger l'épisode $episode ?", 'Download episode $episode?'),
+      body: t(
+        'Nami prend la meilleure source dans cette qualité et garde cet épisode sur cet appareil.',
+        'Nami takes the best source in this quality and keeps this episode on this device.',
+      ),
+      refuse: t('Annuler', 'Cancel'),
+      accept: t('Télécharger', 'Download'),
+      source: true,
+      found: found,
+    );
+    if (answer == null) return;
+    if (answer != _chooseSource) {
+      Downloads.instance.start(media, episode, resolution: answer);
+      return;
+    }
+    if (!context.mounted) return;
+    final picked = await pickSource(context, media, episode);
+    if (picked != null) {
+      Downloads.instance.start(media, episode, link: picked.link);
+      return;
+    }
   }
-  if (!context.mounted) return;
-  final picked = await pickSource(context, media, episode);
-  if (picked != null) Downloads.instance.start(media, episode, link: picked.link);
 }
 
 /// Every aired episode that is not on the device yet.
@@ -268,6 +329,7 @@ class _DownloadDetails extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(_figures(e), style: Nami.caption),
+              if (e.error != null) ...[const SizedBox(height: 8), Text(e.error!, style: Nami.meta)],
               const SizedBox(height: 18),
               Wrap(
                 spacing: 10,
@@ -546,9 +608,136 @@ class DownloadsSection extends StatelessWidget {
   }
 }
 
+/// Asks first, whatever is in [entries]: what they hold is lost.
+Future<bool> confirmRemoveAll(BuildContext context, List<DownloadEntry> entries) async {
+  final count = entries.length;
+  final yes = await _ask(
+    context,
+    title: t('Supprimer $count téléchargements ?', 'Delete $count downloads?'),
+    body: t(
+      'Les épisodes et ce qui a déjà été récupéré seront perdus.',
+      'The episodes and what was already fetched will be lost.',
+    ),
+    refuse: t('Garder', 'Keep'),
+    accept: t('Supprimer', 'Delete'),
+  );
+  if (yes) await Downloads.instance.removeAll(entries);
+  return yes;
+}
+
 /// The download manager: what is going on, then what is kept, by anime.
-class DownloadsScreen extends StatelessWidget {
+class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({super.key});
+
+  @override
+  State<DownloadsScreen> createState() => _DownloadsScreenState();
+}
+
+class _DownloadsScreenState extends State<DownloadsScreen> {
+  bool selecting = false;
+  final selected = <DownloadEntry>{};
+
+  void _select(DownloadEntry e) => setState(() {
+    selecting = true;
+    if (!selected.remove(e)) selected.add(e);
+  });
+
+  void _stopSelecting() => setState(() {
+    selecting = false;
+    selected.clear();
+  });
+
+  Widget _row(DownloadEntry e, {int? dragIndex}) => _DownloadRow(
+    e,
+    key: ValueKey(e),
+    dragIndex: selecting ? null : dragIndex,
+    selecting: selecting,
+    selected: selected.contains(e),
+    onSelect: () => _select(e),
+  );
+
+  PreferredSizeWidget _bar(Downloads store) {
+    if (!selecting) {
+      return AppBar(
+        title: Text(t('Téléchargements', 'Downloads')),
+        actions: [
+          if (store.entries.isNotEmpty) ...[
+            IconButton(
+              tooltip: t('Sélectionner', 'Select'),
+              onPressed: () => setState(() => selecting = true),
+              icon: const Icon(Icons.checklist),
+            ),
+            PopupMenuButton<VoidCallback>(
+              tooltip: t("Plus d'actions", 'More actions'),
+              onSelected: (action) => action(),
+              itemBuilder: (_) => [
+                if (store.canPauseAll) PopupMenuItem(value: store.pauseAll, child: Text(t('Tout mettre en pause', 'Pause all'))),
+                if (store.canResumeAll) PopupMenuItem(value: store.resumeAll, child: Text(t('Tout reprendre', 'Resume all'))),
+                PopupMenuItem(
+                  value: () => confirmRemoveAll(context, [...store.entries]),
+                  child: Text(t('Tout supprimer', 'Delete all')),
+                ),
+              ],
+            ),
+          ],
+        ],
+      );
+    }
+    final everything = selected.length == store.entries.length;
+    return AppBar(
+      leading: IconButton(
+        tooltip: t('Fermer la sélection', 'Close selection'),
+        onPressed: _stopSelecting,
+        icon: const Icon(Icons.close),
+      ),
+      title: Text(t('${selected.length} sélectionnés', '${selected.length} selected')),
+      actions: [
+        TextButton(
+          onPressed: () => setState(() {
+            selected.clear();
+            if (!everything) selected.addAll(store.entries);
+          }),
+          child: Text(everything ? t('Tout désélectionner', 'Select none') : t('Tout sélectionner', 'Select all')),
+        ),
+      ],
+    );
+  }
+
+  Widget _actions(Downloads store) {
+    final going = selected.where((e) => e.state == DownloadState.running || e.state == DownloadState.queued);
+    final paused = selected.where((e) => e.state == DownloadState.paused);
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        child: Wrap(
+          spacing: 10,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: going.isEmpty ? null : () => setState(() => [...going].forEach(store.pause)),
+              icon: const Icon(Icons.pause),
+              label: Text(t('Mettre en pause', 'Pause')),
+            ),
+            OutlinedButton.icon(
+              onPressed: paused.isEmpty ? null : () => setState(() => [...paused].forEach(store.resume)),
+              icon: const Icon(Icons.play_arrow),
+              label: Text(t('Reprendre', 'Resume')),
+            ),
+            FilledButton.icon(
+              onPressed: selected.isEmpty
+                  ? null
+                  : () async {
+                      if (await confirmRemoveAll(context, [...selected])) _stopSelecting();
+                    },
+              icon: const Icon(Icons.delete_outline),
+              label: Text(t('Supprimer', 'Delete')),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -556,6 +745,7 @@ class DownloadsScreen extends StatelessWidget {
       listenable: Downloads.instance,
       builder: (context, _) {
         final store = Downloads.instance;
+        selected.removeWhere((e) => !store.entries.contains(e));
         final active = store.entries
             .where((e) => e.state != DownloadState.done && e.state != DownloadState.queued)
             .toList();
@@ -564,15 +754,8 @@ class DownloadsScreen extends StatelessWidget {
         final animes = {for (final e in done) e.media.id: e.media};
         final side = isDesktop ? 24.0 : 16.0;
         return Scaffold(
-          appBar: AppBar(
-            title: Text(t('Téléchargements', 'Downloads')),
-            actions: [
-              if (store.canPauseAll)
-                TextButton(onPressed: store.pauseAll, child: Text(t('Tout mettre en pause', 'Pause all'))),
-              if (store.canResumeAll)
-                TextButton(onPressed: store.resumeAll, child: Text(t('Tout reprendre', 'Resume all'))),
-            ],
-          ),
+          appBar: _bar(store),
+          bottomNavigationBar: selecting ? _actions(store) : null,
           body: store.entries.isEmpty
               ? Center(
                   child: StateMessage(
@@ -584,7 +767,7 @@ class DownloadsScreen extends StatelessWidget {
                   ),
                 )
               : ListView(
-                  padding: EdgeInsets.fromLTRB(side, 8, side, 110),
+                  padding: EdgeInsets.fromLTRB(side, 8, side, selecting ? 16 : 110),
                   children: [
                     Text(
                       [
@@ -597,7 +780,7 @@ class DownloadsScreen extends StatelessWidget {
                       const SizedBox(height: 18),
                       Text(t('En cours', 'In progress'), style: Nami.section),
                       const SizedBox(height: 4),
-                      _Growing(children: [for (final e in active) _DownloadRow(e, key: ValueKey(e))]),
+                      _Growing(children: [for (final e in active) _row(e)]),
                     ],
                     if (queue.isNotEmpty) ...[
                       const SizedBox(height: 18),
@@ -609,11 +792,7 @@ class DownloadsScreen extends StatelessWidget {
                         buildDefaultDragHandles: false,
                         itemCount: queue.length,
                         onReorderItem: store.reorder,
-                        itemBuilder: (context, i) => _DownloadRow(
-                          queue[i],
-                          key: ValueKey(queue[i]),
-                          dragIndex: i,
-                        ),
+                        itemBuilder: (context, i) => _row(queue[i], dragIndex: i),
                       ),
                     ],
                     for (final media in animes.values) ...[
@@ -623,7 +802,7 @@ class DownloadsScreen extends StatelessWidget {
                       _Growing(
                         children: [
                           for (final e in done)
-                            if (e.media.id == media.id) _DownloadRow(e, key: ValueKey(e)),
+                            if (e.media.id == media.id) _row(e),
                         ],
                       ),
                     ],
@@ -653,8 +832,22 @@ class _Growing extends StatelessWidget {
 }
 
 class _DownloadRow extends StatelessWidget {
-  const _DownloadRow(this.entry, {super.key, this.dragIndex});
+  const _DownloadRow(
+    this.entry, {
+    super.key,
+    this.dragIndex,
+    this.selecting = false,
+    this.selected = false,
+    this.onSelect,
+  });
   final DownloadEntry entry;
+
+  /// The screen is picking several downloads: a tap selects this one.
+  final bool selecting;
+  final bool selected;
+
+  /// A long press starts selecting; none outside the Downloads screen.
+  final VoidCallback? onSelect;
 
   /// Its place in the queue, when it can be dragged.
   final int? dragIndex;
@@ -668,13 +861,19 @@ class _DownloadRow extends StatelessWidget {
     final row = FocusOutline(
       radius: Nami.radiusImage,
       child: InkWell(
-        onTap: () => done ? PlayerCenter.instance.openSources(e.media, e.episode) : showDownloadDetails(context, e),
-        onLongPress: () => showDownloadDetails(context, e),
+        onTap: selecting
+            ? onSelect
+            : () => done ? PlayerCenter.instance.openSources(e.media, e.episode) : showDownloadDetails(context, e),
+        onLongPress: onSelect ?? () => showDownloadDetails(context, e),
         borderRadius: BorderRadius.circular(Nami.radiusImage),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Row(
             children: [
+              if (selecting) ...[
+                Checkbox(value: selected, onChanged: (_) => onSelect?.call()),
+                const SizedBox(width: 4),
+              ],
               SizedBox(
                 width: 44,
                 height: 62,
@@ -702,6 +901,7 @@ class _DownloadRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: Nami.caption,
                     ),
+                    if (e.error != null) Text(e.error!, maxLines: 3, overflow: TextOverflow.ellipsis, style: Nami.caption),
                     if (e.state == DownloadState.running)
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
@@ -713,20 +913,21 @@ class _DownloadRow extends StatelessWidget {
                   ],
                 ),
               ),
-              if (e.state != DownloadState.failed && !done) DownloadPauseButton(e),
-              if (e.state == DownloadState.failed)
+              if (e.state != DownloadState.failed && !done && !selecting) DownloadPauseButton(e),
+              if (e.state == DownloadState.failed && !selecting)
                 IconButton(
                   tooltip: t('Réessayer', 'Retry'),
                   onPressed: () => store.retry(e),
                   icon: const Icon(Icons.refresh),
                 ),
-              IconButton(
-                tooltip: done || e.state == DownloadState.failed
-                    ? t('Supprimer le téléchargement', 'Delete download')
-                    : t('Annuler le téléchargement', 'Cancel download'),
-                onPressed: () => confirmRemove(context, e),
-                icon: Icon(done || e.state == DownloadState.failed ? Icons.delete_outline : Icons.close),
-              ),
+              if (!selecting)
+                IconButton(
+                  tooltip: done || e.state == DownloadState.failed
+                      ? t('Supprimer le téléchargement', 'Delete download')
+                      : t('Annuler le téléchargement', 'Cancel download'),
+                  onPressed: () => confirmRemove(context, e),
+                  icon: Icon(done || e.state == DownloadState.failed ? Icons.delete_outline : Icons.close),
+                ),
               if (dragIndex != null)
                 ReorderableDragStartListener(
                   index: dragIndex!,

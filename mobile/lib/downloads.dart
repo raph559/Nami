@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'anilist.dart';
 import 'engine.dart';
 import 'extensions.dart';
+import 'playback.dart' show explainEngineError;
 import 'release.dart';
 import 'settings.dart';
 
@@ -26,8 +27,30 @@ String speedLimitText(int bytes) {
   return mb == mb.roundToDouble() ? '${mb.round()}' : '$mb';
 }
 
-/// Qualities offered when downloading, the setting first.
-List<String> downloadQualities() => {AppSettings.instance.downloadResolution, '1080', '720', '480'}.toList();
+/// What the sources have for an episode: [qualities] highest first, empty
+/// when their names do not say; [problem] when there is nothing to download;
+/// [noSources] when that is because no extension is installed.
+typedef SourceQualities = ({List<String> qualities, String? problem, bool noSources});
+
+/// The highest quality the sources have, whatever it is.
+const bestQuality = 'best';
+
+/// Qualities that can be asked for without knowing the sources.
+const downloadQualities = [bestQuality, '2160', '1440', '1080', '720', '480'];
+
+/// Every quality in [releases], highest first.
+List<String> qualitiesIn(Iterable<ReleaseInfo> releases) {
+  final found = {for (final r in releases) ?r.resolution};
+  return [for (final q in downloadQualities) if (found.contains(q)) q];
+}
+
+/// Why a download cannot go on, in words for the viewer.
+class DownloadProblem implements Exception {
+  DownloadProblem(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
 
 /// One episode kept on the device. File names are relative to the downloads
 /// folder, whose full path changes when the iPhone app is reinstalled.
@@ -43,6 +66,7 @@ class DownloadEntry {
     this.done = 0,
     this.total = 0,
     this.resolution,
+    this.error,
   });
 
   factory DownloadEntry.fromJson(Map<String, dynamic> j) => DownloadEntry(
@@ -56,6 +80,7 @@ class DownloadEntry {
     done: j['done'] ?? 0,
     total: j['total'] ?? 0,
     resolution: j['resolution'],
+    error: j['error'],
   );
 
   final Media media;
@@ -70,6 +95,9 @@ class DownloadEntry {
 
   /// The quality asked for; null when a source was picked by hand.
   String? resolution;
+
+  /// Why it stopped, when it failed.
+  String? error;
 
   /// Live figures of a running download; not saved.
   double speed = 0;
@@ -95,12 +123,16 @@ class DownloadEntry {
     'done': done,
     'total': total,
     'resolution': resolution,
+    'error': error,
   };
 }
 
 /// The outside world of the store, replaced in tests.
 abstract class DownloadBackend {
   Future<List<String>> sources(Media media, int episode, String resolution);
+
+  /// What the sources really have for this episode.
+  Future<SourceQualities> qualities(Media media, int episode);
   Future<void> limit(int bytesPerSecond);
   Future<EngineTorrent> add(String link, String dir);
   Future<void> keep(String hash, int index);
@@ -114,8 +146,41 @@ abstract class DownloadBackend {
 class EngineDownloads implements DownloadBackend {
   @override
   Future<List<String>> sources(Media media, int episode, String resolution) async {
-    final found = await SourceSearch.run(media, episode, resolution: resolution);
-    return [for (final r in rankReleases(found.results, resolution: resolution)) r.result.link];
+    final problem = _noExtensions();
+    if (problem != null) throw DownloadProblem(problem);
+    final best = resolution == bestQuality;
+    final found = await SourceSearch.run(media, episode, resolution: best ? '' : resolution);
+    if (found.results.isEmpty && found.failures.isNotEmpty) {
+      throw DownloadProblem([for (final f in found.failures) '${f.name} : ${f.message}'].join('\n'));
+    }
+    final parsed = found.results.map(ReleaseInfo.parse);
+    final wanted = best ? qualitiesIn(parsed).firstOrNull : resolution;
+    return [for (final r in rankReleases(found.results, resolution: wanted)) r.result.link];
+  }
+
+  String? _noExtensions() => ExtensionStore.instance.enabled.isNotEmpty
+      ? null
+      : t(
+          "Aucune source installée. Ajoute un dépôt d'extensions dans Réglages.",
+          'No sources installed. Add an extension repository in Settings.',
+        );
+
+  @override
+  Future<SourceQualities> qualities(Media media, int episode) async {
+    final none = _noExtensions();
+    if (none != null) return (qualities: const <String>[], problem: none, noSources: true);
+    // No quality asked for: the extensions answer with everything they have.
+    final found = await SourceSearch.run(media, episode, resolution: '');
+    if (found.results.isNotEmpty) {
+      return (qualities: qualitiesIn(found.results.map(ReleaseInfo.parse)), problem: null, noSources: false);
+    }
+    return (
+      qualities: const <String>[],
+      problem: found.failures.isEmpty
+          ? t('Aucune source trouvée pour cet épisode.', 'No source found for this episode.')
+          : [for (final f in found.failures) '${f.name} : ${f.message}'].join('\n'),
+      noSources: false,
+    );
   }
 
   @override
@@ -173,6 +238,12 @@ class Downloads extends ChangeNotifier {
   /// Shows the downloads section; set by the root screen.
   VoidCallback? onOpen;
 
+  /// Shows where sources are added; set by the root screen.
+  VoidCallback? onOpenSources;
+
+  /// A download just failed; [DownloadEntry.error] says why.
+  void Function(DownloadEntry e)? onFailed;
+
   DownloadEntry? _running;
   final _waitingForPlayer = <DownloadEntry>{};
   final _releaseLater = <(String, int)>[];
@@ -214,6 +285,15 @@ class Downloads extends ChangeNotifier {
 
   /// Applies the speed limit from the settings.
   void limitChanged() => _backend.limit(AppSettings.instance.downloadLimit).catchError((_) {});
+
+  /// What can be picked for this episode; nothing known when the search fails.
+  Future<SourceQualities> qualities(Media media, int episode) async {
+    try {
+      return await _backend.qualities(media, episode);
+    } catch (_) {
+      return (qualities: const <String>[], problem: null, noSources: false);
+    }
+  }
 
   /// Every aired episode that is not here or on its way.
   List<int> missing(Media media) => [
@@ -275,7 +355,8 @@ class Downloads extends ChangeNotifier {
       root = '${(await getApplicationSupportDirectory()).path}${Platform.pathSeparator}downloads';
     }
     Directory(root).createSync(recursive: true);
-    final raw = AppSettings.instance.prefs.getString(_prefsKey);
+    // Older versions kept the list in the preferences.
+    final raw = _file.existsSync() ? _file.readAsStringSync() : AppSettings.instance.prefs.getString(_prefsKey);
     if (raw != null) {
       try {
         entries.addAll([for (final e in jsonDecode(raw) as List) DownloadEntry.fromJson(e)]);
@@ -311,6 +392,7 @@ class Downloads extends ChangeNotifier {
   void retry(DownloadEntry e) {
     if (e.state != DownloadState.failed) return;
     e.state = DownloadState.queued;
+    e.error = null;
     _retrying.add(e);
     _save();
     notifyListeners();
@@ -364,6 +446,12 @@ class Downloads extends ChangeNotifier {
     if (!entries.any((o) => o.media.id == e.media.id)) _deleteFile(coverPath(e.media.id));
   }
 
+  Future<void> removeAll(List<DownloadEntry> gone) async {
+    for (final e in gone) {
+      await remove(e);
+    }
+  }
+
   /// The player opened or closed something: what waited for it can go on.
   void sessionChanged() {
     _waitingForPlayer.clear();
@@ -409,8 +497,16 @@ class Downloads extends ChangeNotifier {
     } catch (_) {}
   }
 
+  File get _file => File('$root${Platform.pathSeparator}downloads.json');
+
+  /// In its own file, written in one step: a list of episodes must survive a crash.
   void _save() {
-    AppSettings.instance.prefs.setString(_prefsKey, jsonEncode([for (final e in entries) e.toJson()]));
+    if (root.isEmpty) return;
+    try {
+      Directory(root).createSync(recursive: true);
+      final temp = File('${_file.path}.tmp')..writeAsStringSync(jsonEncode([for (final e in entries) e.toJson()]));
+      temp.renameSync(_file.path);
+    } catch (_) {}
   }
 
   void _pump() {
@@ -429,6 +525,7 @@ class Downloads extends ChangeNotifier {
   }
 
   Future<void> _run(DownloadEntry e) async {
+    _why = null;
     e.state = DownloadState.running;
     _save();
     notifyListeners();
@@ -442,7 +539,7 @@ class Downloads extends ChangeNotifier {
         return;
       }
       if (!attached) {
-        _fail(e);
+        _fail(e, _why ?? t('Aucune source trouvée pour cet épisode.', 'No source found for this episode.'));
         return;
       }
       if (await _follow(e)) await _finish(e);
@@ -453,16 +550,24 @@ class Downloads extends ChangeNotifier {
       _waitingForPlayer.add(e);
       _save();
       notifyListeners();
-    } catch (_) {
-      _fail(e);
+    } catch (error) {
+      _fail(e, _explain(error));
     }
   }
 
-  void _fail(DownloadEntry e) {
+  /// The last thing that went wrong for the entry running.
+  String? _why;
+
+  String _explain(Object error) => error is DownloadProblem ? error.message : explainEngineError(error);
+
+  void _fail(DownloadEntry e, String why) {
     if (!entries.contains(e) || e.state == DownloadState.paused) return;
-    e.state = DownloadState.failed;
+    e
+      ..state = DownloadState.failed
+      ..error = why;
     _save();
     notifyListeners();
+    onFailed?.call(e);
   }
 
   /// After a restart, only the stored source: others would start from zero.
@@ -474,7 +579,8 @@ class Downloads extends ChangeNotifier {
         return true;
       } on EngineBusy {
         rethrow;
-      } catch (_) {
+      } catch (error) {
+        _why = _explain(error);
         await _wait(const Duration(minutes: 1));
       }
     }
@@ -488,12 +594,15 @@ class Downloads extends ChangeNotifier {
         return true;
       } on EngineBusy {
         rethrow;
-      } catch (_) {}
+      } catch (error) {
+        _why = _explain(error);
+      }
     }
     final List<String> links;
     try {
       links = await _backend.sources(e.media, e.episode, e.resolution ?? AppSettings.instance.downloadResolution);
-    } catch (_) {
+    } catch (error) {
+      _why = _explain(error);
       return false;
     }
     for (final link in links.take(_sourceTries)) {
@@ -502,28 +611,30 @@ class Downloads extends ChangeNotifier {
         return true;
       } on EngineBusy {
         rethrow;
-      } catch (_) {}
+      } catch (error) {
+        _why = _explain(error);
+      }
     }
     return false;
   }
 
   Future<void> _use(DownloadEntry e, String link) async {
-    final t = await _backend.add(link, partialDir);
-    final file = Engine.pick(t.files, e.episode);
+    final torrent = await _backend.add(link, partialDir);
+    final file = Engine.pick(torrent.files, e.episode);
     if (file == null) {
-      await _release(t.hash, -1);
-      throw EngineException('no file for this episode');
+      await _release(torrent.hash, -1);
+      throw DownloadProblem(t('Cette source ne contient pas cet épisode.', "This source doesn't have this episode."));
     }
-    await _backend.keep(t.hash, file.index);
+    await _backend.keep(torrent.hash, file.index);
     final previous = e.hash;
     e
       ..link = link
-      ..hash = t.hash
+      ..hash = torrent.hash
       ..fileIndex = file.index
       ..total = file.length
       ..file = '${e.media.id}-${e.episode}${_extension(file.name)}';
     _save();
-    if (previous != null && previous != t.hash) _deletePartial(previous);
+    if (previous != null && previous != torrent.hash) _deletePartial(previous);
   }
 
   String _extension(String name) => name.contains('.') ? '.${name.split('.').last}' : '';
@@ -562,8 +673,13 @@ class Downloads extends ChangeNotifier {
         notifyListeners();
       }
       if (quiet >= stallLimit.inSeconds) {
-        _save();
-        _fail(e);
+        _fail(
+          e,
+          t(
+            'Rien reçu depuis 10 minutes : personne ne partage ce torrent pour le moment.',
+            'Nothing received for 10 minutes: nobody is sharing this torrent right now.',
+          ),
+        );
         return false;
       }
     }

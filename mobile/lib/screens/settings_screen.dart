@@ -20,6 +20,9 @@ const sourceUrl = 'https://github.com/raph559/Nami';
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
+  /// Bumped to show the sources section.
+  static final showSources = ValueNotifier(0);
+
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
@@ -32,9 +35,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// The section shown on desktop.
   int section = 0;
 
+  static const _sourcesSection = 4;
+  final _sourcesKey = GlobalKey();
+
+  void _showSources() {
+    setState(() => section = _sourcesSection);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final sources = _sourcesKey.currentContext;
+      if (sources != null) Scrollable.ensureVisible(sources, duration: Motion.of(sources).medium, curve: Motion.curve);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    SettingsScreen.showSources.addListener(_showSources);
     PackageInfo.fromPlatform().then((p) {
       if (mounted) setState(() => version = p.version);
     });
@@ -42,6 +57,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    SettingsScreen.showSources.removeListener(_showSources);
     _repo.dispose();
     super.dispose();
   }
@@ -227,9 +243,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 control: _Segments<String>(
                   value: settings.downloadResolution,
                   onChanged: (v) => settings.downloadResolution = v,
-                  items: {
-                    for (final r in ['480', '720', '1080', '1440', '2160']) r: Text('${r}p'),
-                  },
+                  items: {for (final q in downloadQualities.reversed) q: Text(qualityLabel(q))},
                 ),
               ),
               _Setting(
@@ -350,44 +364,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           );
           final extensions = _Section(
+            key: _sourcesKey,
             title: t('Sources et extensions', 'Sources and extensions'),
             flat: isDesktop,
             footer: t(
-              "Même format que les extensions Hayase : colle l'URL de l'index.json du dépôt.",
-              "Same format as Hayase extensions: paste the repository's index.json URL.",
+              "Colle l'URL de l'index.json du dépôt.",
+              "Paste the repository's index.json URL.",
             ),
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _repo,
-                        keyboardType: TextInputType.url,
-                        autocorrect: false,
-                        textInputAction: TextInputAction.done,
-                        scrollPadding: const EdgeInsets.only(bottom: 120),
-                        decoration: InputDecoration(
-                          labelText: t('URL du dépôt', 'Repository URL'),
-                          hintText: 'https://…/index.json',
-                        ),
-                        onSubmitted: (_) => _addRepo(),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: busy
-                          ? const Padding(
-                              padding: EdgeInsets.all(12),
-                              child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)),
-                            )
-                          : FocusOutline(
-                              child: FilledButton(onPressed: _addRepo, child: Text(t('Ajouter', 'Add'))),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _repo,
+                            keyboardType: TextInputType.url,
+                            autocorrect: false,
+                            textInputAction: TextInputAction.done,
+                            scrollPadding: const EdgeInsets.only(bottom: 120),
+                            decoration: InputDecoration(
+                              labelText: t('URL du dépôt', 'Repository URL'),
+                              hintText: 'https://…/index.json',
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: Nami.line),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: Nami.text),
+                              ),
                             ),
+                            onSubmitted: (_) => _addRepo(),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        if (busy)
+                          const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)),
+                          )
+                        else
+                          FocusOutline(
+                            child: FilledButton(onPressed: _addRepo, child: Text(t('Ajouter', 'Add'))),
+                          ),
+                      ],
                     ),
+                    if (store.repos.isEmpty) ...[
+                      const SizedBox(height: 14),
+                      Text(t('Aucun dépôt pour le moment.', 'No repository yet.'), style: Nami.meta),
+                    ],
                   ],
                 ),
               ),
@@ -406,11 +437,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => RepoScreen(repo: repo))),
                   ),
-                ),
-              if (store.repos.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: Text(t('Aucun dépôt pour le moment.', 'No repository yet.'), style: Nami.meta),
                 ),
             ],
           );
@@ -637,7 +663,7 @@ class _LoginScreenState extends State<LoginScreen> {
 /// A labelled dropdown that wraps under its label when the text is large.
 /// A titled group of settings on its own card.
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.children, this.footer, this.flat = false});
+  const _Section({super.key, required this.title, required this.children, this.footer, this.flat = false});
   final String title;
   final List<Widget> children;
   final String? footer;

@@ -22,6 +22,12 @@ class HeldBackend implements DownloadBackend {
   @override
   Future<List<String>> sources(Media media, int episode, String resolution) => Completer<List<String>>().future;
   @override
+  Future<SourceQualities> qualities(Media media, int episode) async =>
+      (qualities: const ['2160', '1080', '720'], problem: problem, noSources: noSources);
+
+  String? problem;
+  bool noSources = false;
+  @override
   Future<void> limit(int bytesPerSecond) async {}
   @override
   Future<EngineTorrent> add(String link, String dir) => throw EngineException('no');
@@ -342,6 +348,80 @@ void main() {
         await tester.tap(find.widgetWithText(FilledButton, 'Télécharger'));
         await tester.pumpAndSettle();
         expect(store.entry(195539, 6)!.resolution, '720');
+      });
+
+      testWidgets('the question offers what the sources really have, above 1080p too', (tester) async {
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        await tester.tap(find.byTooltip('Télécharger').at(5));
+        await tester.pumpAndSettle();
+        expect(find.text('2160p'), findsOneWidget);
+        expect(find.text('Meilleure'), findsOneWidget);
+        expect(find.text('Aucune source en 1440p, 480p.'), findsOneWidget);
+        expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '480p')).onSelected, isNull);
+        expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '720p')).onSelected, isNotNull);
+        await tester.tap(find.text('2160p'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilledButton, 'Télécharger'));
+        await tester.pumpAndSettle();
+        expect(store.entry(195539, 6)!.resolution, '2160');
+      });
+
+      testWidgets('with no source at all the question says so and cannot start', (tester) async {
+        final previous = Downloads.instance;
+        Downloads.instance = Downloads(backend: HeldBackend()..problem = 'Aucune source installée.')
+          ..root = Directory.systemTemp.path;
+        addTearDown(() => Downloads.instance = previous);
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        await tester.tap(find.byTooltip('Télécharger').at(5));
+        await tester.pumpAndSettle();
+        expect(find.text('Aucune source installée.'), findsOneWidget);
+        expect(find.byType(ChoiceChip), findsNothing);
+        expect(find.text('Choisir la source'), findsNothing);
+        expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Télécharger')).onPressed, isNull);
+      });
+
+      testWidgets('with no extension the question leads to the sources', (tester) async {
+        var opened = 0;
+        final previous = Downloads.instance;
+        Downloads.instance = Downloads(
+          backend: HeldBackend()
+            ..problem = 'Aucune source installée.'
+            ..noSources = true,
+        )..root = Directory.systemTemp.path;
+        Downloads.instance.onOpenSources = () => opened++;
+        addTearDown(() => Downloads.instance = previous);
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        await tester.tap(find.byTooltip('Télécharger').at(5));
+        await tester.pumpAndSettle();
+        expect(find.widgetWithText(FilledButton, 'Télécharger'), findsNothing);
+        await tester.tap(find.widgetWithText(FilledButton, 'Ajouter des sources'));
+        await tester.pumpAndSettle();
+        expect(opened, 1);
+        expect(find.text('Aucune source installée.'), findsNothing);
+      });
+
+      testWidgets('a quality the sources lack falls back on the best', (tester) async {
+        AppSettings.instance.downloadResolution = '480';
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        AppSettings.instance.downloadResolution = '480';
+        await tester.tap(find.byTooltip('Télécharger').at(5));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilledButton, 'Télécharger'));
+        await tester.pumpAndSettle();
+        expect(store.entry(195539, 6)!.resolution, bestQuality);
+      });
+
+      testWidgets('closing the sources comes back to the question', (tester) async {
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        await tester.tap(find.byTooltip('Télécharger').at(5));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Choisir la source'));
+        await tester.pumpAndSettle();
+        expect(find.text("Télécharger l'épisode 6 ?"), findsNothing);
+        await tester.tapAt(const Offset(195, 20));
+        await tester.pumpAndSettle();
+        expect(find.text("Télécharger l'épisode 6 ?"), findsOneWidget);
+        expect(store.entry(195539, 6), isNull);
       });
 
       testWidgets('the season button asks, then queues every episode', (tester) async {

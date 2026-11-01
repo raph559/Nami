@@ -28,6 +28,8 @@ final class PlayerCenter: ObservableObject {
     @Published var session: Session?
     @Published var minimized = false
     @Published var sources: SourcesRequest?
+    /// The sources are open to pick a release to download.
+    private var downloadRequest: SourcesRequest?
     /// Bumped when a session ends, so pages can refresh the AniList progress.
     @Published private(set) var finished = 0
 
@@ -37,13 +39,23 @@ final class PlayerCenter: ObservableObject {
             play(media, episode: episode, result: nil, localFile: file)
             return
         }
-        sources = SourcesRequest(media: media, episode: episode, autoPick: autoPick, forDownload: forDownload)
+        let request = SourcesRequest(media: media, episode: episode, autoPick: autoPick, forDownload: forDownload)
+        if forDownload { downloadRequest = request }
+        sources = request
+    }
+
+    /// Closing the sources without picking comes back to the download question.
+    func sourcesClosed() {
+        guard let request = downloadRequest else { return }
+        downloadRequest = nil
+        Downloads.shared.askStart(request.media, episode: request.episode)
     }
 
     /// Called by the sources sheet: the sheet closes first, then the player opens.
     func picked(_ result: TorrentResult, for request: SourcesRequest) {
         sources = nil
         if request.forDownload {
+            downloadRequest = nil
             Downloads.shared.start(request.media, episode: request.episode, link: result.link)
             return
         }

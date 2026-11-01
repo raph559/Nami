@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var anilist: AniList
     @EnvironmentObject private var extensions: ExtensionStore
+    @ObservedObject private var downloadsStore = Downloads.shared
     @AppStorage("resolution") private var resolution = "1080"
     @AppStorage("downloadResolution") private var downloadResolution = "1080"
     @AppStorage("downloadWifiOnly") private var downloadWifiOnly = false
@@ -21,161 +22,171 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("AniList") {
-                    if let viewer = anilist.viewer {
-                        HStack(spacing: 12) {
-                            CoverImageView(url: viewer.avatar?.large, corner: 20).frame(width: 40, height: 40)
-                            Text(viewer.name).font(.headline)
-                            Spacer()
+            ScrollViewReader { proxy in
+                Form {
+                    Section("AniList") {
+                        if let viewer = anilist.viewer {
+                            HStack(spacing: 12) {
+                                CoverImageView(url: viewer.avatar?.large, corner: 20).frame(width: 40, height: 40)
+                                Text(viewer.name).font(.headline)
+                                Spacer()
+                                Button(t("Déconnexion", "Log out"), role: .destructive) { anilist.logout() }
+                            }
+                        } else if anilist.isLoggedIn {
+                            ProfileRetry()
                             Button(t("Déconnexion", "Log out"), role: .destructive) { anilist.logout() }
-                        }
-                    } else if anilist.isLoggedIn {
-                        ProfileRetry()
-                        Button(t("Déconnexion", "Log out"), role: .destructive) { anilist.logout() }
-                    } else {
-                        Button(t("Se connecter à AniList", "Log in to AniList")) {
-                            Task {
-                                do { try await anilist.login() } catch { message = error.localizedDescription }
+                        } else {
+                            Button(t("Se connecter à AniList", "Log in to AniList")) {
+                                Task {
+                                    do { try await anilist.login() } catch { message = error.localizedDescription }
+                                }
                             }
                         }
                     }
-                }
 
-                Section(t("Langue", "Language")) {
-                    // Every option visible at once, as on Android and Windows.
-                    SegmentedSetting(label: t("Langue de l'app", "App language"), selection: $appLanguage,
-                                     options: AppLanguage.allCases.map { ($0.rawValue, $0.label) })
-                    SegmentedSetting(label: t("Titres des animes", "Anime titles"), selection: $titleLanguage,
-                                     options: TitleLanguage.allCases.map { ($0.rawValue, $0.label) })
-                }
+                    Section(t("Langue", "Language")) {
+                        // Every option visible at once, as on Android and Windows.
+                        SegmentedSetting(label: t("Langue de l'app", "App language"), selection: $appLanguage,
+                                         options: AppLanguage.allCases.map { ($0.rawValue, $0.label) })
+                        SegmentedSetting(label: t("Titres des animes", "Anime titles"), selection: $titleLanguage,
+                                         options: TitleLanguage.allCases.map { ($0.rawValue, $0.label) })
+                    }
 
-                Section(t("Lecture", "Playback")) {
-                    SegmentedSetting(label: t("Qualité préférée", "Preferred quality"),
-                                     detail: t("La source recommandée la privilégie.", "The recommended source favours it."),
-                                     warning: ["2160", "1440"].contains(resolution)
-                                         ? t("Peu de releases existent dans cette qualité, et un épisode pèse souvent 4 à 10 Go : lancement plus lent, forfait vite consommé en 4G/5G.",
-                                             "Few releases exist in this quality, and an episode often weighs 4 to 10 GB: slower to start, and mobile data goes fast.")
-                                         : nil,
-                                     selection: $resolution,
-                                     options: ["480", "720", "1080", "1440", "2160"].map { ($0, "\($0)p") })
-                    SegmentedSetting(label: t("Avancer et reculer de", "Seek by"),
-                                     detail: t("Double appui à gauche ou à droite de l'image.",
-                                               "Double tap on the left or right of the picture."),
-                                     selection: Binding(get: { String(seekStep) }, set: { seekStep = Int($0) ?? 10 }),
-                                     options: ["5", "10", "15", "30"].map { ($0, "\($0) s") })
-                    Toggle(isOn: $autoSkip) {
-                        VStack(alignment: .leading) {
-                            Text(t("Passer l'intro et le générique", "Skip openings and endings"))
-                            Text(t("Automatiquement, quand AniSkip connaît leurs horaires.", "Automatically, when AniSkip knows where they are."))
-                                .font(.caption).foregroundStyle(.secondary)
+                    Section(t("Lecture", "Playback")) {
+                        SegmentedSetting(label: t("Qualité préférée", "Preferred quality"),
+                                         detail: t("La source recommandée la privilégie.", "The recommended source favours it."),
+                                         warning: ["2160", "1440"].contains(resolution)
+                                             ? t("Peu de releases existent dans cette qualité, et un épisode pèse souvent 4 à 10 Go : lancement plus lent, forfait vite consommé en 4G/5G.",
+                                                 "Few releases exist in this quality, and an episode often weighs 4 to 10 GB: slower to start, and mobile data goes fast.")
+                                             : nil,
+                                         selection: $resolution,
+                                         options: ["480", "720", "1080", "1440", "2160"].map { ($0, "\($0)p") })
+                        SegmentedSetting(label: t("Avancer et reculer de", "Seek by"),
+                                         detail: t("Double appui à gauche ou à droite de l'image.",
+                                                   "Double tap on the left or right of the picture."),
+                                         selection: Binding(get: { String(seekStep) }, set: { seekStep = Int($0) ?? 10 }),
+                                         options: ["5", "10", "15", "30"].map { ($0, "\($0) s") })
+                        Toggle(isOn: $autoSkip) {
+                            VStack(alignment: .leading) {
+                                Text(t("Passer l'intro et le générique", "Skip openings and endings"))
+                                Text(t("Automatiquement, quand AniSkip connaît leurs horaires.", "Automatically, when AniSkip knows where they are."))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Toggle(isOn: $autoNext) {
+                            VStack(alignment: .leading) {
+                                Text(t("Enchaîner l'épisode suivant", "Play the next episode"))
+                                Text(t("Après un compte à rebours de 10 secondes.", "After a 10 second countdown."))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        SegmentedSetting(label: t("Sous-titres", "Subtitles"),
+                                         detail: t("Langue choisie au début de chaque épisode.", "Language picked when an episode starts."),
+                                         selection: $subtitleLanguage, options: SubtitleLanguage.allCases.map { ($0.rawValue, $0.label) })
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(t("Taille des sous-titres", "Subtitle size"))
+                            SubtitleSizeChoice(selection: $subtitleSize)
+                        }
+                        .padding(.vertical, 4)
+                    }
+
+                    Section {
+                        HStack {
+                            TextField(t("URL du dépôt (index.json)", "Repository URL (index.json)"), text: $repoURL)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .keyboardType(.URL)
+                            if busy { ProgressView() } else {
+                                Button(t("Ajouter", "Add")) { addRepo() }.disabled(repoURL.isEmpty)
+                            }
+                        }
+                        ForEach(extensions.repos, id: \.self) { repo in
+                            NavigationLink {
+                                RepoView(repo: repo)
+                            } label: {
+                                VStack(alignment: .leading) {
+                                    Text(ExtensionStore.repoLabel(repo))
+                                    Text(extensions.summary(repo)).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                                }
+                            }
+                        }
+                        .onDelete { idx in idx.map { extensions.repos[$0] }.forEach(extensions.removeRepo) }
+                    } header: {
+                        Text("Extensions")
+                    } footer: {
+                        Text(t("Colle l'URL de l'index.json du dépôt.",
+                               "Paste the repository's index.json URL."))
+                    }
+                    .id("sources")
+
+                    Section(t("Téléchargements", "Downloads")) {
+                        DownloadsLink()
+                        SegmentedSetting(label: t("Qualité des téléchargements", "Download quality"),
+                                         detail: t("À part de la lecture en streaming.", "Apart from streaming."),
+                                         selection: Binding(get: { UserDefaults.standard.string(forKey: "downloadResolution") ?? resolution }, set: { downloadResolution = $0 }),
+                                         options: ["480", "720", "1080", "1440", "2160", Downloads.best].map { ($0, Downloads.label($0)) })
+                        Toggle(isOn: $downloadWifiOnly) {
+                            VStack(alignment: .leading) {
+                                Text(t("Wi-Fi uniquement", "Wi-Fi only"))
+                                Text(t("Met les téléchargements en attente sur les données mobiles.", "Holds downloads while on mobile data."))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .onChange(of: downloadWifiOnly) { _, _ in Downloads.shared.wifiSettingChanged() }
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(t("Limite de vitesse", "Speed limit"))
+                                Text(t("Levée pendant la lecture d'un épisode en streaming.", "Lifted while an episode streams."))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            TextField(t("Aucune", "None"), text: $limitText)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 70)
+                            Text("MB/s").foregroundStyle(.secondary)
+                        }
+                        .onChange(of: limitText) { _, text in
+                            downloadLimit = Downloads.parseLimit(text)
+                            Downloads.shared.limitChanged()
                         }
                     }
-                    Toggle(isOn: $autoNext) {
-                        VStack(alignment: .leading) {
-                            Text(t("Enchaîner l'épisode suivant", "Play the next episode"))
-                            Text(t("Après un compte à rebours de 10 secondes.", "After a 10 second countdown."))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    SegmentedSetting(label: t("Sous-titres", "Subtitles"),
-                                     detail: t("Langue choisie au début de chaque épisode.", "Language picked when an episode starts."),
-                                     selection: $subtitleLanguage, options: SubtitleLanguage.allCases.map { ($0.rawValue, $0.label) })
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(t("Taille des sous-titres", "Subtitle size"))
-                        SubtitleSizeChoice(selection: $subtitleSize)
-                    }
-                    .padding(.vertical, 4)
-                }
 
-                Section {
-                    HStack {
-                        TextField(t("URL du dépôt (index.json)", "Repository URL (index.json)"), text: $repoURL)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.URL)
-                        if busy { ProgressView() } else {
-                            Button(t("Ajouter", "Add")) { addRepo() }.disabled(repoURL.isEmpty)
+                    Section("Nami") {
+                        LabeledContent(t("Créée par", "Made by")) { Text("raph559").bold() }
+                        Link(destination: URL(string: "https://github.com/raph559/Nami")!) {
+                            LabeledContent {
+                                Image(systemName: "arrow.up.right.square")
+                            } label: {
+                                VStack(alignment: .leading) {
+                                    Text(t("Code source", "Source code")).foregroundStyle(Nami.text)
+                                    Text("github.com/raph559/Nami").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
                         }
-                    }
-                    ForEach(extensions.repos, id: \.self) { repo in
+                        LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")
                         NavigationLink {
-                            RepoView(repo: repo)
+                            ThirdPartyView()
                         } label: {
                             VStack(alignment: .leading) {
-                                Text(ExtensionStore.repoLabel(repo))
-                                Text(extensions.summary(repo)).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                                Text(t("Licence et logiciels tiers", "License and third-party software"))
+                                Text("GPL-3.0 · mpv, FFmpeg, anacrolix/torrent…").font(.caption).foregroundStyle(.secondary)
                             }
                         }
                     }
-                    .onDelete { idx in idx.map { extensions.repos[$0] }.forEach(extensions.removeRepo) }
-                } header: {
-                    Text("Extensions")
-                } footer: {
-                    Text(t("Même format que les extensions Hayase : colle l'URL de l'index.json du dépôt.",
-                           "Same format as Hayase extensions: paste the repository's index.json URL."))
                 }
-
-                Section(t("Téléchargements", "Downloads")) {
-                    DownloadsLink()
-                    SegmentedSetting(label: t("Qualité des téléchargements", "Download quality"),
-                                     detail: t("À part de la lecture en streaming.", "Apart from streaming."),
-                                     selection: Binding(get: { UserDefaults.standard.string(forKey: "downloadResolution") ?? resolution }, set: { downloadResolution = $0 }),
-                                     options: ["480", "720", "1080", "1440", "2160"].map { ($0, "\($0)p") })
-                    Toggle(isOn: $downloadWifiOnly) {
-                        VStack(alignment: .leading) {
-                            Text(t("Wi-Fi uniquement", "Wi-Fi only"))
-                            Text(t("Met les téléchargements en attente sur les données mobiles.", "Holds downloads while on mobile data."))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    .onChange(of: downloadWifiOnly) { _, _ in Downloads.shared.wifiSettingChanged() }
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(t("Limite de vitesse", "Speed limit"))
-                            Text(t("Levée pendant la lecture d'un épisode en streaming.", "Lifted while an episode streams."))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        TextField(t("Aucune", "None"), text: $limitText)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 70)
-                        Text("MB/s").foregroundStyle(.secondary)
-                    }
-                    .onChange(of: limitText) { _, text in
-                        downloadLimit = Downloads.parseLimit(text)
-                        Downloads.shared.limitChanged()
-                    }
-                }
-
-                Section("Nami") {
-                    LabeledContent(t("Créée par", "Made by")) { Text("raph559").bold() }
-                    Link(destination: URL(string: "https://github.com/raph559/Nami")!) {
-                        LabeledContent {
-                            Image(systemName: "arrow.up.right.square")
-                        } label: {
-                            VStack(alignment: .leading) {
-                                Text(t("Code source", "Source code")).foregroundStyle(Nami.text)
-                                Text("github.com/raph559/Nami").font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")
-                    NavigationLink {
-                        ThirdPartyView()
-                    } label: {
-                        VStack(alignment: .leading) {
-                            Text(t("Licence et logiciels tiers", "License and third-party software"))
-                            Text("GPL-3.0 · mpv, FFmpeg, anacrolix/torrent…").font(.caption).foregroundStyle(.secondary)
-                        }
+                .navigationTitle(t("Réglages", "Settings"))
+                .alert("Nami", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+                    Button("OK", role: .cancel) {}
+                } message: { Text(message ?? "") }
+                .onChange(of: downloadsStore.sourcesOpened) { _, _ in
+                    Task {
+                        // The tab appears first, then the list can move.
+                        try? await Task.sleep(for: .milliseconds(300))
+                        withAnimation { proxy.scrollTo("sources", anchor: .top) }
                     }
                 }
             }
-            .navigationTitle(t("Réglages", "Settings"))
-            .alert("Nami", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-                Button("OK", role: .cancel) {}
-            } message: { Text(message ?? "") }
         }
     }
 

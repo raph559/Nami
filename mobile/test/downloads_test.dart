@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nami/anilist.dart';
 import 'package:nami/downloads.dart';
 import 'package:nami/engine.dart';
+import 'package:nami/extensions.dart';
+import 'package:nami/release.dart';
 import 'package:nami/settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -39,7 +41,17 @@ class FakeBackend implements DownloadBackend {
   @override
   Future<List<String>> sources(Media media, int episode, String resolution) async {
     asked.add(resolution);
+    if (problem != null) throw problem!;
     return links;
+  }
+
+  DownloadProblem? problem;
+  bool finishFails = false;
+
+  @override
+  Future<SourceQualities> qualities(Media media, int episode) async {
+    if (problem != null) throw problem!;
+    return (qualities: const ['1080'], problem: null, noSources: false);
   }
 
   final asked = <String>[];
@@ -67,6 +79,7 @@ class FakeBackend implements DownloadBackend {
 
   @override
   Future<void> finish(String hash, int index, String dest) async {
+    if (finishFails) throw EngineException('disk full');
     finished.add(hash);
     File(dest).writeAsStringSync('video');
   }
@@ -137,7 +150,8 @@ void main() {
     expect(store.localPath(1, 3), '${root.path}${Platform.pathSeparator}1-3.mkv');
     expect(File(store.localPath(1, 3)!).existsSync(), isTrue);
     expect(backend.covers, ['https://x/1.jpg']);
-    expect(jsonDecode(AppSettings.instance.prefs.getString('downloads')!).single['file'], '1-3.mkv');
+    final saved = File('${root.path}${Platform.pathSeparator}downloads.json');
+    expect(jsonDecode(saved.readAsStringSync()).single['file'], '1-3.mkv');
   });
 
   test('one download at a time, in order', () async {
@@ -521,8 +535,8 @@ void main() {
     store.reorder(1, 0);
     expect(store.entries.map((e) => e.episode), [1, 4, 3, 2]);
     expect(store.queue.map((e) => e.episode), [4, 2]);
-    final saved = jsonDecode(AppSettings.instance.prefs.getString('downloads')!) as List;
-    expect(saved.map((e) => e['episode']), [1, 4, 3, 2]);
+    final saved = File('${root.path}${Platform.pathSeparator}downloads.json');
+    expect((jsonDecode(saved.readAsStringSync()) as List).map((e) => e['episode']), [1, 4, 3, 2]);
   });
 
   test('any speed limit can be typed', () {
@@ -623,6 +637,93 @@ void main() {
     expect(done, 60);
     e.speed = 100;
     expect(e.remaining, isNull);
+  });
+
+  test('a list saved in the preferences by an older version is picked up', () async {
+    AppSettings.instance.prefs.setString(
+      'downloads',
+      jsonEncode([DownloadEntry(media: anime(1), episode: 1, state: DownloadState.paused).toJson()]),
+    );
+    await store.load();
+    expect(store.entry(1, 1), isNotNull);
+    expect(File('${root.path}${Platform.pathSeparator}downloads.json').existsSync(), isTrue);
+    final next = newStore();
+    AppSettings.instance.prefs.remove('downloads');
+    await next.load();
+    expect(next.entry(1, 1), isNotNull);
+  });
+
+  test('a failure says why and tells the app', () async {
+    final failed = <String?>[];
+    store.onFailed = (e) => failed.add(e.error);
+    backend.links = [];
+    store.start(anime(1), 1);
+    await settle();
+    expect(store.entry(1, 1)!.error, 'Aucune source trouvée pour cet épisode.');
+    expect(failed, ['Aucune source trouvée pour cet épisode.']);
+  });
+
+  test('the reason from the search reaches the viewer', () async {
+    backend.problem = DownloadProblem('Aucune source installée.');
+    store.start(anime(1), 1);
+    await settle();
+    expect(store.entry(1, 1)!.error, 'Aucune source installée.');
+  });
+
+  test('a dead torrent explains itself', () async {
+    backend.badLinks.add('good');
+    store.start(anime(1), 1);
+    await settle();
+    expect(store.entry(1, 1)!.error, contains('dead'));
+  });
+
+  test('a source without the episode says so', () async {
+    backend.filesFor = (_) => [EngineFile(0, 'Show - 01.mkv', size), EngineFile(1, 'Show - 02.mkv', size)];
+    store.start(anime(1), 5);
+    await settle();
+    expect(store.entry(1, 5)!.error, 'Cette source ne contient pas cet épisode.');
+  });
+
+  test('a stall says so, and retrying clears the reason', () async {
+    store.start(anime(1), 1);
+    for (var i = 0; i < 40 && store.entry(1, 1)!.state != DownloadState.failed; i++) {
+      await settle();
+    }
+    final e = store.entry(1, 1)!;
+    expect(e.error, contains('10 minutes'));
+    store.retry(e);
+    expect(e.error, isNull);
+  });
+
+  test('a file that cannot be moved says why', () async {
+    backend.finishFails = true;
+    backend.progress['hash-good'] = size;
+    store.start(anime(1), 1);
+    await settle();
+    expect(store.entry(1, 1)!.state, DownloadState.failed);
+    expect(store.entry(1, 1)!.error, contains('disk full'));
+  });
+
+  test('qualities come from the release names, highest first', () {
+    TorrentResult named(String title) => TorrentResult({'title': title, 'link': title}, 'test');
+    final found = qualitiesIn(
+      [
+        named('[A] Show - 01 [1080p]'),
+        named('[B] Show - 01 (2160p)'),
+        named('[C] Show - 01 720p'),
+        named('[D] Show - 01 [1080p] again'),
+        named('[E] Show - 01'),
+      ].map(ReleaseInfo.parse),
+    );
+    expect(found, ['2160', '1080', '720']);
+  });
+
+  test('sources that cannot answer give no list', () async {
+    expect((await store.qualities(anime(1), 1)).qualities, ['1080']);
+    backend.problem = DownloadProblem('no');
+    final answer = await store.qualities(anime(1), 1);
+    expect(answer.qualities, isEmpty);
+    expect(answer.problem, isNull);
   });
 
   test('starting an episode twice does nothing', () async {

@@ -149,8 +149,12 @@ void main() {
 
     testWidgets('pause all and resume all come and go', (tester) async {
       await pumpScreen(tester);
+      await tester.tap(find.byTooltip("Plus d'actions"));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Tout mettre en pause'));
-      await tester.pump();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip("Plus d'actions"));
+      await tester.pumpAndSettle();
       expect(find.text('Tout mettre en pause'), findsNothing);
       expect(find.text('Tout reprendre'), findsOneWidget);
     });
@@ -166,6 +170,15 @@ void main() {
       Downloads.instance.networkChanged();
       await tester.pump();
       expect(find.text('Épisode 2 · Téléchargement · 50 % · En attente de pairs'), findsOneWidget);
+    });
+
+    testWidgets('a stuck download shows why, in the list and the details', (tester) async {
+      Downloads.instance.entry(9, 3)!.error = 'Aucune source installée.';
+      await pumpScreen(tester);
+      expect(find.text('Aucune source installée.'), findsOneWidget);
+      await tester.tap(find.text('Épisode 3 · Téléchargement bloqué'));
+      await tester.pumpAndSettle();
+      expect(find.text('Aucune source installée.'), findsNWidgets(2));
     });
 
     testWidgets('waiting rows can be dragged', (tester) async {
@@ -184,6 +197,59 @@ void main() {
       await drag.up();
       await tester.pumpAndSettle();
       expect(Downloads.instance.queue.map((e) => e.episode), [5, 4]);
+    });
+
+    testWidgets('several can be selected and deleted', (tester) async {
+      await pumpScreen(tester);
+      await tester.longPress(find.text('Épisode 1 · 300 MB'));
+      await tester.pumpAndSettle();
+      expect(find.text('1 sélectionnés'), findsOneWidget);
+      await tester.tap(find.text('Épisode 3 · Téléchargement bloqué'));
+      await tester.pumpAndSettle();
+      expect(find.text('2 sélectionnés'), findsOneWidget);
+      expect(find.byType(Checkbox), findsNWidgets(3));
+      await tester.tap(find.widgetWithText(FilledButton, 'Supprimer'));
+      await tester.pumpAndSettle();
+      expect(find.text('Supprimer 2 téléchargements ?'), findsOneWidget);
+      await tester.tap(find.text('Garder'));
+      await tester.pumpAndSettle();
+      expect(Downloads.instance.entries.length, 3);
+      await tester.tap(find.widgetWithText(FilledButton, 'Supprimer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Supprimer')));
+      await tester.pumpAndSettle();
+      expect(Downloads.instance.entries.map((e) => e.episode), [2]);
+      expect(find.byType(Checkbox), findsNothing);
+    });
+
+    testWidgets('select all, then pause what was selected', (tester) async {
+      await pumpScreen(tester);
+      await tester.tap(find.byTooltip('Sélectionner'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Tout sélectionner'));
+      await tester.pumpAndSettle();
+      expect(find.text('3 sélectionnés'), findsOneWidget);
+      expect(find.text('Tout désélectionner'), findsOneWidget);
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Mettre en pause'));
+      await tester.pumpAndSettle();
+      expect(Downloads.instance.entry(9, 2)!.state, DownloadState.paused);
+      expect(find.text('3 sélectionnés'), findsOneWidget);
+      await tester.tap(find.byTooltip('Fermer la sélection'));
+      await tester.pumpAndSettle();
+      expect(find.byType(Checkbox), findsNothing);
+    });
+
+    testWidgets('delete all asks, then empties the list', (tester) async {
+      await pumpScreen(tester);
+      await tester.tap(find.byTooltip("Plus d'actions"));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Tout supprimer'));
+      await tester.pumpAndSettle();
+      expect(find.text('Supprimer 3 téléchargements ?'), findsOneWidget);
+      await tester.tap(find.text('Supprimer'));
+      await tester.pumpAndSettle();
+      expect(Downloads.instance.entries, isEmpty);
+      expect(find.text('Aucun téléchargement'), findsOneWidget);
     });
 
     testWidgets('an empty screen says how to start', (tester) async {

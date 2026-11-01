@@ -49,6 +49,7 @@ Future<void> main() async {
   Downloads.instance.playerHash = () => PlayerCenter.instance.session?.torrent?.hash;
   if (Platform.isAndroid) DownloadNotification(Downloads.instance);
   _watchNetwork();
+  Downloads.instance.onFailed = announceFailure;
   Downloads.instance.load().catchError((_) {});
   AppLifecycleListener(onResume: AniList.instance.sendHeldProgress);
   runApp(const NamiApp());
@@ -78,6 +79,7 @@ class NamiApp extends StatelessWidget {
         // Dark by design: Nami is a viewing room (DESIGN.md), so there is no light theme.
         theme: isDesktop ? Nami.desktopTheme() : Nami.theme(),
         navigatorKey: PlayerCenter.instance.navigatorKey,
+        scaffoldMessengerKey: downloadMessages,
         // The mini-player floats above every page, so browsing keeps it on screen.
         // Overlay.wrap gives its tooltips an overlay above the navigator.
         builder: (context, child) => Overlay.wrap(
@@ -151,6 +153,11 @@ class _RootScreenState extends State<RootScreen> {
   void initState() {
     super.initState();
     Downloads.instance.onOpen = openDownloads;
+    Downloads.instance.onOpenSources = () {
+      PlayerCenter.instance.navigatorKey.currentState?.popUntil((route) => route.isFirst);
+      _select(4);
+      SettingsScreen.showSources.value++;
+    };
   }
 
   /// The calendar asks AniList for a whole week, so it waits until it is opened.

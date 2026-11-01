@@ -58,6 +58,7 @@ struct RootView: View {
     @StateObject private var extensions = ExtensionStore.shared
     @StateObject private var center = PlayerCenter.shared
     @ObservedObject private var downloads = Downloads.shared
+    @State private var tab = 0
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.fr.rawValue
     @AppStorage("titleLanguage") private var titleLanguage = TitleLanguage.romaji.rawValue
 
@@ -66,19 +67,25 @@ struct RootView: View {
     private var language: String { "\(appLanguage)-\(titleLanguage)" }
 
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
             HomeView().id(language)
                 .tabItem { Label(t("Accueil", "Home"), systemImage: "house.fill") }
+                .tag(0)
             SearchView().id(language)
                 .tabItem { Label(t("Recherche", "Search"), systemImage: "magnifyingglass") }
+                .tag(1)
             CalendarTab().id(language)
                 .tabItem { Label(t("Calendrier", "Calendar"), systemImage: "calendar") }
+                .tag(2)
             LibraryView().id(language)
                 .tabItem { Label(t("Ma liste", "My list"), systemImage: "bookmark.fill") }
                 .badge(anilist.newEpisodes)
+                .tag(3)
             SettingsView()
                 .tabItem { Label(t("Réglages", "Settings"), systemImage: "gearshape.fill") }
+                .tag(4)
         }
+        .onChange(of: downloads.sourcesOpened) { _, _ in tab = 4 }
         .overlay(alignment: .bottom) {
             DownloadBar().padding(.bottom, center.minimized ? 150 : 58)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: downloads.current?.id)
@@ -98,7 +105,7 @@ struct RootView: View {
                 .id(session.id)
             }
         }
-        .sheet(item: $center.sources) { request in
+        .sheet(item: $center.sources, onDismiss: center.sourcesClosed) { request in
             SourcesSheet(media: request.media, episode: request.episode, autoPick: request.autoPick) { result in
                 center.picked(result, for: request)
             }

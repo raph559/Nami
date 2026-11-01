@@ -263,10 +263,14 @@ struct MediaDetailView: View {
                     }
             }
         case nil:
-            Button { downloads.askStart(media, episode: n) } label: {
-                Image(systemName: "arrow.down.circle").frame(width: 44, height: 44)
+            if downloads.probing == "\(media.id)-\(n)" {
+                ProgressView().frame(width: 44, height: 44)
+            } else {
+                Button { downloads.askStart(media, episode: n) } label: {
+                    Image(systemName: "arrow.down.circle").frame(width: 44, height: 44)
+                }
+                .accessibilityLabel(t("Télécharger", "Download"))
             }
-            .accessibilityLabel(t("Télécharger", "Download"))
         }
     }
 

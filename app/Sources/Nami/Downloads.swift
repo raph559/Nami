@@ -17,6 +17,8 @@ struct DownloadEntry: Codable, Identifiable {
     var total: Int64 = 0
     /// The quality asked for; nil when a source was picked by hand.
     var resolution: String?
+    /// Why it stopped, when it failed.
+    var error: String?
     /// Live figures of a running download.
     var speed: Double?
     var peers: Int?
@@ -70,17 +72,43 @@ struct DownloadQuestion: Identifiable {
         case season(count: Int)
         case remove(DownloadEntry)
         case change(DownloadEntry)
+        case failed(DownloadEntry)
+        case unavailable(episode: Int, reason: String, noSources: Bool)
+        case removeAll([DownloadEntry])
     }
 
     var media: Media
     var kind: Kind
+    /// Offered as answers; for one episode, what the sources really have.
+    var qualities = Downloads.qualities
+    /// Qualities no source has, for one episode.
+    var missing: [String] = []
 
     var id: String { title }
 
     /// Questions answered with a quality rather than a yes.
     var asksQuality: Bool {
-        if case .remove = kind { return false }
-        return true
+        switch kind {
+        case .remove, .failed, .unavailable, .removeAll: false
+        default: true
+        }
+    }
+
+    /// Nothing can be done: the only answer is OK.
+    var isNotice: Bool {
+        if case .unavailable = kind { return true }
+        return false
+    }
+
+    /// Extensions are missing, and the answer is to add some.
+    var needsSources: Bool {
+        if case .unavailable(_, _, noSources: true) = kind { return true }
+        return false
+    }
+
+    var isFailure: Bool {
+        if case .failed = kind { return true }
+        return false
     }
 
     var title: String {
@@ -88,6 +116,9 @@ struct DownloadQuestion: Identifiable {
         case .start(let episode): t("Télécharger l'épisode \(episode) ?", "Download episode \(episode)?")
         case .season(let count): t("Télécharger \(count) épisodes ?", "Download \(count) episodes?")
         case .change: t("Changer la qualité ?", "Change the quality?")
+        case .failed(let e): t("Épisode \(e.episode) : téléchargement bloqué", "Episode \(e.episode): download stuck")
+        case .removeAll(let list): t("Supprimer \(list.count) téléchargements ?", "Delete \(list.count) downloads?")
+        case .unavailable(let episode, _, _): t("Épisode \(episode) indisponible", "Episode \(episode) unavailable")
         case .remove(let e):
             e.state == .done ? t("Supprimer cet épisode ?", "Delete this episode?") : t("Annuler le téléchargement ?", "Cancel the download?")
         }
@@ -97,25 +128,39 @@ struct DownloadQuestion: Identifiable {
         switch kind {
         case .start:
             t("Nami prend la meilleure source dans cette qualité et garde cet épisode sur cet appareil. Laisse l'app ouverte pendant le téléchargement.",
-              "Nami takes the best source in this quality and keeps this episode on this device. Keep the app open while it downloads.")
+              "Nami takes the best source in this quality and keeps this episode on this device. Keep the app open while it downloads.") + missingNote
+        case .unavailable(_, let reason, _): reason
+        case .removeAll:
+            t("Les épisodes et ce qui a déjà été récupéré seront perdus.", "The episodes and what was already fetched will be lost.")
         case .season:
             t("Ils s'ajoutent à la file et se téléchargent l'un après l'autre. Laisse l'app ouverte pendant le téléchargement.",
               "They join the queue and download one after the other. Keep the app open while they download.")
         case .change:
             t("Ce qui a été téléchargé sera supprimé, puis Nami téléchargera cet épisode dans la nouvelle qualité.",
               "What was downloaded will be deleted, then Nami will download this episode in the new quality.")
+        case .failed(let e): e.error ?? ""
         case .remove(let e):
             e.state == .done ? t("Il faudra le télécharger à nouveau pour le regarder hors ligne.", "You will have to download it again to watch it offline.")
                 : t("Ce qui a déjà été récupéré sera perdu.", "What was already fetched will be lost.")
         }
     }
 
+    private var missingNote: String {
+        guard !missing.isEmpty else { return "" }
+        let list = missing.map(Downloads.label).joined(separator: ", ")
+        return "\n\n" + t("Aucune source en \(list).", "No source in \(list).")
+    }
+
     var accept: String {
+        if isFailure { return t("Réessayer", "Retry") }
+        if case .removeAll = kind { return t("Supprimer", "Delete") }
         guard case .remove(let e) = kind else { return "" }
         return e.state == .done ? t("Supprimer", "Delete") : t("Annuler le téléchargement", "Cancel download")
     }
 
     var refuse: String {
+        if isFailure || isNotice { return "OK" }
+        if case .removeAll = kind { return t("Garder", "Keep") }
         guard case .remove(let e) = kind else { return t("Annuler", "Cancel") }
         return e.state == .done ? t("Garder", "Keep") : t("Continuer", "Keep going")
     }
@@ -131,8 +176,8 @@ extension View {
             set: { if !$0 { store.question = nil } })
         return alert(store.question?.title ?? "", isPresented: shown, presenting: store.question) { q in
             if q.asksQuality {
-                ForEach(Downloads.qualities, id: \.self) { quality in
-                    Button("\(quality)p") { store.confirm(q, quality: quality) }
+                ForEach(q.qualities, id: \.self) { quality in
+                    Button(Downloads.label(quality)) { store.confirm(q, quality: quality) }
                 }
                 if case .start(let episode) = q.kind {
                     Button(t("Choisir la source", "Choose source")) {
@@ -140,8 +185,13 @@ extension View {
                     }
                 }
                 Button(q.refuse, role: .cancel) {}
+            } else if q.isNotice {
+                if q.needsSources {
+                    Button(t("Ajouter des sources", "Add sources")) { store.openSources() }
+                }
+                Button(q.needsSources ? t("Annuler", "Cancel") : q.refuse, role: .cancel) {}
             } else {
-                Button(q.accept, role: .destructive) { store.confirm(q) }
+                Button(q.accept, role: q.isFailure ? nil : .destructive) { store.confirm(q) }
                 Button(q.refuse, role: .cancel) {}
             }
         } message: { q in
@@ -165,7 +215,14 @@ final class Downloads: ObservableObject {
     @Published private(set) var entries: [DownloadEntry] = []
     /// The Downloads screen is open.
     @Published var screenShown = false
+    /// The Downloads screen is picking several downloads.
+    @Published var selecting = false
+    @Published var selection = Set<String>()
+    /// Bumped to show where sources are added.
+    @Published private(set) var sourcesOpened = 0
     @Published var question: DownloadQuestion?
+    /// The episode whose qualities are being looked for.
+    @Published private(set) var probing: String?
     /// The download whose details are on screen.
     @Published var shown: DownloadEntry?
     /// Only mobile data is left.
@@ -212,11 +269,62 @@ final class Downloads: ObservableObject {
         screenShown = true
     }
 
+    func openSources() {
+        shown = nil
+        screenShown = false
+        sourcesOpened += 1
+    }
+
     /// Which screen is on top: 0 the app, 1 the Downloads screen, 2 the details.
     var topLevel: Int { shown != nil ? 2 : screenShown ? 1 : 0 }
 
-    func askStart(_ media: Media, episode: Int) { question = DownloadQuestion(media: media, kind: .start(episode: episode)) }
+    /// Asks once the sources have said what they have.
+    func askStart(_ media: Media, episode: Int) {
+        probing = "\(media.id)-\(episode)"
+        Task {
+            let (found, problem) = await Self.available(media, episode: episode)
+            probing = nil
+            if let problem {
+                question = DownloadQuestion(media: media, kind: .unavailable(episode: episode, reason: problem,
+                                                                             noSources: ExtensionStore.shared.enabled.isEmpty))
+            } else {
+                question = DownloadQuestion(media: media, kind: .start(episode: episode),
+                                            qualities: found.isEmpty ? Self.qualities : [Self.best] + found,
+                                            missing: found.isEmpty ? [] : Self.all.filter { !found.contains($0) })
+            }
+        }
+    }
+
+    /// What the sources really have, highest first, or why there is nothing.
+    private static func available(_ media: Media, episode: Int) async -> ([String], String?) {
+        guard !ExtensionStore.shared.enabled.isEmpty else {
+            return ([], t("Aucune source installée. Ajoute un dépôt d'extensions dans Réglages.",
+                          "No sources installed. Add an extension repository in Settings."))
+        }
+        // No quality asked for: the extensions answer with everything they have.
+        let found = await SourceSearch.run(media: media, episode: episode, resolution: "")
+        guard found.results.isEmpty else { return (qualities(in: found.results), nil) }
+        return ([], found.failures.isEmpty
+            ? t("Aucune source trouvée pour cet épisode.", "No source found for this episode.")
+            : found.failures.map { "\($0.name) : \($0.message)" }.joined(separator: "\n"))
+    }
+
+    private static func qualities(in results: [TorrentResult]) -> [String] {
+        let found = Set(results.compactMap { ReleaseInfo($0).resolution })
+        return all.filter(found.contains)
+    }
+
+    /// The highest quality the sources have, whatever it is.
+    nonisolated static let best = "best"
+    nonisolated private static let all = ["2160", "1440", "1080", "720", "480"]
+
+    static func label(_ quality: String) -> String { quality == best ? t("Meilleure", "Best") : "\(quality)p" }
     func askSeason(_ media: Media) { question = DownloadQuestion(media: media, kind: .season(count: missing(media).count)) }
+    func askRemoveAll(_ list: [DownloadEntry]) {
+        guard let first = list.first else { return }
+        question = DownloadQuestion(media: first.media, kind: .removeAll(list))
+    }
+
     func askRemove(_ e: DownloadEntry) { question = DownloadQuestion(media: e.media, kind: .remove(e)) }
     func askChange(_ e: DownloadEntry) { question = DownloadQuestion(media: e.media, kind: .change(e)) }
 
@@ -231,17 +339,24 @@ final class Downloads: ObservableObject {
             remove(e)
             start(e.media, episode: e.episode, resolution: quality)
             shown = nil
+        case .failed(let e):
+            if let fresh = current(e.id) { retry(fresh) }
+        case .unavailable: break
+        case .removeAll(let list):
+            for e in list { remove(e) }
+            selection.removeAll()
+            selecting = false
         }
     }
 
-    /// Qualities offered when downloading, the setting first.
-    static var qualities: [String] {
+    /// Qualities that can be asked for without knowing the sources, the setting first.
+    nonisolated static var qualities: [String] {
         var list = [resolution]
-        for q in ["1080", "720", "480"] where !list.contains(q) { list.append(q) }
+        for q in [best] + all where !list.contains(q) { list.append(q) }
         return list
     }
 
-    private static var resolution: String {
+    nonisolated private static var resolution: String {
         let d = UserDefaults.standard
         return d.string(forKey: "downloadResolution") ?? d.string(forKey: "resolution") ?? "1080"
     }
@@ -387,7 +502,10 @@ final class Downloads: ObservableObject {
     /// Tries the same source first, so what was fetched is not lost.
     func retry(_ e: DownloadEntry) {
         guard e.state == .failed else { return }
-        update(e.id) { $0.state = .queued }
+        update(e.id) {
+            $0.state = .queued
+            $0.error = nil
+        }
         retrying.insert(e.id)
         pump()
     }
@@ -471,7 +589,20 @@ final class Downloads: ObservableObject {
         }
     }
 
+    /// Stops a download and says why.
+    private func fail(_ id: String, _ reason: String) {
+        update(id) {
+            $0.state = .failed
+            $0.error = reason
+        }
+        if let e = current(id) { question = DownloadQuestion(media: e.media, kind: .failed(e)) }
+    }
+
+    /// The last thing that went wrong for the entry running.
+    private var why: String?
+
     private func run(_ id: String) async {
+        why = nil
         update(id) { $0.state = .running }
         let isRetry = retrying.remove(id) != nil
         do {
@@ -479,7 +610,10 @@ final class Downloads: ObservableObject {
             let attached = recovering ? try await reattach(id) : try await attach(id, stored: isRetry)
             // Paused while it was still looking for its torrent.
             if current(id)?.state == .paused { pauseEngine(id); return }
-            guard attached else { update(id) { $0.state = .failed }; return }
+            guard attached else {
+                fail(id, why ?? t("Aucune source trouvée pour cet épisode.", "No source found for this episode."))
+                return
+            }
             if await follow(id) { try await finish(id) }
         } catch let error as Engine.EngineError where error.busy {
             // The torrent is playing as a stream; this entry waits for the player to close.
@@ -487,7 +621,7 @@ final class Downloads: ObservableObject {
             update(id) { $0.state = .queued }
             waitingForPlayer.insert(id)
         } catch {
-            if current(id)?.state != .paused { update(id) { $0.state = .failed } }
+            if current(id)?.state != .paused { fail(id, error.localizedDescription) }
         }
     }
 
@@ -502,6 +636,7 @@ final class Downloads: ObservableObject {
             } catch let error as Engine.EngineError where error.busy {
                 throw error
             } catch {
+                why = error.localizedDescription
                 try? await Task.sleep(for: .seconds(60))
             }
         }
@@ -516,17 +651,30 @@ final class Downloads: ObservableObject {
                 return true
             } catch let error as Engine.EngineError where error.busy {
                 throw error
-            } catch {}
+            } catch {
+                why = error.localizedDescription
+            }
         }
-        let resolution = e.resolution ?? Self.resolution
-        let found = await SourceSearch.run(media: e.media, episode: e.episode, resolution: resolution)
+        guard !ExtensionStore.shared.enabled.isEmpty else {
+            why = t("Aucune source installée. Ajoute un dépôt d'extensions dans Réglages.",
+                    "No sources installed. Add an extension repository in Settings.")
+            return false
+        }
+        let wanted = e.resolution ?? Self.resolution
+        let found = await SourceSearch.run(media: e.media, episode: e.episode, resolution: wanted == Self.best ? "" : wanted)
+        let resolution = wanted == Self.best ? Self.qualities(in: found.results).first ?? Self.resolution : wanted
+        if found.results.isEmpty, !found.failures.isEmpty {
+            why = found.failures.map { "\($0.name) : \($0.message)" }.joined(separator: "\n")
+        }
         for release in ReleaseInfo.rank(found.results, resolution: resolution).prefix(Self.sourceTries) {
             do {
                 try await use(id, release.result.link)
                 return true
             } catch let error as Engine.EngineError where error.busy {
                 throw error
-            } catch {}
+            } catch {
+                why = error.localizedDescription
+            }
         }
         return false
     }
@@ -534,22 +682,22 @@ final class Downloads: ObservableObject {
     private func use(_ id: String, _ link: String) async throws {
         guard let e = current(id) else { return }
         try FileManager.default.createDirectory(at: partial, withIntermediateDirectories: true)
-        let t = try await Engine.shared.addKept(link, dir: partial.path)
-        guard let file = Engine.pick(t.files, episode: e.episode) else {
-            await release(t.hash, -1)
-            throw Engine.EngineError(message: "no file for this episode")
+        let torrent = try await Engine.shared.addKept(link, dir: partial.path)
+        guard let file = Engine.pick(torrent.files, episode: e.episode) else {
+            await release(torrent.hash, -1)
+            throw Engine.EngineError(message: t("Cette source ne contient pas cet épisode.", "This source doesn't have this episode."))
         }
-        try await Engine.shared.keep(t.hash, file.index)
+        try await Engine.shared.keep(torrent.hash, file.index)
         let previous = e.hash
         let ext = (file.name as NSString).pathExtension
         update(id) {
             $0.link = link
-            $0.hash = t.hash
+            $0.hash = torrent.hash
             $0.fileIndex = file.index
             $0.total = file.length
             $0.file = "\(e.media.id)-\(e.episode)" + (ext.isEmpty ? "" : ".\(ext)")
         }
-        if let previous, previous != t.hash { deletePartial(previous) }
+        if let previous, previous != torrent.hash { deletePartial(previous) }
     }
 
     /// Follows the file until it is complete; false if it stalled or was removed.
@@ -584,7 +732,8 @@ final class Downloads: ObservableObject {
                 if let i = entries.firstIndex(where: { $0.id == id }) { entries[i].quiet = quiet }
             }
             if quiet >= Self.stallLimit {
-                update(id) { $0.state = .failed }
+                fail(id, t("Rien reçu depuis 10 minutes : personne ne partage ce torrent pour le moment.",
+                           "Nothing received for 10 minutes: nobody is sharing this torrent right now."))
                 return false
             }
         }
@@ -640,6 +789,7 @@ struct DownloadDetails: View {
                 }
                 SmoothProgressLine(value: e.state == .done ? 1 : e.fraction)
                 Text(figures(e)).font(.caption).foregroundStyle(Nami.textSecondary)
+                if let error = e.error { Text(error).font(.footnote).foregroundStyle(Nami.textSecondary) }
                 HStack(spacing: 10) {
                     main(e)
                     Button(e.state == .done || e.state == .failed
@@ -843,6 +993,7 @@ struct DownloadsView: View {
                     Section(t("File d'attente", "Queue")) {
                         ForEach(store.queue) { DownloadRow(entry: $0) }
                             .onMove { store.reorder(from: $0, to: $1) }
+                            .moveDisabled(store.selecting)
                     }
                 }
                 ForEach(animes) { media in
@@ -859,20 +1010,70 @@ struct DownloadsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(t("Fermer", "Close")) { dismiss() }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    if store.canPauseAll {
-                        Button(t("Tout en pause", "Pause all")) { store.pauseAll() }
-                    } else if store.canResumeAll {
-                        Button(t("Tout reprendre", "Resume all")) { store.resumeAll() }
+                    if store.selecting {
+                        Button(t("Annuler", "Cancel")) {
+                            store.selecting = false
+                            store.selection.removeAll()
+                        }
+                    } else {
+                        Button(t("Fermer", "Close")) { dismiss() }
                     }
                 }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if store.selecting {
+                        let everything = store.selection.count == store.entries.count
+                        Button(everything ? t("Tout désélectionner", "Select none") : t("Tout sélectionner", "Select all")) {
+                            store.selection = everything ? [] : Set(store.entries.map(\.id))
+                        }
+                    } else if !store.entries.isEmpty {
+                        Menu {
+                            if store.canPauseAll {
+                                Button(t("Tout mettre en pause", "Pause all"), systemImage: "pause") { store.pauseAll() }
+                            }
+                            if store.canResumeAll {
+                                Button(t("Tout reprendre", "Resume all"), systemImage: "play") { store.resumeAll() }
+                            }
+                            Button(t("Sélectionner", "Select"), systemImage: "checkmark.circle") { store.selecting = true }
+                            Button(t("Tout supprimer", "Delete all"), systemImage: "trash", role: .destructive) {
+                                store.askRemoveAll(store.entries)
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                        .accessibilityLabel(t("Actions", "Actions"))
+                    }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if store.selecting { selectionActions }
             }
         }
         .foregroundStyle(Nami.text)
         .sheet(item: $store.shown) { DownloadDetails(id: $0.id) }
         .downloadQuestions(store, level: 1)
+        .onDisappear {
+            store.selecting = false
+            store.selection.removeAll()
+        }
+    }
+
+    private var picked: [DownloadEntry] { store.entries.filter { store.selection.contains($0.id) } }
+
+    private var selectionActions: some View {
+        HStack(spacing: 10) {
+            Text(t("\(store.selection.count) sélectionnés", "\(store.selection.count) selected")).font(.footnote)
+            Spacer(minLength: 0)
+            Button(t("Pause", "Pause"), systemImage: "pause.fill") { for e in picked { store.pause(e) } }
+                .disabled(!picked.contains { $0.state == .running || $0.state == .queued })
+            Button(t("Reprendre", "Resume"), systemImage: "play.fill") { for e in picked { store.resume(e) } }
+                .disabled(!picked.contains { $0.state == .paused })
+            Button(t("Supprimer", "Delete"), systemImage: "trash", role: .destructive) { store.askRemoveAll(picked) }
+                .disabled(picked.isEmpty)
+        }
+        .labelStyle(.iconOnly)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Nami.sheet)
     }
 }
 
@@ -903,8 +1104,15 @@ private struct DownloadRow: View {
     var body: some View {
         let e = entry
         HStack(spacing: 12) {
+            if store.selecting {
+                Image(systemName: store.selection.contains(e.id) ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(Nami.text)
+                    .accessibilityLabel(store.selection.contains(e.id) ? t("Sélectionné", "Selected") : t("Non sélectionné", "Not selected"))
+            }
             Button {
-                if e.state == .done {
+                if store.selecting {
+                    if store.selection.remove(e.id) == nil { store.selection.insert(e.id) }
+                } else if e.state == .done {
                     store.screenShown = false
                     PlayerCenter.shared.openSources(e.media, episode: e.episode)
                 } else {
@@ -917,6 +1125,9 @@ private struct DownloadRow: View {
                         Text(e.media.title.display).font(.subheadline).lineLimit(1)
                         Text("\(t("Épisode \(e.episode)", "Episode \(e.episode)")) · \(e.label)")
                             .font(.caption).foregroundStyle(Nami.textSecondary).lineLimit(2)
+                        if let error = e.error {
+                            Text(error).font(.caption).foregroundStyle(Nami.textSecondary).lineLimit(3)
+                        }
                         if e.state == .running { SmoothProgressLine(value: e.fraction) }
                     }
                     Spacer(minLength: 0)
@@ -924,6 +1135,7 @@ private struct DownloadRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            if !store.selecting {
             if e.state == .running || e.state == .queued || e.state == .paused {
                 DownloadPauseButton(entry: e)
             }
@@ -939,6 +1151,7 @@ private struct DownloadRow: View {
             .accessibilityLabel(e.state == .done || e.state == .failed
                 ? t("Supprimer le téléchargement", "Delete download")
                 : t("Annuler le téléchargement", "Cancel download"))
+            }
         }
         // In a list, a button without its own style would take the whole row.
         .buttonStyle(.borderless)
