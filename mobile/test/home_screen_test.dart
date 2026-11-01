@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nami/anilist.dart';
+import 'package:nami/downloads.dart';
 import 'package:nami/platform.dart';
 import 'package:nami/screens/calendar.dart';
 import 'package:nami/screens/home.dart';
@@ -135,6 +138,33 @@ void main() {
     expect(find.text('Les mieux notés'), findsNothing);
     expect(find.text('Continuer'), findsOneWidget);
     expect(find.text('Tendances'), findsOneWidget);
+  });
+
+  testWidgets('with no network the home shows what was downloaded', (tester) async {
+    final previous = Downloads.instance;
+    Downloads.instance = Downloads()
+      ..root = Directory.systemTemp.path
+      ..entries.add(
+        DownloadEntry(
+          media: anime(9),
+          episode: 4,
+          state: DownloadState.done,
+          file: '9-4.mkv',
+          total: 300000000,
+        ),
+      );
+    addTearDown(() => Downloads.instance = previous);
+    await pumpHome(
+      tester,
+      api: FakeApi(
+        failing: {'watching', 'seasonal', 'trending', 'topRated', 'airingToday', 'library', 'recommendations'},
+      ),
+    );
+    expect(find.text('Téléchargements · 300 MB'), findsOneWidget);
+    expect(find.text('Épisode 4 · 300 MB'), findsOneWidget);
+    expect(find.text('Accueil indisponible'), findsOneWidget);
+    expect(find.text('Rien à afficher pour le moment'), findsNothing);
+    expect(find.text('Réessayer'), findsOneWidget);
   });
 
   testWidgets('everything failing shows the retry message', (tester) async {

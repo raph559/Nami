@@ -10,6 +10,7 @@ struct MediaDetailView: View {
     @State private var editingList = false
     @State private var saveFailed = false
     @EnvironmentObject private var center: PlayerCenter
+    @ObservedObject private var downloads = Downloads.shared
 
     private var progress: Int { media.mediaListEntry?.progress ?? 0 }
     private var nextEpisode: Int {
@@ -168,40 +169,102 @@ struct MediaDetailView: View {
         let ep = mappings?.episode(n)
         let resume = n > progress ? Playback.resumeFraction(media: media.id, episode: n) : nil
         let accent = Nami.accent(media.coverImage?.color)
-        return Button { center.openSources(media, episode: n) } label: {
-            HStack(spacing: 12) {
-                CoverImageView(url: ep?.image ?? media.bannerImage ?? media.coverImage?.large, corner: 8)
-                    .frame(width: 128, height: 72)
-                    .overlay {
-                        if n <= progress {
-                            ZStack { Color.black.opacity(0.45); Image(systemName: "checkmark.circle.fill").font(.title2) }
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
+        let download = downloads.entry(media.id, n)
+        let fetching = download?.state == .running ? download : nil
+        return HStack(spacing: 4) {
+            Button { center.openSources(media, episode: n) } label: {
+                HStack(spacing: 12) {
+                    CoverImageView(url: ep?.image ?? media.bannerImage ?? media.coverImage?.large, corner: 8)
+                        .frame(width: 128, height: 72)
+                        .overlay {
+                            if n <= progress {
+                                ZStack { Color.black.opacity(0.45); Image(systemName: "checkmark.circle.fill").font(.title2) }
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
                         }
+                        // How far into a started episode you are.
+                        .overlay(alignment: .bottom) {
+                            if let value = fetching?.fraction ?? resume {
+                                ProgressLine(value: value, color: accent).clipShape(RoundedRectangle(cornerRadius: 1))
+                            }
+                        }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(episodeLabel(n, resuming: resume != nil, download: download))
+                            .font(.caption.bold()).foregroundStyle(accent)
+                        Text(ep?.displayTitle(AppLanguage.current.rawValue) ?? "").font(.subheadline).lineLimit(2)
+                        if let len = ep?.runtime ?? ep?.length { Text("\(len) min").font(.caption2).foregroundStyle(.secondary) }
                     }
-                    // How far into a started episode you are.
-                    .overlay(alignment: .bottom) {
-                        if let resume { ProgressLine(value: resume, color: accent).clipShape(RoundedRectangle(cornerRadius: 1)) }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .contextMenu {
+                switch download?.state {
+                case nil:
+                    Button(t("Télécharger", "Download"), systemImage: "arrow.down.circle") { downloads.askStart(media, episode: n) }
+                case .queued?, .running?:
+                    Button(t("Mettre en pause", "Pause"), systemImage: "pause") { if let download { downloads.pause(download) } }
+                    Button(t("Annuler le téléchargement", "Cancel download"), systemImage: "xmark") { if let download { downloads.askRemove(download) } }
+                case .paused?:
+                    Button(t("Reprendre", "Resume"), systemImage: "play") { if let download { downloads.resume(download) } }
+                    Button(t("Annuler le téléchargement", "Cancel download"), systemImage: "xmark") { if let download { downloads.askRemove(download) } }
+                case .failed?:
+                    Button(t("Réessayer", "Retry"), systemImage: "arrow.clockwise") { if let download { downloads.retry(download) } }
+                    Button(t("Supprimer le téléchargement", "Delete download"), systemImage: "trash") { if let download { downloads.askRemove(download) } }
+                case .done?:
+                    Button(t("Supprimer le téléchargement", "Delete download"), systemImage: "trash") { if let download { downloads.askRemove(download) } }
+                }
+                if anilist.isLoggedIn {
+                    if n <= progress {
+                        Button(t("Non vu à partir d'ici", "Unwatched from here"), systemImage: "eye.slash") { setWatched(n - 1) }
+                    } else {
+                        Button(t("Vu jusqu'ici", "Watched up to here"), systemImage: "checkmark.circle") { setWatched(n) }
                     }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(resume != nil ? t("Épisode \(n) · En cours", "Episode \(n) · In progress") : t("Épisode \(n)", "Episode \(n)"))
-                        .font(.caption.bold()).foregroundStyle(accent)
-                    Text(ep?.displayTitle(AppLanguage.current.rawValue) ?? "").font(.subheadline).lineLimit(2)
-                    if let len = ep?.runtime ?? ep?.length { Text("\(len) min").font(.caption2).foregroundStyle(.secondary) }
-                }
-                Spacer(minLength: 0)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .contextMenu {
-            if anilist.isLoggedIn {
-                if n <= progress {
-                    Button(t("Non vu à partir d'ici", "Unwatched from here"), systemImage: "eye.slash") { setWatched(n - 1) }
-                } else {
-                    Button(t("Vu jusqu'ici", "Watched up to here"), systemImage: "checkmark.circle") { setWatched(n) }
                 }
             }
+            downloadButton(n, accent: accent)
         }
+    }
+
+    /// Always on the row: a long press alone is too easy to miss. A finished
+    /// episode only shows its mark, so a stray tap cannot delete it.
+    @ViewBuilder
+    private func downloadButton(_ n: Int, accent: Color) -> some View {
+        let d = downloads.entry(media.id, n)
+        switch d?.state {
+        case .done?:
+            Image(systemName: "arrow.down.circle.fill").foregroundStyle(accent).frame(width: 44, height: 44)
+                .accessibilityLabel(t("Téléchargé", "Downloaded"))
+        case .failed?:
+            Button { if let d { downloads.retry(d) } } label: {
+                Image(systemName: "arrow.clockwise").frame(width: 44, height: 44)
+            }
+            .accessibilityLabel(t("Réessayer", "Retry"))
+        case .running?, .queued?, .paused?:
+            // The ring shows how far it got, around the button that pauses it.
+            if let d {
+                DownloadPauseButton(entry: d)
+                    .font(.caption)
+                    .background {
+                        ZStack {
+                            Circle().stroke(.white.opacity(0.2), lineWidth: 2.5)
+                            Circle().trim(from: 0, to: d.fraction).stroke(accent, lineWidth: 2.5).rotationEffect(.degrees(-90))
+                        }
+                        .frame(width: 30, height: 30)
+                    }
+            }
+        case nil:
+            Button { downloads.askStart(media, episode: n) } label: {
+                Image(systemName: "arrow.down.circle").frame(width: 44, height: 44)
+            }
+            .accessibilityLabel(t("Télécharger", "Download"))
+        }
+    }
+
+    private func episodeLabel(_ n: Int, resuming: Bool, download: DownloadEntry?) -> String {
+        if let download, download.state != .done { return t("Épisode \(n) · \(download.label)", "Episode \(n) · \(download.label)") }
+        return resuming ? t("Épisode \(n) · En cours", "Episode \(n) · In progress") : t("Épisode \(n)", "Episode \(n)")
     }
 
     /// Sets how many episodes are watched: AniList keeps one number, not a list of episodes.

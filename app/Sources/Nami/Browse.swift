@@ -380,6 +380,7 @@ struct AiringRow: View {
 struct HomeView: View {
     @EnvironmentObject private var anilist: AniList
     @ObservedObject private var store = HomeStore.shared
+    @ObservedObject private var downloads = Downloads.shared
     @State private var path: [MediaRoute] = []
     @Namespace private var ns
 
@@ -505,16 +506,20 @@ struct HomeView: View {
     }
 
     private var failure: some View {
-        VStack(spacing: 10) {
-            Text(t("Rien à afficher pour le moment", "Nothing to show yet")).font(.headline)
+        let kept = !downloads.entries.isEmpty
+        return VStack(spacing: 10) {
+            // What was downloaded still plays, so it comes first.
+            DownloadsSection().padding(.bottom, 30)
+            Text(kept ? t("Accueil indisponible", "Home unavailable") : t("Rien à afficher pour le moment", "Nothing to show yet"))
+                .font(.headline)
             Text(t("Impossible de joindre AniList. Vérifie ta connexion, puis réessaie.",
                    "Can't reach AniList. Check your connection, then try again."))
                 .font(.subheadline).foregroundStyle(Nami.textSecondary).multilineTextAlignment(.center)
             Button(t("Réessayer", "Try again")) { Task { await load() } }.buttonStyle(.bordered).tint(Nami.text)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 160)
-        .padding(.horizontal, 32)
+        .padding(.top, kept ? 70 : 160)
+        .padding(.horizontal, kept ? 16 : 32)
     }
 
     private var loginHint: some View {

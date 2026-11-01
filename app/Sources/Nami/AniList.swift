@@ -427,6 +427,7 @@ final class AniList: ObservableObject {
               statistics { anime { count episodesWatched minutesWatched meanScore } } } }
             """, as: D.self).Viewer
             viewerError = nil
+            Task { await sendHeldProgress() }
         } catch {
             // Still logged in: a failed refresh keeps what is on screen, and the
             // screens offer to try again when there is no profile yet.
@@ -454,10 +455,41 @@ final class AniList: ObservableObject {
         if let current = media.mediaListEntry?.progress, current >= episode { return }
         let status = (media.episodes.map { episode >= $0 } ?? false) ? "COMPLETED" : "CURRENT"
         struct D: Decodable { struct E: Decodable { var progress: Int? }; var SaveMediaListEntry: E }
-        _ = try await query("""
-        mutation($id: Int, $p: Int, $s: MediaListStatus) { SaveMediaListEntry(mediaId: $id, progress: $p, status: $s) { progress } }
-        """, ["id": media.id, "p": episode, "s": status], as: D.self)
+        do {
+            _ = try await query("""
+            mutation($id: Int, $p: Int, $s: MediaListStatus) { SaveMediaListEntry(mediaId: $id, progress: $p, status: $s) { progress } }
+            """, ["id": media.id, "p": episode, "s": status], as: D.self)
+        } catch {
+            holdProgress(media.id, episode)
+            throw error
+        }
         listChanged()
+    }
+
+    private static let heldKey = "heldProgress"
+
+    private var held: [String: Int] {
+        get { UserDefaults.standard.dictionary(forKey: Self.heldKey) as? [String: Int] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: Self.heldKey) }
+    }
+
+    /// With no network, a watched episode waits here until AniList can be reached.
+    private func holdProgress(_ mediaID: Int, _ episode: Int) {
+        held["\(mediaID)"] = max(held["\(mediaID)"] ?? 0, episode)
+    }
+
+    private var sendingHeld = false
+
+    /// Sends what was watched with no network; the rest waits for the next try.
+    func sendHeldProgress() async {
+        guard isLoggedIn, !sendingHeld else { return }
+        sendingHeld = true
+        defer { sendingHeld = false }
+        for (key, episode) in held {
+            guard let id = Int(key), let fresh = try? await media(id: id),
+                  (try? await setProgress(media: fresh, episode: episode)) != nil else { return }
+            held[key] = nil
+        }
     }
 
     /// The viewer's whole anime list, grouped by status (custom lists left out).

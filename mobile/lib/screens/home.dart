@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../anilist.dart';
+import '../downloads.dart';
 import '../home_feed.dart';
 import '../platform.dart';
 import '../settings.dart';
 import '../theme.dart';
 import '../ui/airing_row.dart';
+import '../ui/downloads_section.dart';
 import 'calendar.dart';
 import '../ui/hero_carousel.dart';
 import '../ui/motion.dart';
@@ -232,13 +234,30 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     if (feed == null) {
       return Scaffold(
-        body: Center(
-          child: StateMessage(
-            title: t('Rien à afficher pour le moment', 'Nothing to show yet'),
-            body: networkError(),
-            action: t('Réessayer', 'Try again'),
-            onAction: _load,
-          ),
+        body: ListenableBuilder(
+          listenable: Downloads.instance,
+          builder: (context, _) {
+            final kept = Downloads.instance.entries.isNotEmpty;
+            final message = StateMessage(
+              title: kept
+                  ? t('Accueil indisponible', 'Home unavailable')
+                  : t('Rien à afficher pour le moment', 'Nothing to show yet'),
+              body: networkError(),
+              action: t('Réessayer', 'Try again'),
+              onAction: _load,
+            );
+            if (!kept) return Center(child: message);
+            // What was downloaded still plays, so it comes first.
+            return ListView(
+              padding: EdgeInsets.fromLTRB(
+                isDesktop ? MediaQuery.paddingOf(context).left + 24 : 16,
+                MediaQuery.paddingOf(context).top + 24,
+                16,
+                16,
+              ),
+              children: [const DownloadsSection(), message],
+            );
+          },
         ),
       );
     }

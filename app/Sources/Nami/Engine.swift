@@ -28,8 +28,16 @@ final class Engine {
         var progress: Double
     }
 
+    struct KeepStats: Decodable {
+        var done: Int64
+        var total: Int64
+        var peers: Int
+    }
+
     struct EngineError: LocalizedError {
         var message: String
+        /// The torrent is playing as a stream, so it cannot be kept yet.
+        var busy = false
         var errorDescription: String? { message }
     }
 
@@ -60,13 +68,40 @@ final class Engine {
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else {
             let msg = (try? JSONDecoder().decode([String: String].self, from: data))?["error"] ?? "HTTP \(code)"
-            throw EngineError(message: msg)
+            throw EngineError(message: msg, busy: code == 409)
         }
         return data
     }
 
     func add(_ link: String) async throws -> Torrent {
         try JSONDecoder().decode(Torrent.self, from: await call("add", method: "POST", body: ["uri": link], timeout: 100))
+    }
+
+    /// Adds a torrent that survives in `dir`: the player cannot drop it.
+    func addKept(_ link: String, dir: String) async throws -> Torrent {
+        try JSONDecoder().decode(Torrent.self, from: await call("add", method: "POST", body: ["uri": link, "dir": dir], timeout: 100))
+    }
+
+    func keep(_ hash: String, _ index: Int) async throws {
+        _ = try await call("keep/\(hash)/\(index)", method: "POST")
+    }
+
+    func pause(_ hash: String, _ index: Int) async throws {
+        _ = try await call("pause/\(hash)/\(index)", method: "POST")
+    }
+
+    func keepStats(_ hash: String, _ index: Int) async -> KeepStats? {
+        guard let data = try? await call("keep/\(hash)/\(index)", timeout: 5) else { return nil }
+        return try? JSONDecoder().decode(KeepStats.self, from: data)
+    }
+
+    /// Moving a large file may mean copying it.
+    func finish(_ hash: String, _ index: Int, dest: String) async throws {
+        _ = try await call("finish/\(hash)/\(index)", method: "POST", body: ["dest": dest], timeout: 300)
+    }
+
+    func unkeep(_ hash: String, _ index: Int) async throws {
+        _ = try await call("unkeep/\(hash)/\(index)", method: "POST")
     }
 
     func stats(_ hash: String) async -> Stats? {

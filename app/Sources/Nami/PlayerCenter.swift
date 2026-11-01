@@ -11,7 +11,8 @@ final class PlayerCenter: ObservableObject {
         let id = UUID()
         var media: Media
         var episode: Int
-        var result: TorrentResult
+        var result: TorrentResult?
+        var localFile: URL?
     }
 
     struct SourcesRequest: Identifiable {
@@ -28,7 +29,12 @@ final class PlayerCenter: ObservableObject {
     /// Bumped when a session ends, so pages can refresh the AniList progress.
     @Published private(set) var finished = 0
 
+    /// A downloaded episode plays straight from the device.
     func openSources(_ media: Media, episode: Int, autoPick: Bool = false) {
+        if let file = Downloads.shared.localURL(media.id, episode) {
+            play(media, episode: episode, result: nil, localFile: file)
+            return
+        }
         sources = SourcesRequest(media: media, episode: episode, autoPick: autoPick)
     }
 
@@ -41,9 +47,9 @@ final class PlayerCenter: ObservableObject {
         }
     }
 
-    func play(_ media: Media, episode: Int, result: TorrentResult) {
+    func play(_ media: Media, episode: Int, result: TorrentResult?, localFile: URL? = nil) {
         minimized = false
-        session = Session(media: media, episode: episode, result: result)
+        session = Session(media: media, episode: episode, result: result, localFile: localFile)
     }
 
     func close() {

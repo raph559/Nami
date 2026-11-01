@@ -228,7 +228,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ),
         ),
         if (s.phase == PlaybackPhase.connecting)
-          _status(null, t('Connexion aux pairs…', 'Connecting to peers…'), s.result.title),
+          _status(null, t('Connexion aux pairs…', 'Connecting to peers…'), s.result?.title ?? ''),
         if (s.phase == PlaybackPhase.failed)
           _status(Icons.warning_amber, t('Impossible de lire', 'Cannot play'), s.failure ?? ''),
         if (s.phase == PlaybackPhase.chooseFile) _fileChooser(),

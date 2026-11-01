@@ -1,10 +1,15 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nami/anilist.dart';
+import 'package:nami/downloads.dart';
 import 'package:nami/platform.dart';
+import 'package:nami/player_center.dart';
 import 'package:nami/screens/library.dart';
 import 'package:nami/settings.dart';
 import 'package:nami/theme.dart';
+import 'package:nami/ui/downloads_section.dart';
 import 'package:nami/ui/tabs.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -90,5 +95,110 @@ void main() {
     await pumpLibrary(tester, desktop: false);
     expect(find.byType(UnderlineTabs), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  group('downloads', () {
+    Media downloaded() => Media({
+      'id': 9,
+      'title': <String, dynamic>{'romaji': 'Gardé'},
+      'episodes': 12,
+    });
+
+    setUp(() {
+      final previous = Downloads.instance;
+      Downloads.instance = Downloads()
+        ..root = Directory.systemTemp.path
+        ..entries.addAll([
+          DownloadEntry(media: downloaded(), episode: 1, state: DownloadState.done, file: '9-1.mkv', total: 300000000),
+          DownloadEntry(media: downloaded(), episode: 2, state: DownloadState.running, done: 25, total: 100),
+          DownloadEntry(media: downloaded(), episode: 3, state: DownloadState.failed),
+        ]);
+      addTearDown(() => Downloads.instance = previous);
+    });
+
+    testWidgets('the section lists every download with its state', (tester) async {
+      await pumpLibrary(tester, desktop: false);
+      expect(find.text('Téléchargements · 300 MB'), findsOneWidget);
+      expect(find.text('Épisode 1 · 300 MB'), findsOneWidget);
+      expect(find.text('Épisode 2 · Téléchargement · 25 %'), findsOneWidget);
+      expect(find.text('Épisode 3 · Téléchargement bloqué'), findsOneWidget);
+      expect(find.byTooltip('Réessayer'), findsOneWidget);
+    });
+
+    testWidgets('it stays reachable with no account and with no network', (tester) async {
+      SharedPreferences.setMockInitialValues({'appLanguage': 'fr'});
+      await AppSettings.load();
+      debugDesktopOverride = false;
+      addTearDown(() => debugDesktopOverride = null);
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(theme: Nami.theme(), home: const LibraryScreen()));
+      await tester.pump();
+      expect(find.text('Épisode 1 · 300 MB'), findsOneWidget);
+      expect(find.text('Se connecter à AniList'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      SharedPreferences.setMockInitialValues({'appLanguage': 'fr', 'anilistToken': 'x'});
+      await AppSettings.load();
+      await tester.pumpWidget(MaterialApp(theme: Nami.theme(), home: const LibraryScreen(key: ValueKey('token'))));
+      await tester.pump();
+      expect(find.text('Épisode 1 · 300 MB'), findsOneWidget);
+      expect(find.text('Connexion à AniList…'), findsOneWidget);
+    });
+
+    testWidgets('the bar shows on any screen and opens the downloads', (tester) async {
+      var opened = 0;
+      Downloads.instance.onOpen = () => opened++;
+      debugDesktopOverride = false;
+      addTearDown(() => debugDesktopOverride = null);
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: Nami.theme(),
+          navigatorKey: PlayerCenter.instance.navigatorKey,
+          builder: (context, child) => Overlay.wrap(child: Stack(children: [child!, const DownloadBar()])),
+          home: const Scaffold(body: Text('page')),
+        ),
+      );
+      expect(find.text('Gardé · Épisode 2'), findsOneWidget);
+      expect(find.text('Téléchargement · 25 %'), findsOneWidget);
+      await tester.tap(find.text('Gardé · Épisode 2'));
+      await tester.pumpAndSettle();
+      expect(find.text('Épisode 2 · Téléchargement · 25 %'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Mettre en pause'), findsOneWidget);
+      await tester.tap(find.text('Tous les téléchargements'));
+      await tester.pumpAndSettle();
+      expect(opened, 1);
+      await tester.tap(find.byTooltip('Mettre en pause'));
+      await tester.pump();
+      expect(find.text('En pause · 25 %'), findsOneWidget);
+      expect(find.byTooltip('Reprendre'), findsOneWidget);
+    });
+
+    testWidgets('deleting from the section removes the entry', (tester) async {
+      await pumpLibrary(tester, desktop: false);
+      await tester.tap(find.byTooltip('Annuler le téléchargement'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Épisode 2'), findsWidgets);
+      await tester.tap(find.widgetWithText(FilledButton, 'Annuler le téléchargement'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Épisode 2'), findsNothing);
+    });
+
+    testWidgets('tapping a running download opens its details and cancelling asks', (tester) async {
+      await pumpLibrary(tester, desktop: false);
+      await tester.tap(find.text('Épisode 2 · Téléchargement · 25 %'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(FilledButton, 'Mettre en pause'), findsOneWidget);
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Annuler le téléchargement'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Annuler le téléchargement'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Épisode 2'), findsNothing);
+      expect(find.widgetWithText(FilledButton, 'Mettre en pause'), findsNothing);
+    });
   });
 }

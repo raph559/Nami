@@ -177,6 +177,7 @@ struct LibraryView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
                             ProfileHeader(viewer: viewer)
+                            DownloadsSection().padding(.horizontal)
                             statusChips
                             content
                         }
@@ -184,10 +185,19 @@ struct LibraryView: View {
                     }
                     .ignoresSafeArea(edges: .top)
                     .refreshable { await load() }
-                } else if anilist.isLoggedIn {
-                    ProfileRetry().padding(32).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    loggedOut
+                    // With no profile (logged out, or AniList out of reach) downloads still show.
+                    ScrollView {
+                        VStack(spacing: 20) {
+                            DownloadsSection().padding(.horizontal)
+                            if anilist.isLoggedIn {
+                                ProfileRetry().padding(32)
+                            } else {
+                                loggedOut
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
                 }
             }
             .toolbar(.hidden, for: .navigationBar)

@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../anilist.dart';
 import '../platform.dart';
+import '../downloads.dart';
 import '../settings.dart';
 import '../theme.dart';
+import '../ui/downloads_section.dart';
 import '../ui/tabs.dart';
 import '../widgets.dart';
 import 'settings_screen.dart';
@@ -86,7 +88,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         listenable: anilist,
         builder: (context, _) {
           final viewer = anilist.viewer;
-          if (viewer == null) return _loggedOut(context, anilist.isLoggedIn);
+          if (viewer == null) return _noAccount(context, anilist.isLoggedIn);
           final entries = sortLibrary(lists[status] ?? const <LibraryEntry>[], sort);
           final side = isDesktop ? MediaQuery.paddingOf(context).left + 24 : 16.0;
           return RefreshIndicator(
@@ -116,6 +118,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     ),
                   ),
                 ),
+                SliverToBoxAdapter(child: DownloadsSection(padding: EdgeInsets.fromLTRB(side, 20, 16, 0))),
                 if (!isDesktop)
                   SliverToBoxAdapter(
                     child: Padding(
@@ -185,6 +188,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// With no profile (logged out, or AniList out of reach) downloads still show.
+  Widget _noAccount(BuildContext context, bool tokenStored) {
+    return ListenableBuilder(
+      listenable: Downloads.instance,
+      builder: (context, _) {
+        final message = _loggedOut(context, tokenStored);
+        if (Downloads.instance.entries.isEmpty) return message;
+        return ListView(
+          padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 16, 16, 16),
+          children: [
+            const DownloadsSection(),
+            message,
+          ],
+        );
+      },
     );
   }
 

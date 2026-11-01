@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -6,12 +8,34 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:nami/anilist.dart';
+import 'package:nami/downloads.dart';
+import 'package:nami/engine.dart';
 import 'package:nami/platform.dart';
 import 'package:nami/screens/detail.dart';
 import 'package:nami/settings.dart';
 import 'package:nami/theme.dart';
 import 'package:nami/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// A download that never gets anywhere.
+class HeldBackend implements DownloadBackend {
+  @override
+  Future<List<String>> sources(Media media, int episode) => Completer<List<String>>().future;
+  @override
+  Future<EngineTorrent> add(String link, String dir) => throw EngineException('no');
+  @override
+  Future<void> keep(String hash, int index) async {}
+  @override
+  Future<void> pause(String hash, int index) async {}
+  @override
+  Future<KeepStats?> stats(String hash, int index) async => null;
+  @override
+  Future<void> finish(String hash, int index, String dest) async {}
+  @override
+  Future<void> unkeep(String hash, int index) async {}
+  @override
+  Future<void> saveCover(String url, String dest) async {}
+}
 
 Media full() => Media({
   'id': 195539,
@@ -257,11 +281,150 @@ void main() {
       expect(find.text('6 · Vu'), findsNothing);
     });
 
-    testWidgets('without an AniList account there is no menu', (tester) async {
+    testWidgets('without an AniList account the menu only downloads', (tester) async {
       await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400), loggedIn: false);
       await tester.longPress(find.text('Épisode 6'));
       await tester.pumpAndSettle();
       expect(find.text('Vu jusqu\'ici'), findsNothing);
+      expect(find.text('Télécharger'), findsOneWidget);
+    });
+
+    group('downloads', () {
+      late Downloads store;
+
+      setUp(() {
+        final previous = Downloads.instance;
+        store = Downloads(backend: HeldBackend())..root = Directory.systemTemp.path;
+        Downloads.instance = store;
+        addTearDown(() => Downloads.instance = previous);
+      });
+
+      testWidgets('the menu starts a download and the row says so', (tester) async {
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        await tester.longPress(find.text('Épisode 6'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Télécharger'));
+        await tester.pumpAndSettle();
+        expect(store.entry(195539, 6), isNull);
+        expect(find.text("Télécharger l'épisode 6 ?"), findsOneWidget);
+        await tester.tap(find.widgetWithText(FilledButton, 'Télécharger'));
+        await tester.pumpAndSettle();
+        expect(store.entry(195539, 6), isNotNull);
+        expect(find.text('6 · Téléchargement · 0 %'), findsOneWidget);
+        await tester.longPress(find.text('Épisode 6'));
+        await tester.pumpAndSettle();
+        expect(find.text('Annuler le téléchargement'), findsOneWidget);
+        await tester.tap(find.text('Annuler le téléchargement'));
+        await tester.pumpAndSettle();
+        expect(store.entry(195539, 6), isNotNull);
+        expect(find.text('Annuler le téléchargement ?'), findsOneWidget);
+        await tester.tap(find.text('Continuer'));
+        await tester.pumpAndSettle();
+        expect(store.entry(195539, 6), isNotNull);
+        await tester.longPress(find.text('Épisode 6'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Annuler le téléchargement'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilledButton, 'Annuler le téléchargement'));
+        await tester.pumpAndSettle();
+        expect(store.entry(195539, 6), isNull);
+      });
+
+      testWidgets('refusing the question starts nothing', (tester) async {
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        await tester.tap(find.byTooltip('Télécharger').at(5));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Annuler'));
+        await tester.pumpAndSettle();
+        expect(store.entry(195539, 6), isNull);
+      });
+
+      testWidgets('every episode has a visible download button', (tester) async {
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        expect(find.byTooltip('Télécharger'), findsNWidgets(10));
+        await tester.tap(find.byTooltip('Télécharger').at(5));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilledButton, 'Télécharger'));
+        await tester.pumpAndSettle();
+        expect(store.entry(195539, 6), isNotNull);
+        expect(find.byTooltip('Télécharger'), findsNWidgets(9));
+        await tester.tap(find.byTooltip('Mettre en pause'));
+        await tester.pump();
+        expect(store.entry(195539, 6)!.state, DownloadState.paused);
+        expect(find.text('6 · En pause · 0 %'), findsOneWidget);
+        await tester.tap(find.byTooltip('Reprendre'));
+        await tester.pump();
+        expect(store.entry(195539, 6)!.state, isNot(DownloadState.paused));
+      });
+
+      testWidgets('the menu of a running download pauses or cancels, and a paused one resumes', (tester) async {
+        final running = DownloadEntry(media: full(), episode: 6, state: DownloadState.running, done: 25, total: 100);
+        store.entries.add(running);
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        await tester.longPress(find.text('Épisode 6'));
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.text('Mettre en pause'), findsOneWidget);
+        expect(find.text('Annuler le téléchargement'), findsOneWidget);
+        await tester.tap(find.text('Mettre en pause'));
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(running.state, DownloadState.paused);
+        await tester.longPress(find.text('Épisode 6'));
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.text('Reprendre'), findsOneWidget);
+      });
+
+      testWidgets('the button also shows on the Windows episode cards', (tester) async {
+        await pumpDetail(tester, full(), desktop: true, size: const Size(1600, 2400));
+        expect(find.byTooltip('Télécharger'), findsNWidgets(10));
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('without an account the button is there too', (tester) async {
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400), loggedIn: false);
+        expect(find.byTooltip('Télécharger'), findsNWidgets(10));
+      });
+
+      testWidgets('a running download shows how far it got', (tester) async {
+        store.entries.add(DownloadEntry(media: full(), episode: 6, state: DownloadState.running, done: 25, total: 100));
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        final ring = tester.widget<CircularProgressIndicator>(find.byType(CircularProgressIndicator));
+        expect(ring.value, 0.25);
+      });
+
+      testWidgets('one tap never deletes a finished episode', (tester) async {
+        store.entries.add(DownloadEntry(media: full(), episode: 6, state: DownloadState.done, file: '1.mkv'));
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        expect(find.byTooltip('Supprimer le téléchargement'), findsNothing);
+        expect(find.byTooltip('Annuler le téléchargement'), findsNothing);
+      });
+
+      testWidgets('a stuck download retries from its button', (tester) async {
+        store.entries.add(DownloadEntry(media: full(), episode: 6, state: DownloadState.failed));
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        await tester.tap(find.byTooltip('Réessayer'));
+        await tester.pump();
+        expect(store.entry(195539, 6)!.state, isNot(DownloadState.failed));
+      });
+
+      testWidgets('a finished episode shows its icon and can be deleted', (tester) async {
+        store.entries.add(DownloadEntry(media: full(), episode: 6, state: DownloadState.done, file: '1.mkv'));
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        expect(find.byIcon(Icons.download_done), findsOneWidget);
+        await tester.longPress(find.text('Épisode 6'));
+        await tester.pumpAndSettle();
+        expect(find.text('Supprimer le téléchargement'), findsOneWidget);
+        expect(find.text('Télécharger'), findsNothing);
+      });
+
+      testWidgets('a stuck download offers to retry or delete', (tester) async {
+        store.entries.add(DownloadEntry(media: full(), episode: 6, state: DownloadState.failed));
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        expect(find.text('6 · Téléchargement bloqué'), findsOneWidget);
+        await tester.longPress(find.text('Épisode 6'));
+        await tester.pumpAndSettle();
+        expect(find.text('Réessayer'), findsOneWidget);
+        expect(find.text('Supprimer le téléchargement'), findsOneWidget);
+      });
     });
 
     testWidgets('a watched episode no longer shows where it was left', (tester) async {

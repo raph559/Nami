@@ -31,7 +31,13 @@ enum PlaybackPhase { connecting, chooseFile, playing, failed }
 /// from the screens so the full-screen player and the mini-player can both
 /// show it while it keeps playing.
 class PlaybackSession extends ChangeNotifier {
-  PlaybackSession({required this.media, required this.episode, required this.result, required this.onNext}) {
+  PlaybackSession({
+    required this.media,
+    required this.episode,
+    required this.result,
+    this.localFile,
+    required this.onNext,
+  }) {
     final native = player.platform;
     if (native is mk.NativePlayer) {
       for (final (key, value) in [
@@ -67,7 +73,10 @@ class PlaybackSession extends ChangeNotifier {
 
   final Media media;
   final int episode;
-  final TorrentResult result;
+
+  /// The torrent to stream; null when [localFile] plays instead.
+  final TorrentResult? result;
+  final String? localFile;
   final void Function(PlayerExit exit) onNext;
 
   final player = mk.Player();
@@ -130,8 +139,15 @@ class PlaybackSession extends ChangeNotifier {
   }
 
   Future<void> _start() async {
+    final local = localFile;
+    if (local != null) {
+      phase = PlaybackPhase.playing;
+      notifyListeners();
+      await player.open(mk.Media(local));
+      return;
+    }
     try {
-      final t = await Engine.instance.add(result.link);
+      final t = await Engine.instance.add(result!.link);
       if (_disposed) {
         Engine.instance.drop(t.hash);
         return;

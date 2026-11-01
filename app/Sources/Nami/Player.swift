@@ -93,7 +93,9 @@ struct TrackPanel: View {
 struct PlayerView: View {
     let media: Media
     let episode: Int
-    let result: TorrentResult
+    /// The torrent to stream; nil when `localFile` plays instead.
+    let result: TorrentResult?
+    var localFile: URL?
     var onNext: ((PlayerExit) -> Void)?
 
     @EnvironmentObject private var center: PlayerCenter
@@ -207,7 +209,7 @@ struct PlayerView: View {
 
                         switch phase {
                         case .connecting:
-                            status(icon: nil, text: t("Connexion aux pairs…", "Connecting to peers…"), detail: result.title)
+                            status(icon: nil, text: t("Connexion aux pairs…", "Connecting to peers…"), detail: result?.title ?? "")
                         case .failed(let message):
                             status(icon: "exclamationmark.triangle", text: t("Impossible de lire", "Cannot play"), detail: message)
                         case .chooseFile:
@@ -245,7 +247,7 @@ struct PlayerView: View {
         .persistentSystemOverlays(center.minimized ? .automatic : .hidden)
         .task { await start() }
         .task(id: torrent?.hash) { await pollStats() }
-        .onChange(of: keepAwake, initial: true) { _, awake in UIApplication.shared.isIdleTimerDisabled = awake }
+        .onChange(of: keepAwake, initial: true) { _, awake in KeepAwake.player = awake }
         .onChange(of: model.timeMs) { _, ms in onTime(ms) }
         .onChange(of: model.lengthMs) { _, ms in onLength(ms) }
         .onChange(of: model.ended) { _, ended in
@@ -255,21 +257,31 @@ struct PlayerView: View {
         }
         .onAppear { Orientation.set(.landscape) }
         .onDisappear {
-            UIApplication.shared.isIdleTimerDisabled = false
+            KeepAwake.player = false
             saveResume()
             countdownTask?.cancel()
             model.stop()
             Orientation.set(.portrait)
             if let hash = torrent?.hash { Task { await Engine.shared.drop(hash) } }
+            Downloads.shared.playerHash = nil
+            Downloads.shared.sessionChanged()
         }
     }
 
     // MARK: Flow
 
     private func start() async {
+        if let localFile {
+            phase = .playing
+            model.play(url: localFile)
+            scheduleHide()
+            return
+        }
+        guard let result else { return }
         do {
             let t = try await Engine.shared.add(result.link)
             torrent = t
+            Downloads.shared.playerHash = t.hash
             if let file = Engine.pick(t.files, episode: episode) {
                 play(file)
             } else {

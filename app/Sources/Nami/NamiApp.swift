@@ -28,7 +28,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     static var orientations: UIInterfaceOrientationMask = .portrait
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
-        Task { @MainActor in Engine.shared.start() }
+        Task { @MainActor in
+            Engine.shared.start()
+            _ = Downloads.shared
+        }
         return true
     }
 
@@ -49,9 +52,12 @@ enum Orientation {
 }
 
 struct RootView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var anilist = AniList.shared
     @StateObject private var extensions = ExtensionStore.shared
     @StateObject private var center = PlayerCenter.shared
+    @ObservedObject private var downloads = Downloads.shared
+    @State private var tab = 0
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.fr.rawValue
     @AppStorage("titleLanguage") private var titleLanguage = TitleLanguage.romaji.rawValue
 
@@ -60,23 +66,34 @@ struct RootView: View {
     private var language: String { "\(appLanguage)-\(titleLanguage)" }
 
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
             HomeView().id(language)
                 .tabItem { Label(t("Accueil", "Home"), systemImage: "house.fill") }
+                .tag(0)
             SearchView().id(language)
                 .tabItem { Label(t("Recherche", "Search"), systemImage: "magnifyingglass") }
+                .tag(1)
             CalendarTab().id(language)
                 .tabItem { Label(t("Calendrier", "Calendar"), systemImage: "calendar") }
+                .tag(2)
             LibraryView().id(language)
                 .tabItem { Label(t("Ma liste", "My list"), systemImage: "bookmark.fill") }
                 .badge(anilist.newEpisodes)
+                .tag(3)
             SettingsView()
                 .tabItem { Label(t("Réglages", "Settings"), systemImage: "gearshape.fill") }
+                .tag(4)
         }
+        .overlay(alignment: .bottom) {
+            DownloadBar().padding(.bottom, center.minimized ? 150 : 58)
+        }
+        .onChange(of: downloads.opened) { _, _ in tab = 3 }
+        .sheet(item: $downloads.shown) { DownloadDetails(id: $0.id) }
+        .downloadQuestions(downloads, inSheet: false)
         // Above the tabs, so it can shrink to a mini-player and keep playing.
         .overlay {
             if let session = center.session {
-                PlayerView(media: session.media, episode: session.episode, result: session.result) { exit in
+                PlayerView(media: session.media, episode: session.episode, result: session.result, localFile: session.localFile) { exit in
                     center.next(exit)
                 }
                 .id(session.id)
@@ -93,6 +110,15 @@ struct RootView: View {
         .task {
             await anilist.loadViewer()
             await extensions.refresh()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:
+                Downloads.shared.endBackground()
+                Task { await anilist.sendHeldProgress() }
+            case .background: Downloads.shared.enteredBackground()
+            default: break
+            }
         }
     }
 }

@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../anilist.dart';
+import '../downloads.dart';
 import '../mappings.dart';
 import '../platform.dart';
 import '../player_center.dart';
 import '../settings.dart';
 import '../theme.dart';
+import '../ui/downloads_section.dart';
 import '../ui/tags.dart';
 import '../widgets.dart';
 import 'home.dart' show HomeScreen;
@@ -73,6 +75,7 @@ class _DetailScreenState extends State<DetailScreen> {
     super.initState();
     // The player may have moved the AniList progress.
     PlayerCenter.instance.addListener(_onPlayer);
+    Downloads.instance.addListener(_onDownloads);
     scroll.addListener(() {
       final show = scroll.offset > 360;
       if (show != showBarButton) setState(() => showBarButton = show);
@@ -91,9 +94,12 @@ class _DetailScreenState extends State<DetailScreen> {
     _refresh();
   }
 
+  void _onDownloads() => setState(() {});
+
   @override
   void dispose() {
     PlayerCenter.instance.removeListener(_onPlayer);
+    Downloads.instance.removeListener(_onDownloads);
     scroll.dispose();
     super.dispose();
   }
@@ -526,14 +532,25 @@ class _DetailScreenState extends State<DetailScreen> {
     final ep = mappings?.episode(n);
     final runtime = ep?.runtime ?? media.json['duration'] as int?;
     final left = resume != null && runtime != null ? ((1 - resume) * runtime).round() : null;
-    final state = watched
+    final download = Downloads.instance.entry(media.id, n);
+    final fetching = download != null && download.state != DownloadState.done;
+    final state = fetching
+        ? downloadLabel(download)
+        : watched
         ? t('Vu', 'Watched')
         : resume != null
         ? (left != null
               ? t('En cours · $left min restantes', 'In progress · $left min left')
               : t('En cours', 'In progress'))
         : (isNext ? t('À voir', 'Up next') : null);
-    return (ep: ep, watched: watched, isNext: isNext, state: state, resume: resume, runtime: runtime);
+    return (
+      ep: ep,
+      watched: watched,
+      isNext: isNext,
+      state: state,
+      resume: download?.state == DownloadState.running ? download!.fraction : resume,
+      runtime: runtime,
+    );
   }
 
   /// Picture with the watched dimming, the "up next" ring, the length and how far you got.
@@ -597,25 +614,45 @@ class _DetailScreenState extends State<DetailScreen> {
     }
   }
 
+  List<(String, VoidCallback)> _downloadActions(int n) {
+    final store = Downloads.instance;
+    final d = store.entry(media.id, n);
+    final delete = t('Supprimer le téléchargement', 'Delete download');
+    return switch (d?.state) {
+      null => [(t('Télécharger', 'Download'), () => confirmDownload(context, media, n))],
+      DownloadState.queued || DownloadState.running => [
+        (t('Mettre en pause', 'Pause'), () => store.pause(d!)),
+        (t('Annuler le téléchargement', 'Cancel download'), () => confirmRemove(context, d!)),
+      ],
+      DownloadState.paused => [
+        (t('Reprendre', 'Resume'), () => store.resume(d!)),
+        (t('Annuler le téléchargement', 'Cancel download'), () => confirmRemove(context, d!)),
+      ],
+      DownloadState.failed => [(t('Réessayer', 'Retry'), () => store.retry(d!)), (delete, () => confirmRemove(context, d!))],
+      DownloadState.done => [(delete, () => confirmRemove(context, d!))],
+    };
+  }
+
   /// Opens at [at], or on [anchor] when there is no pointer (long press, menu key).
   Future<void> _episodeMenu(BuildContext anchor, int n, [Offset? at]) async {
-    if (!AniList.instance.isLoggedIn) return;
     HapticFeedback.mediumImpact();
     final box = anchor.findRenderObject()! as RenderBox;
     final screen = Overlay.of(anchor).context.findRenderObject()! as RenderBox;
     final origin = at ?? box.localToGlobal(box.size.center(Offset.zero));
     final watched = n <= media.progress;
-    final progress = await showMenu<int>(
+    final picked = await showMenu<VoidCallback>(
       context: anchor,
       position: RelativeRect.fromSize(origin & Size.zero, screen.size),
       items: [
-        PopupMenuItem(
-          value: watched ? n - 1 : n,
-          child: Text(watched ? t("Non vu à partir d'ici", 'Unwatched from here') : t("Vu jusqu'ici", 'Watched up to here')),
-        ),
+        for (final (label, action) in _downloadActions(n)) PopupMenuItem(value: action, child: Text(label)),
+        if (AniList.instance.isLoggedIn)
+          PopupMenuItem(
+            value: () => _setWatched(watched ? n - 1 : n),
+            child: Text(watched ? t("Non vu à partir d'ici", 'Unwatched from here') : t("Vu jusqu'ici", 'Watched up to here')),
+          ),
       ],
     );
-    if (progress != null) _setWatched(progress);
+    picked?.call();
   }
 
   /// Tap to watch; long press, right click or the menu key to mark as watched.
@@ -637,6 +674,51 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
+  /// Always on the row: a long press alone is too easy to miss. A finished
+  /// episode only shows its mark, so a stray tap cannot delete it.
+  Widget _downloadButton(int n, Color accent) {
+    final store = Downloads.instance;
+    final d = store.entry(media.id, n);
+    if (d?.state == DownloadState.done) {
+      return SizedBox(
+        width: 44,
+        height: 44,
+        child: Icon(Icons.download_done, size: 22, color: accent, semanticLabel: t('Téléchargé', 'Downloaded')),
+      );
+    }
+    if (d == null) {
+      return IconButton(
+        tooltip: t('Télécharger', 'Download'),
+        onPressed: () => confirmDownload(context, media, n),
+        icon: const Icon(Icons.download_outlined),
+      );
+    }
+    if (d.state == DownloadState.failed) {
+      return IconButton(
+        tooltip: t('Réessayer', 'Retry'),
+        onPressed: () => store.retry(d),
+        icon: const Icon(Icons.refresh),
+      );
+    }
+    // The ring shows how far it got, around the button that pauses it.
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        SizedBox(
+          width: 34,
+          height: 34,
+          child: CircularProgressIndicator(
+            value: d.fraction,
+            strokeWidth: 2.5,
+            color: accent,
+            backgroundColor: Nami.line,
+          ),
+        ),
+        DownloadPauseButton(d),
+      ],
+    );
+  }
+
   Widget _episodeRow(int n, Color accent) {
     final e = _episode(n);
     return _episodeTappable(
@@ -648,6 +730,7 @@ class _DetailScreenState extends State<DetailScreen> {
             _thumb(n, accent, 120, 68),
             const SizedBox(width: 14),
             Expanded(child: _episodeText(n, e, accent)),
+            _downloadButton(n, accent),
           ],
         ),
       ),
@@ -663,7 +746,13 @@ class _DetailScreenState extends State<DetailScreen> {
         children: [
           AspectRatio(aspectRatio: 16 / 9, child: _thumb(n, accent, null, double.infinity)),
           const SizedBox(height: 8),
-          _episodeText(n, e, accent),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _episodeText(n, e, accent)),
+              _downloadButton(n, accent),
+            ],
+          ),
         ],
       ),
     );
@@ -679,6 +768,8 @@ class _DetailScreenState extends State<DetailScreen> {
       children: [
         Text(
           ['$n', ?e.state].join(' · '),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: Nami.caption.copyWith(color: e.isNext || e.resume != null ? accent : Nami.textSecondary),
         ),
         const SizedBox(height: 2),

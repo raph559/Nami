@@ -9,6 +9,8 @@ import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'anilist.dart';
+import 'download_notification.dart';
+import 'downloads.dart';
 import 'engine.dart';
 import 'extensions.dart';
 import 'player_center.dart';
@@ -20,6 +22,7 @@ import 'screens/search.dart';
 import 'screens/settings_screen.dart';
 import 'platform.dart';
 import 'ui/desktop_shell.dart';
+import 'ui/downloads_section.dart';
 import 'ui/motion.dart';
 import 'settings.dart';
 import 'theme.dart';
@@ -42,6 +45,10 @@ Future<void> main() async {
   Engine.instance.start().catchError((_) => 0);
   AniList.instance.loadViewer();
   ExtensionStore.instance.refresh();
+  Downloads.instance.playerHash = () => PlayerCenter.instance.session?.torrent?.hash;
+  if (Platform.isAndroid) DownloadNotification(Downloads.instance);
+  Downloads.instance.load().catchError((_) {});
+  AppLifecycleListener(onResume: AniList.instance.sendHeldProgress);
   runApp(const NamiApp());
 }
 
@@ -60,7 +67,7 @@ class NamiApp extends StatelessWidget {
         // The mini-player floats above every page, so browsing keeps it on screen.
         // Overlay.wrap gives its tooltips an overlay above the navigator.
         builder: (context, child) => Overlay.wrap(
-          child: WindowChrome(child: Stack(children: [child!, const MiniPlayerHost()])),
+          child: WindowChrome(child: Stack(children: [child!, const MiniPlayerHost(), const DownloadBar()])),
         ),
         home: const RootScreen(),
       ),
@@ -125,6 +132,15 @@ class RootScreen extends StatefulWidget {
 
 class _RootScreenState extends State<RootScreen> {
   int tab = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    Downloads.instance.onOpen = () {
+      PlayerCenter.instance.navigatorKey.currentState?.popUntil((route) => route.isFirst);
+      _select(3);
+    };
+  }
 
   /// The calendar asks AniList for a whole week, so it waits until it is opened.
   bool _calendarOpened = false;

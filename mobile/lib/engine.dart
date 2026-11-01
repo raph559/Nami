@@ -43,11 +43,23 @@ class EngineStats {
   final int total;
 }
 
+class KeepStats {
+  KeepStats(Map<String, dynamic> j) : done = j['done'] ?? 0, total = j['total'] ?? 0, peers = j['peers'] ?? 0;
+  final int done;
+  final int total;
+  final int peers;
+}
+
 class EngineException implements Exception {
   EngineException(this.message);
   final String message;
   @override
   String toString() => message;
+}
+
+/// The torrent is playing as a stream, so it cannot be kept yet.
+class EngineBusy extends EngineException {
+  EngineBusy(super.message);
 }
 
 typedef _StartNative = Int32 Function(Pointer<Utf8>);
@@ -103,17 +115,41 @@ class Engine {
       try {
         message = (jsonDecode(res.body) as Map)['error'] ?? message;
       } catch (_) {}
-      throw EngineException(message);
+      throw res.statusCode == 409 ? EngineBusy(message) : EngineException(message);
     }
     return res.body.isEmpty ? null : jsonDecode(res.body);
   }
 
-  Future<EngineTorrent> add(String link) async {
-    final j = await _call('add', body: {'uri': link}, timeout: const Duration(seconds: 100)) as Map<String, dynamic>;
+  Future<EngineTorrent> add(String link) => _add({'uri': link});
+
+  /// Adds a torrent that survives in [dir]: the player cannot drop it.
+  Future<EngineTorrent> addKept(String link, String dir) => _add({'uri': link, 'dir': dir});
+
+  Future<EngineTorrent> _add(Map<String, dynamic> body) async {
+    final j = await _call('add', body: body, timeout: const Duration(seconds: 100)) as Map<String, dynamic>;
     return EngineTorrent(j['hash'], j['name'] ?? '', [
       for (final f in j['files'] as List) EngineFile(f['index'], f['path'], f['length']),
     ]);
   }
+
+  Future<void> keep(String hash, int index) => _call('keep/$hash/$index');
+
+  Future<KeepStats?> keepStats(String hash, int index) async {
+    try {
+      final res = await http.get(await _url('keep/$hash/$index')).timeout(const Duration(seconds: 5));
+      return res.statusCode == 200 ? KeepStats(jsonDecode(res.body)) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> pause(String hash, int index) => _call('pause/$hash/$index');
+
+  /// Moving a large file may mean copying it.
+  Future<void> finish(String hash, int index, String dest) =>
+      _call('finish/$hash/$index', body: {'dest': dest}, timeout: const Duration(minutes: 5));
+
+  Future<void> unkeep(String hash, int index) => _call('unkeep/$hash/$index');
 
   Future<EngineStats?> stats(String hash) async {
     try {

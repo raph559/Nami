@@ -416,6 +416,7 @@ class AniList extends ChangeNotifier {
           ))['Viewer'],
         );
         viewerFailed = false;
+        sendHeldProgress();
       } catch (_) {
         // Still logged in: a failed refresh keeps what is on screen, and the
         // screens offer to try again when there is no profile yet.
@@ -443,11 +444,50 @@ class AniList extends ChangeNotifier {
   Future<void> setProgress(Media media, int episode) async {
     if (!isLoggedIn || media.progress >= episode) return;
     final status = (media.episodes != null && episode >= media.episodes!) ? 'COMPLETED' : 'CURRENT';
-    await query(
-      r'mutation($id: Int, $p: Int, $s: MediaListStatus) { SaveMediaListEntry(mediaId: $id, progress: $p, status: $s) { progress } }',
-      {'id': media.id, 'p': episode, 's': status},
-    );
+    try {
+      await query(
+        r'mutation($id: Int, $p: Int, $s: MediaListStatus) { SaveMediaListEntry(mediaId: $id, progress: $p, status: $s) { progress } }',
+        {'id': media.id, 'p': episode, 's': status},
+      );
+    } catch (_) {
+      _holdProgress(media.id, episode);
+      rethrow;
+    }
     _listChanged();
+  }
+
+  static const _heldKey = 'heldProgress';
+
+  Map<String, dynamic> get _held {
+    final raw = AppSettings.instance.prefs.getString(_heldKey);
+    return raw == null ? {} : Map<String, dynamic>.from(jsonDecode(raw));
+  }
+
+  /// With no network, a watched episode waits here until AniList can be reached.
+  void _holdProgress(int mediaId, int episode) {
+    final held = _held;
+    if ((held['$mediaId'] as int? ?? 0) >= episode) return;
+    held['$mediaId'] = episode;
+    AppSettings.instance.prefs.setString(_heldKey, jsonEncode(held));
+  }
+
+  bool _sendingHeld = false;
+
+  /// Sends what was watched with no network; the rest waits for the next try.
+  Future<void> sendHeldProgress() async {
+    if (_sendingHeld || !isLoggedIn) return;
+    _sendingHeld = true;
+    try {
+      for (final MapEntry(:key, :value) in _held.entries) {
+        final media = await this.media(int.parse(key));
+        await setProgress(media, value as int);
+        final held = _held..remove(key);
+        AppSettings.instance.prefs.setString(_heldKey, jsonEncode(held));
+      }
+    } catch (_) {
+    } finally {
+      _sendingHeld = false;
+    }
   }
 
   /// The viewer's whole anime list, grouped by status (custom lists left out).

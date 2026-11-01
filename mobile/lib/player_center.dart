@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'anilist.dart';
+import 'downloads.dart';
 import 'extensions.dart';
 import 'playback.dart';
 import 'screens/player.dart';
@@ -32,17 +33,23 @@ class PlayerCenter extends ChangeNotifier {
   NavigatorState? get _nav => navigatorKey.currentState;
 
   /// Opens the sources for [episode]; with [autoPick] the recommended one plays
-  /// as soon as it is known (after the next-episode countdown).
+  /// as soon as it is known (after the next-episode countdown). A downloaded
+  /// episode plays straight from the device.
   Future<void> openSources(Media media, int episode, {bool autoPick = false}) async {
+    final local = Downloads.instance.localPath(media.id, episode);
+    if (local != null) {
+      play(media, episode, null, localFile: local);
+      return;
+    }
     final context = navigatorKey.currentContext;
     if (context == null) return;
     final result = await pickSource(context, media, episode, autoPick: autoPick);
     if (result != null) play(media, episode, result);
   }
 
-  void play(Media media, int episode, TorrentResult result) {
+  void play(Media media, int episode, TorrentResult? result, {String? localFile}) {
     _dropSession();
-    session = PlaybackSession(media: media, episode: episode, result: result, onNext: next);
+    session = PlaybackSession(media: media, episode: episode, result: result, localFile: localFile, onNext: next);
     minimized = false;
     notifyListeners();
     _showFull();
@@ -124,5 +131,6 @@ class PlayerCenter extends ChangeNotifier {
   void _dropSession() {
     session?.dispose();
     session = null;
+    Downloads.instance.sessionChanged();
   }
 }
