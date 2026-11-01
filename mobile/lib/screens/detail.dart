@@ -9,6 +9,7 @@ import '../player_center.dart';
 import '../settings.dart';
 import '../theme.dart';
 import '../ui/downloads_section.dart';
+import '../ui/motion.dart';
 import '../ui/tags.dart';
 import '../widgets.dart';
 import 'home.dart' show HomeScreen;
@@ -691,6 +692,20 @@ class _DetailScreenState extends State<DetailScreen> {
   /// Always on the row: a long press alone is too easy to miss. A finished
   /// episode only shows its mark, so a stray tap cannot delete it.
   Widget _downloadButton(int n, Color accent) {
+    final state = Downloads.instance.entry(media.id, n)?.state;
+    final going = state == DownloadState.running || state == DownloadState.queued || state == DownloadState.paused;
+    return AnimatedSwitcher(
+      duration: Motion.of(context).medium,
+      switchInCurve: Motion.curve,
+      transitionBuilder: (child, animation) => ScaleTransition(
+        scale: Tween(begin: 0.7, end: 1.0).animate(animation),
+        child: FadeTransition(opacity: animation, child: child),
+      ),
+      child: KeyedSubtree(key: ValueKey(going ? 'going' : state), child: _downloadControl(n, accent)),
+    );
+  }
+
+  Widget _downloadControl(int n, Color accent) {
     final store = Downloads.instance;
     final d = store.entry(media.id, n);
     if (d?.state == DownloadState.done) {
@@ -721,11 +736,14 @@ class _DetailScreenState extends State<DetailScreen> {
         SizedBox(
           width: 34,
           height: 34,
-          child: CircularProgressIndicator(
+          child: SmoothProgress(
             value: d.fraction,
-            strokeWidth: 2.5,
-            color: accent,
-            backgroundColor: Nami.line,
+            builder: (context, value) => CircularProgressIndicator(
+              value: value,
+              strokeWidth: 2.5,
+              color: accent,
+              backgroundColor: Nami.line,
+            ),
           ),
         ),
         DownloadPauseButton(d),

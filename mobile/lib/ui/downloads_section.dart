@@ -10,6 +10,7 @@ import '../screens/sources.dart';
 import '../settings.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'motion.dart';
 
 /// After this many seconds with no data, "time left" means nothing.
 const _quietLimit = 15;
@@ -40,6 +41,23 @@ String downloadLabel(DownloadEntry e) {
     DownloadState.failed => t('Téléchargement bloqué', 'Download stuck'),
     DownloadState.done => formatBytes(e.total),
   };
+}
+
+/// Eases progress between two readings, a second apart, so it never jumps.
+class SmoothProgress extends StatelessWidget {
+  const SmoothProgress({super.key, required this.value, required this.builder});
+  final double value;
+  final Widget Function(BuildContext context, double value) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final still = Motion.of(context).medium == Duration.zero;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: value),
+      duration: still ? Duration.zero : const Duration(seconds: 1),
+      builder: (context, shown, _) => builder(context, shown),
+    );
+  }
 }
 
 /// Opens the downloads from anywhere, even from above the navigator.
@@ -244,7 +262,10 @@ class _DownloadDetails extends StatelessWidget {
                 style: Nami.meta,
               ),
               const SizedBox(height: 14),
-              ProgressLine(value: done ? 1 : e.fraction, color: Nami.text),
+              SmoothProgress(
+                value: done ? 1 : e.fraction,
+                builder: (context, value) => ProgressLine(value: value, color: Nami.text),
+              ),
               const SizedBox(height: 8),
               Text(_figures(e), style: Nami.caption),
               const SizedBox(height: 18),
@@ -326,7 +347,11 @@ class DownloadPauseButton extends StatelessWidget {
     return IconButton(
       tooltip: paused ? t('Reprendre', 'Resume') : t('Mettre en pause', 'Pause'),
       onPressed: () => paused ? Downloads.instance.resume(entry) : Downloads.instance.pause(entry),
-      icon: Icon(paused ? Icons.play_arrow : Icons.pause),
+      icon: AnimatedSwitcher(
+        duration: Motion.of(context).fast,
+        transitionBuilder: (child, animation) => ScaleTransition(scale: animation, child: child),
+        child: Icon(paused ? Icons.play_arrow : Icons.pause, key: ValueKey(paused)),
+      ),
     );
   }
 }
@@ -346,70 +371,92 @@ class DownloadBar extends StatelessWidget {
       listenable: Listenable.merge([Downloads.instance, center]),
       builder: (context, _) {
         final store = Downloads.instance;
-        final e = store.current;
-        if (e == null || (center.session != null && !center.minimized)) return const SizedBox.shrink();
+        final motion = Motion.of(context);
+        final e = center.session != null && !center.minimized ? null : store.current;
         final wide = MediaQuery.sizeOf(context).width >= 900;
         final inset = MediaQuery.paddingOf(context).bottom;
-        return Positioned(
+        return AnimatedPositioned(
+          duration: motion.medium,
+          curve: Motion.curve,
           left: wide ? null : 8,
           right: wide ? 16 : 8,
           bottom: (wide ? 16 : inset + 76) + (center.minimized ? _miniHeight : 0),
           width: wide ? 380 : null,
-          child: Material(
-            color: const Color(0xFF1B1B1E),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: Nami.line),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: () {
-                // The bar sits above the navigator, so the sheet opens from the navigator.
-                final page = center.navigatorKey.currentContext;
-                if (page != null) showDownloadDetails(page, e);
-              },
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
-                    child: Row(
-                      children: [
-                        Icon(Icons.downloading, size: 22, color: Nami.textSecondary),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${e.media.title.display} · ${t('Épisode ${e.episode}', 'Episode ${e.episode}')}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Nami.body.copyWith(fontSize: 13),
-                              ),
-                              Text(
-                                [
-                                  downloadLabel(e),
-                                  if (store.waiting > 0) t('${store.waiting} en attente', '${store.waiting} waiting'),
-                                ].join(' · '),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Nami.caption,
-                              ),
-                            ],
-                          ),
-                        ),
-                        DownloadPauseButton(e),
-                      ],
-                    ),
-                  ),
-                  ProgressLine(value: e.fraction, color: Nami.text),
-                ],
+          child: AnimatedSwitcher(
+            duration: motion.medium,
+            switchInCurve: Motion.curve,
+            switchOutCurve: Motion.curve,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween(begin: const Offset(0, 0.5), end: Offset.zero).animate(animation),
+                child: child,
               ),
             ),
+            child: e == null ? const SizedBox.shrink(key: ValueKey('none')) : _bar(context, store, e),
           ),
         );
       },
+    );
+  }
+
+  Widget _bar(BuildContext context, Downloads store, DownloadEntry e) {
+    return Material(
+      key: const ValueKey('bar'),
+      color: const Color(0xFF1B1B1E),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Nami.line),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () {
+          // The bar sits above the navigator, so the sheet opens from the navigator.
+          final page = PlayerCenter.instance.navigatorKey.currentContext;
+          if (page != null) showDownloadDetails(page, e);
+        },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+              child: Row(
+                children: [
+                  Icon(Icons.downloading, size: 22, color: Nami.textSecondary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${e.media.title.display} · ${t('Épisode ${e.episode}', 'Episode ${e.episode}')}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Nami.body.copyWith(fontSize: 13),
+                        ),
+                        Text(
+                          [
+                            downloadLabel(e),
+                            if (store.waiting > 0) t('${store.waiting} en attente', '${store.waiting} waiting'),
+                          ].join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Nami.caption,
+                        ),
+                      ],
+                    ),
+                  ),
+                  DownloadPauseButton(e),
+                ],
+              ),
+            ),
+            SmoothProgress(
+              value: e.fraction,
+              builder: (context, value) => ProgressLine(value: value, color: Nami.text),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -490,7 +537,7 @@ class DownloadsSection extends StatelessWidget {
                 style: Nami.section,
               ),
               const SizedBox(height: 8),
-              for (final e in store.entries) _DownloadRow(e),
+              for (final e in store.entries) _DownloadRow(e, key: ValueKey(e)),
             ],
           ),
         );
@@ -550,7 +597,7 @@ class DownloadsScreen extends StatelessWidget {
                       const SizedBox(height: 18),
                       Text(t('En cours', 'In progress'), style: Nami.section),
                       const SizedBox(height: 4),
-                      for (final e in active) _DownloadRow(e),
+                      _Growing(children: [for (final e in active) _DownloadRow(e, key: ValueKey(e))]),
                     ],
                     if (queue.isNotEmpty) ...[
                       const SizedBox(height: 18),
@@ -564,7 +611,7 @@ class DownloadsScreen extends StatelessWidget {
                         onReorderItem: store.reorder,
                         itemBuilder: (context, i) => _DownloadRow(
                           queue[i],
-                          key: ValueKey('${queue[i].media.id}-${queue[i].episode}'),
+                          key: ValueKey(queue[i]),
                           dragIndex: i,
                         ),
                       ),
@@ -573,13 +620,34 @@ class DownloadsScreen extends StatelessWidget {
                       const SizedBox(height: 18),
                       Text(media.title.display, style: Nami.section),
                       const SizedBox(height: 4),
-                      for (final e in done)
-                        if (e.media.id == media.id) _DownloadRow(e),
+                      _Growing(
+                        children: [
+                          for (final e in done)
+                            if (e.media.id == media.id) _DownloadRow(e, key: ValueKey(e)),
+                        ],
+                      ),
                     ],
                   ],
                 ),
         );
       },
+    );
+  }
+}
+
+/// A list of rows that eases to its new height when one comes or goes.
+class _Growing extends StatelessWidget {
+  const _Growing({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final motion = Motion.of(context);
+    return AnimatedSize(
+      duration: motion.medium,
+      curve: Motion.curve,
+      alignment: Alignment.topCenter,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
     );
   }
 }
@@ -597,7 +665,7 @@ class _DownloadRow extends StatelessWidget {
     final store = Downloads.instance;
     final cover = File(store.coverPath(e.media.id));
     final done = e.state == DownloadState.done;
-    return FocusOutline(
+    final row = FocusOutline(
       radius: Nami.radiusImage,
       child: InkWell(
         onTap: () => done ? PlayerCenter.instance.openSources(e.media, e.episode) : showDownloadDetails(context, e),
@@ -637,7 +705,10 @@ class _DownloadRow extends StatelessWidget {
                     if (e.state == DownloadState.running)
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
-                        child: ProgressLine(value: e.fraction, color: Nami.text),
+                        child: SmoothProgress(
+                          value: e.fraction,
+                          builder: (context, value) => ProgressLine(value: value, color: Nami.text),
+                        ),
                       ),
                   ],
                 ),
@@ -672,6 +743,14 @@ class _DownloadRow extends StatelessWidget {
           ),
         ),
       ),
+    );
+    // A row fades in once, when it arrives.
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: Motion.of(context).medium,
+      curve: Motion.curve,
+      child: row,
+      builder: (context, shown, child) => Opacity(opacity: shown, child: child),
     );
   }
 }

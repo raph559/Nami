@@ -11,6 +11,7 @@ struct MediaDetailView: View {
     @State private var saveFailed = false
     @EnvironmentObject private var center: PlayerCenter
     @ObservedObject private var downloads = Downloads.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var progress: Int { media.mediaListEntry?.progress ?? 0 }
     private var nextEpisode: Int {
@@ -232,6 +233,9 @@ struct MediaDetailView: View {
                 }
             }
             downloadButton(n, accent: accent)
+                .transition(.scale(scale: 0.7).combined(with: .opacity))
+                .id(download.map { $0.state == .done || $0.state == .failed ? "\($0.state)" : "going" } ?? "none")
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: download?.state)
         }
     }
 
@@ -255,11 +259,7 @@ struct MediaDetailView: View {
                 DownloadPauseButton(entry: d)
                     .font(.caption)
                     .background {
-                        ZStack {
-                            Circle().stroke(.white.opacity(0.2), lineWidth: 2.5)
-                            Circle().trim(from: 0, to: d.fraction).stroke(accent, lineWidth: 2.5).rotationEffect(.degrees(-90))
-                        }
-                        .frame(width: 30, height: 30)
+                        DownloadRing(value: d.fraction, color: accent).frame(width: 30, height: 30)
                     }
             }
         case nil:

@@ -257,6 +257,23 @@ void main() {
       expect(find.byTooltip('Reprendre'), findsOneWidget);
     });
 
+    testWidgets('the bar eases away instead of vanishing', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: Nami.theme(),
+          builder: (context, child) => Overlay.wrap(child: Stack(children: [child!, const DownloadBar()])),
+          home: const Scaffold(body: Text('page')),
+        ),
+      );
+      expect(find.text('Gardé · Épisode 2'), findsOneWidget);
+      await Downloads.instance.remove(Downloads.instance.entry(9, 2)!);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(find.text('Gardé · Épisode 2'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.text('Gardé · Épisode 2'), findsNothing);
+    });
+
     testWidgets('deleting from the list asks, then removes the entry', (tester) async {
       await pumpScreen(tester);
       await tester.tap(find.byTooltip('Annuler le téléchargement'));

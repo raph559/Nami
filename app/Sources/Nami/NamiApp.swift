@@ -53,6 +53,7 @@ enum Orientation {
 
 struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var anilist = AniList.shared
     @StateObject private var extensions = ExtensionStore.shared
     @StateObject private var center = PlayerCenter.shared
@@ -80,6 +81,8 @@ struct RootView: View {
         }
         .overlay(alignment: .bottom) {
             DownloadBar().padding(.bottom, center.minimized ? 150 : 58)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: downloads.current?.id)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: center.minimized)
         }
         .sheet(item: Binding(get: { downloads.screenShown ? nil : downloads.shown }, set: { downloads.shown = $0 })) {
             DownloadDetails(id: $0.id)

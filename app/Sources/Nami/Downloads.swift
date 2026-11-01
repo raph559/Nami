@@ -638,7 +638,7 @@ struct DownloadDetails: View {
                     Text("\(t("Épisode \(e.episode)", "Episode \(e.episode)")) · \(e.label)")
                         .font(.subheadline).foregroundStyle(Nami.textSecondary)
                 }
-                ProgressLine(value: e.state == .done ? 1 : e.fraction, color: Nami.text)
+                SmoothProgressLine(value: e.state == .done ? 1 : e.fraction)
                 Text(figures(e)).font(.caption).foregroundStyle(Nami.textSecondary)
                 HStack(spacing: 10) {
                     main(e)
@@ -686,9 +686,37 @@ struct DownloadDetails: View {
     }
 }
 
+/// Eases progress between two readings, a second apart, so it never jumps.
+struct SmoothProgressLine: View {
+    let value: Double
+    var color: Color = Nami.text
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ProgressLine(value: value, color: color)
+            .animation(reduceMotion ? nil : .linear(duration: 1), value: value)
+    }
+}
+
+/// The same around a button.
+struct DownloadRing: View {
+    let value: Double
+    let color: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(.white.opacity(0.2), lineWidth: 2.5)
+            Circle().trim(from: 0, to: value).stroke(color, lineWidth: 2.5).rotationEffect(.degrees(-90))
+                .animation(reduceMotion ? nil : .linear(duration: 1), value: value)
+        }
+    }
+}
+
 /// Pauses what is going, resumes what is paused.
 struct DownloadPauseButton: View {
     let entry: DownloadEntry
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let paused = entry.state == .paused
@@ -696,6 +724,8 @@ struct DownloadPauseButton: View {
             if paused { Downloads.shared.resume(entry) } else { Downloads.shared.pause(entry) }
         } label: {
             Image(systemName: paused ? "play.fill" : "pause.fill").frame(width: 44, height: 44)
+                .contentTransition(.symbolEffect(.replace))
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: paused)
         }
         .accessibilityLabel(paused ? t("Reprendre", "Resume") : t("Mettre en pause", "Pause"))
     }
@@ -726,12 +756,13 @@ struct DownloadBar: View {
                     DownloadPauseButton(entry: e)
                 }
                 .padding(.leading, 12)
-                ProgressLine(value: e.fraction, color: Nami.text)
+                SmoothProgressLine(value: e.fraction)
             }
             .foregroundStyle(Nami.text)
             .background(Nami.sheet, in: RoundedRectangle(cornerRadius: 12))
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .padding(.horizontal, 8)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
 
@@ -775,6 +806,7 @@ struct DownloadsLink: View {
 struct DownloadsView: View {
     @ObservedObject private var store = Downloads.shared
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var active: [DownloadEntry] { store.entries.filter { $0.state != .done && $0.state != .queued } }
     private var done: [DownloadEntry] { store.entries.filter { $0.state == .done } }
@@ -820,6 +852,7 @@ struct DownloadsView: View {
                 }
             }
             .scrollContentBackground(.hidden)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: store.entries.map { "\($0.id)-\($0.state)" })
             // Always on, so the drag handles of the queue always show.
             .environment(\.editMode, .constant(.active))
             .navigationTitle(t("Téléchargements", "Downloads"))
@@ -884,7 +917,7 @@ private struct DownloadRow: View {
                         Text(e.media.title.display).font(.subheadline).lineLimit(1)
                         Text("\(t("Épisode \(e.episode)", "Episode \(e.episode)")) · \(e.label)")
                             .font(.caption).foregroundStyle(Nami.textSecondary).lineLimit(2)
-                        if e.state == .running { ProgressLine(value: e.fraction, color: Nami.text) }
+                        if e.state == .running { SmoothProgressLine(value: e.fraction) }
                     }
                     Spacer(minLength: 0)
                 }
