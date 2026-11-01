@@ -151,7 +151,15 @@ struct MediaDetailView: View {
 
     private var episodes: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(t("Épisodes", "Episodes")).font(.title3.bold()).padding(.top, 6)
+            HStack {
+                Text(t("Épisodes", "Episodes")).font(.title3.bold())
+                Spacer(minLength: 0)
+                if downloads.missing(media).count > 1 {
+                    Button(t("Télécharger la saison", "Download season"), systemImage: "arrow.down.circle") { downloads.askSeason(media) }
+                        .font(.footnote)
+                }
+            }
+            .padding(.top, 6)
             if media.availableEpisodes == 0 {
                 Text(t("Aucun épisode diffusé pour l'instant.", "No episode has aired yet.")).font(.footnote).foregroundStyle(.secondary)
             } else {

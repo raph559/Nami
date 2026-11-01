@@ -177,7 +177,7 @@ struct LibraryView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
                             ProfileHeader(viewer: viewer)
-                            DownloadsSection().padding(.horizontal)
+                            DownloadsLink().padding(.horizontal)
                             statusChips
                             content
                         }
@@ -189,7 +189,7 @@ struct LibraryView: View {
                     // With no profile (logged out, or AniList out of reach) downloads still show.
                     ScrollView {
                         VStack(spacing: 20) {
-                            DownloadsSection().padding(.horizontal)
+                            DownloadsLink().padding(.horizontal).padding(.top, 60)
                             if anilist.isLoggedIn {
                                 ProfileRetry().padding(32)
                             } else {

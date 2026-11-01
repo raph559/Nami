@@ -317,7 +317,7 @@ class SourceSearch {
   final results = <TorrentResult>[];
   final failures = <SourceFailure>[];
 
-  static Future<SourceSearch> run(Media media, int episode) async {
+  static Future<SourceSearch> run(Media media, int episode, {String? resolution}) async {
     final maps = await Mappings.load(media.id);
     final ep = maps?.episode(episode);
     final query = <String, dynamic>{
@@ -325,7 +325,7 @@ class SourceSearch {
       'titles': {...media.title.all, ...media.synonyms}.toList(),
       'episode': episode,
       'episodeCount': media.episodes ?? media.availableEpisodes,
-      'resolution': AppSettings.instance.resolution,
+      'resolution': resolution ?? AppSettings.instance.resolution,
       'exclusions': <String>[],
       'media': media.json,
       'malId': ?media.idMal,

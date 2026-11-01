@@ -33,6 +33,27 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Quality of downloads, apart from streaming: a phone may keep 720p and stream 1080p.
+  String get downloadResolution => _prefs.getString('downloadResolution') ?? resolution;
+  set downloadResolution(String v) {
+    _prefs.setString('downloadResolution', v);
+    notifyListeners();
+  }
+
+  /// Holds downloads while on mobile data.
+  bool get downloadWifiOnly => _prefs.getBool('downloadWifiOnly') ?? false;
+  set downloadWifiOnly(bool v) {
+    _prefs.setBool('downloadWifiOnly', v);
+    notifyListeners();
+  }
+
+  /// Bytes per second; 0 for no limit.
+  int get downloadLimit => _prefs.getInt('downloadLimit') ?? 0;
+  set downloadLimit(int v) {
+    _prefs.setInt('downloadLimit', v);
+    notifyListeners();
+  }
+
   String get resolution => _prefs.getString('resolution') ?? '1080';
   set resolution(String v) {
     _prefs.setString('resolution', v);

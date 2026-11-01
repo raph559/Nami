@@ -462,12 +462,26 @@ class _DetailScreenState extends State<DetailScreen> {
     if (media.isMovie) return const SizedBox(height: 32);
     final accent = Nami.accentOf(media.color);
     final side = desktop ? MediaQuery.paddingOf(context).left + 24 : 20.0;
+    final title = Semantics(
+      header: true,
+      child: Text(t('Épisodes', 'Episodes'), style: desktop ? Nami.section.copyWith(fontSize: 15) : Nami.section),
+    );
     final header = Padding(
       padding: EdgeInsets.fromLTRB(side, desktop ? 32 : 0, side, 12),
-      child: Semantics(
-        header: true,
-        child: Text(t('Épisodes', 'Episodes'), style: desktop ? Nami.section.copyWith(fontSize: 15) : Nami.section),
-      ),
+      child: Downloads.instance.missing(media).length > 1
+          ? Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              children: [
+                title,
+                TextButton.icon(
+                  onPressed: () => confirmSeason(context, media),
+                  icon: const Icon(Icons.download_outlined, size: 18),
+                  label: Text(t('Télécharger la saison', 'Download season')),
+                ),
+              ],
+            )
+          : title,
     );
     if (media.availableEpisodes == 0) {
       return Transform.translate(

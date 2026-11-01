@@ -57,7 +57,6 @@ struct RootView: View {
     @StateObject private var extensions = ExtensionStore.shared
     @StateObject private var center = PlayerCenter.shared
     @ObservedObject private var downloads = Downloads.shared
-    @State private var tab = 0
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.fr.rawValue
     @AppStorage("titleLanguage") private var titleLanguage = TitleLanguage.romaji.rawValue
 
@@ -66,30 +65,27 @@ struct RootView: View {
     private var language: String { "\(appLanguage)-\(titleLanguage)" }
 
     var body: some View {
-        TabView(selection: $tab) {
+        TabView {
             HomeView().id(language)
                 .tabItem { Label(t("Accueil", "Home"), systemImage: "house.fill") }
-                .tag(0)
             SearchView().id(language)
                 .tabItem { Label(t("Recherche", "Search"), systemImage: "magnifyingglass") }
-                .tag(1)
             CalendarTab().id(language)
                 .tabItem { Label(t("Calendrier", "Calendar"), systemImage: "calendar") }
-                .tag(2)
             LibraryView().id(language)
                 .tabItem { Label(t("Ma liste", "My list"), systemImage: "bookmark.fill") }
                 .badge(anilist.newEpisodes)
-                .tag(3)
             SettingsView()
                 .tabItem { Label(t("Réglages", "Settings"), systemImage: "gearshape.fill") }
-                .tag(4)
         }
         .overlay(alignment: .bottom) {
             DownloadBar().padding(.bottom, center.minimized ? 150 : 58)
         }
-        .onChange(of: downloads.opened) { _, _ in tab = 3 }
-        .sheet(item: $downloads.shown) { DownloadDetails(id: $0.id) }
-        .downloadQuestions(downloads, inSheet: false)
+        .sheet(item: Binding(get: { downloads.screenShown ? nil : downloads.shown }, set: { downloads.shown = $0 })) {
+            DownloadDetails(id: $0.id)
+        }
+        .sheet(isPresented: $downloads.screenShown) { DownloadsView().environmentObject(center) }
+        .downloadQuestions(downloads, level: 0)
         // Above the tabs, so it can shrink to a mini-player and keep playing.
         .overlay {
             if let session = center.session {

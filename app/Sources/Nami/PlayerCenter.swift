@@ -20,6 +20,8 @@ final class PlayerCenter: ObservableObject {
         var episode: Int
         /// Opened by the countdown: play the recommended source without asking.
         var autoPick = false
+        /// The source picked is downloaded rather than played.
+        var forDownload = false
         var id: String { "\(media.id)-\(episode)" }
     }
 
@@ -30,17 +32,21 @@ final class PlayerCenter: ObservableObject {
     @Published private(set) var finished = 0
 
     /// A downloaded episode plays straight from the device.
-    func openSources(_ media: Media, episode: Int, autoPick: Bool = false) {
-        if let file = Downloads.shared.localURL(media.id, episode) {
+    func openSources(_ media: Media, episode: Int, autoPick: Bool = false, forDownload: Bool = false) {
+        if let file = Downloads.shared.localURL(media.id, episode), !forDownload {
             play(media, episode: episode, result: nil, localFile: file)
             return
         }
-        sources = SourcesRequest(media: media, episode: episode, autoPick: autoPick)
+        sources = SourcesRequest(media: media, episode: episode, autoPick: autoPick, forDownload: forDownload)
     }
 
     /// Called by the sources sheet: the sheet closes first, then the player opens.
     func picked(_ result: TorrentResult, for request: SourcesRequest) {
         sources = nil
+        if request.forDownload {
+            Downloads.shared.start(request.media, episode: request.episode, link: result.link)
+            return
+        }
         Task {
             try? await Task.sleep(for: .milliseconds(350))
             play(request.media, episode: request.episode, result: result)

@@ -38,5 +38,5 @@
 
 - [x] Airing calendar for your list.
 - [ ] Notifications when a new episode of an anime on your list airs.
-- [x] Offline downloads, one episode at a time.
+- [x] Offline downloads, with a queue, quality choice, Wi-Fi only and a speed limit.
 

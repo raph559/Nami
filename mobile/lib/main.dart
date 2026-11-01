@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:device_preview/device_preview.dart';
 import 'package:device_preview/presets.dart';
 import 'package:flutter/foundation.dart';
@@ -47,9 +48,22 @@ Future<void> main() async {
   ExtensionStore.instance.refresh();
   Downloads.instance.playerHash = () => PlayerCenter.instance.session?.torrent?.hash;
   if (Platform.isAndroid) DownloadNotification(Downloads.instance);
+  _watchNetwork();
   Downloads.instance.load().catchError((_) {});
   AppLifecycleListener(onResume: AniList.instance.sendHeldProgress);
   runApp(const NamiApp());
+}
+
+/// Tells the downloads when only mobile data is left.
+void _watchNetwork() {
+  void update(List<ConnectivityResult> network) => Downloads.instance.networkChanged(
+    cellular:
+        network.contains(ConnectivityResult.mobile) &&
+        !network.contains(ConnectivityResult.wifi) &&
+        !network.contains(ConnectivityResult.ethernet),
+  );
+  Connectivity().checkConnectivity().then(update).catchError((_) {});
+  Connectivity().onConnectivityChanged.listen(update, onError: (_) {});
 }
 
 class NamiApp extends StatelessWidget {
@@ -136,10 +150,7 @@ class _RootScreenState extends State<RootScreen> {
   @override
   void initState() {
     super.initState();
-    Downloads.instance.onOpen = () {
-      PlayerCenter.instance.navigatorKey.currentState?.popUntil((route) => route.isFirst);
-      _select(3);
-    };
+    Downloads.instance.onOpen = openDownloads;
   }
 
   /// The calendar asks AniList for a whole week, so it waits until it is opened.

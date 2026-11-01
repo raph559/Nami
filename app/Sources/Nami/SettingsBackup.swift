@@ -10,7 +10,7 @@ import Foundation
 enum SettingsBackup {
     private static let keys = [
         "extensionRepos", "installedExtensions", "anilistToken",
-        "appLanguage", "titleLanguage", "resolution",
+        "appLanguage", "titleLanguage", "resolution", "downloadResolution", "downloadWifiOnly", "downloadLimit",
         "autoSkip", "autoNext", "seekStep", "subtitleLanguage", "subtitleSize", "recent",
     ]
 

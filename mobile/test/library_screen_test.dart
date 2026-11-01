@@ -104,6 +104,18 @@ void main() {
       'episodes': 12,
     });
 
+    Future<void> pumpScreen(WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({'appLanguage': 'fr'});
+      await AppSettings.load();
+      debugDesktopOverride = false;
+      addTearDown(() => debugDesktopOverride = null);
+      tester.view.physicalSize = const Size(390, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(theme: Nami.theme(), home: const DownloadsScreen()));
+      await tester.pump();
+    }
+
     setUp(() {
       final previous = Downloads.instance;
       Downloads.instance = Downloads()
@@ -116,13 +128,80 @@ void main() {
       addTearDown(() => Downloads.instance = previous);
     });
 
-    testWidgets('the section lists every download with its state', (tester) async {
+    testWidgets('the link says what is there and opens the screen', (tester) async {
       await pumpLibrary(tester, desktop: false);
-      expect(find.text('Téléchargements · 300 MB'), findsOneWidget);
+      expect(find.text('2 en cours · 300 MB'), findsOneWidget);
+      await tester.tap(find.text('Téléchargements'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DownloadsScreen), findsOneWidget);
+    });
+
+    testWidgets('the screen lists active downloads then what is kept, by anime', (tester) async {
+      await pumpScreen(tester);
+      expect(find.text('3 épisodes · 300 MB utilisés'), findsOneWidget);
+      expect(find.text('En cours'), findsOneWidget);
       expect(find.text('Épisode 1 · 300 MB'), findsOneWidget);
       expect(find.text('Épisode 2 · Téléchargement · 25 %'), findsOneWidget);
       expect(find.text('Épisode 3 · Téléchargement bloqué'), findsOneWidget);
       expect(find.byTooltip('Réessayer'), findsOneWidget);
+      expect(tester.getTopLeft(find.text('En cours')).dy, lessThan(tester.getTopLeft(find.text('Épisode 1 · 300 MB')).dy));
+    });
+
+    testWidgets('pause all and resume all come and go', (tester) async {
+      await pumpScreen(tester);
+      await tester.tap(find.text('Tout mettre en pause'));
+      await tester.pump();
+      expect(find.text('Tout mettre en pause'), findsNothing);
+      expect(find.text('Tout reprendre'), findsOneWidget);
+    });
+
+    testWidgets('the running row shows the time left and speed', (tester) async {
+      final e = Downloads.instance.entry(9, 2)!
+        ..speed = 1000000
+        ..total = 600000000
+        ..done = 300000000;
+      await pumpScreen(tester);
+      expect(find.text('Épisode 2 · Téléchargement · 50 % · 5 min restantes · 1.0 MB/s'), findsOneWidget);
+      e.quiet = 20;
+      Downloads.instance.networkChanged();
+      await tester.pump();
+      expect(find.text('Épisode 2 · Téléchargement · 50 % · En attente de pairs'), findsOneWidget);
+    });
+
+    testWidgets('waiting rows can be dragged', (tester) async {
+      Downloads.instance.entries.addAll([
+        DownloadEntry(media: downloaded(), episode: 4),
+        DownloadEntry(media: downloaded(), episode: 5),
+      ]);
+      await pumpScreen(tester);
+      expect(find.byIcon(Icons.drag_handle), findsNWidgets(2));
+      final drag = await tester.startGesture(tester.getCenter(find.byIcon(Icons.drag_handle).last));
+      await tester.pump(const Duration(milliseconds: 100));
+      for (var i = 0; i < 12; i++) {
+        await drag.moveBy(const Offset(0, -20));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(Downloads.instance.queue.map((e) => e.episode), [5, 4]);
+    });
+
+    testWidgets('an empty screen says how to start', (tester) async {
+      Downloads.instance.entries.clear();
+      await pumpScreen(tester);
+      expect(find.text('Aucun téléchargement'), findsOneWidget);
+    });
+
+    testWidgets('changing the quality asks first', (tester) async {
+      await pumpScreen(tester);
+      await tester.tap(find.text('Épisode 2 · Téléchargement · 25 %'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Changer la qualité'));
+      await tester.pumpAndSettle();
+      expect(find.text('Changer la qualité ?'), findsOneWidget);
+      await tester.tap(find.text('Annuler').last);
+      await tester.pumpAndSettle();
+      expect(Downloads.instance.entry(9, 2), isNotNull);
     });
 
     testWidgets('it stays reachable with no account and with no network', (tester) async {
@@ -135,7 +214,7 @@ void main() {
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(theme: Nami.theme(), home: const LibraryScreen()));
       await tester.pump();
-      expect(find.text('Épisode 1 · 300 MB'), findsOneWidget);
+      expect(find.text('Téléchargements'), findsOneWidget);
       expect(find.text('Se connecter à AniList'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
@@ -143,7 +222,7 @@ void main() {
       await AppSettings.load();
       await tester.pumpWidget(MaterialApp(theme: Nami.theme(), home: const LibraryScreen(key: ValueKey('token'))));
       await tester.pump();
-      expect(find.text('Épisode 1 · 300 MB'), findsOneWidget);
+      expect(find.text('Téléchargements'), findsOneWidget);
       expect(find.text('Connexion à AniList…'), findsOneWidget);
     });
 
@@ -178,8 +257,8 @@ void main() {
       expect(find.byTooltip('Reprendre'), findsOneWidget);
     });
 
-    testWidgets('deleting from the section removes the entry', (tester) async {
-      await pumpLibrary(tester, desktop: false);
+    testWidgets('deleting from the list asks, then removes the entry', (tester) async {
+      await pumpScreen(tester);
       await tester.tap(find.byTooltip('Annuler le téléchargement'));
       await tester.pumpAndSettle();
       expect(find.textContaining('Épisode 2'), findsWidgets);
@@ -189,7 +268,7 @@ void main() {
     });
 
     testWidgets('tapping a running download opens its details and cancelling asks', (tester) async {
-      await pumpLibrary(tester, desktop: false);
+      await pumpScreen(tester);
       await tester.tap(find.text('Épisode 2 · Téléchargement · 25 %'));
       await tester.pumpAndSettle();
       expect(find.widgetWithText(FilledButton, 'Mettre en pause'), findsOneWidget);

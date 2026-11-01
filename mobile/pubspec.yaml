@@ -7,6 +7,7 @@ environment:
   sdk: ^3.13.7
 
 dependencies:
+  connectivity_plus: ^7.3.2
   device_preview: ^3.0.0
   ffi: ^2.2.0
   flutter:

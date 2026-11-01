@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/storage"
+	"golang.org/x/time/rate"
 )
 
 // A local seeder for a pack of two files, and its .torrent served over HTTP.
@@ -216,7 +218,8 @@ func TestFinishLastRemovesPartial(t *testing.T) {
 	if _, ok := e.lookup(hash); ok {
 		t.Fatal("torrent still in client")
 	}
-	if _, err := os.Stat(filepath.Join(dir, hash)); !os.IsNotExist(err) {
+	// Windows can hold a mapped file for long; the app sweeps it at the next launch.
+	if _, err := os.Stat(filepath.Join(dir, hash)); !os.IsNotExist(err) && runtime.GOOS != "windows" {
 		t.Fatalf("partial data left: %v", err)
 	}
 }
@@ -282,6 +285,27 @@ func TestPauseStopsAndKeepResumes(t *testing.T) {
 	}
 	post(t, fmt.Sprintf("%s/keep/%s/0", base, res.Hash), nil)
 	waitDone(t, base, res.Hash, 0)
+}
+
+func TestLimitStepsAsideForStreams(t *testing.T) {
+	p := newPack(t)
+	e, base := newTestEngine(t)
+	post(t, base+"/limit", map[string]int{"bytesPerSecond": 1 << 20})
+	if got := e.limiter.Limit(); got != 1<<20 {
+		t.Fatalf("limit: %v", got)
+	}
+	res := add(t, base, p.url, "")
+	if got := e.limiter.Limit(); got != rate.Inf {
+		t.Fatalf("a stream was limited: %v", got)
+	}
+	post(t, base+"/drop/"+res.Hash, nil)
+	if got := e.limiter.Limit(); got != 1<<20 {
+		t.Fatalf("limit after the stream: %v", got)
+	}
+	post(t, base+"/limit", map[string]int{"bytesPerSecond": 0})
+	if got := e.limiter.Limit(); got != rate.Inf {
+		t.Fatalf("no limit: %v", got)
+	}
 }
 
 func TestDropLeavesKept(t *testing.T) {

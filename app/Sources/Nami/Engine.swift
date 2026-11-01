@@ -90,6 +90,11 @@ final class Engine {
         _ = try await call("pause/\(hash)/\(index)", method: "POST")
     }
 
+    /// Bytes per second for downloads; 0 for none.
+    func limit(_ bytesPerSecond: Int) async throws {
+        _ = try await call("limit", method: "POST", body: ["bytesPerSecond": bytesPerSecond])
+    }
+
     func keepStats(_ hash: String, _ index: Int) async -> KeepStats? {
         guard let data = try? await call("keep/\(hash)/\(index)", timeout: 5) else { return nil }
         return try? JSONDecoder().decode(KeepStats.self, from: data)

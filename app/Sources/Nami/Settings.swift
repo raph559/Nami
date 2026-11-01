@@ -4,6 +4,10 @@ struct SettingsView: View {
     @EnvironmentObject private var anilist: AniList
     @EnvironmentObject private var extensions: ExtensionStore
     @AppStorage("resolution") private var resolution = "1080"
+    @AppStorage("downloadResolution") private var downloadResolution = "1080"
+    @AppStorage("downloadWifiOnly") private var downloadWifiOnly = false
+    @AppStorage("downloadLimit") private var downloadLimit = 0
+    @State private var limitText = Downloads.limitText(UserDefaults.standard.integer(forKey: "downloadLimit"))
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.fr.rawValue
     @AppStorage("titleLanguage") private var titleLanguage = TitleLanguage.romaji.rawValue
     @AppStorage("autoSkip") private var autoSkip = true
@@ -110,6 +114,39 @@ struct SettingsView: View {
                 } footer: {
                     Text(t("Même format que les extensions Hayase : colle l'URL de l'index.json du dépôt.",
                            "Same format as Hayase extensions: paste the repository's index.json URL."))
+                }
+
+                Section(t("Téléchargements", "Downloads")) {
+                    DownloadsLink()
+                    SegmentedSetting(label: t("Qualité des téléchargements", "Download quality"),
+                                     detail: t("À part de la lecture en streaming.", "Apart from streaming."),
+                                     selection: Binding(get: { UserDefaults.standard.string(forKey: "downloadResolution") ?? resolution }, set: { downloadResolution = $0 }),
+                                     options: ["480", "720", "1080", "1440", "2160"].map { ($0, "\($0)p") })
+                    Toggle(isOn: $downloadWifiOnly) {
+                        VStack(alignment: .leading) {
+                            Text(t("Wi-Fi uniquement", "Wi-Fi only"))
+                            Text(t("Met les téléchargements en attente sur les données mobiles.", "Holds downloads while on mobile data."))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .onChange(of: downloadWifiOnly) { _, _ in Downloads.shared.wifiSettingChanged() }
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(t("Limite de vitesse", "Speed limit"))
+                            Text(t("Levée pendant la lecture d'un épisode en streaming.", "Lifted while an episode streams."))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        TextField(t("Aucune", "None"), text: $limitText)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 70)
+                        Text("MB/s").foregroundStyle(.secondary)
+                    }
+                    .onChange(of: limitText) { _, text in
+                        downloadLimit = Downloads.parseLimit(text)
+                        Downloads.shared.limitChanged()
+                    }
                 }
 
                 Section("Nami") {

@@ -37,7 +37,16 @@ class FakeBackend implements DownloadBackend {
   List<EngineFile> Function(String link) filesFor = (_) => [EngineFile(0, 'ep.mkv', size)];
 
   @override
-  Future<List<String>> sources(Media media, int episode) async => links;
+  Future<List<String>> sources(Media media, int episode, String resolution) async {
+    asked.add(resolution);
+    return links;
+  }
+
+  final asked = <String>[];
+  final limits = <int>[];
+
+  @override
+  Future<void> limit(int bytesPerSecond) async => limits.add(bytesPerSecond);
 
   @override
   Future<EngineTorrent> add(String link, String dir) async {
@@ -449,6 +458,171 @@ void main() {
     await settle();
     expect(store.current?.state, DownloadState.paused);
     expect(store.waiting, 0);
+  });
+
+  test('the quality asked for is the one searched, then the setting', () async {
+    AppSettings.instance.downloadResolution = '720';
+    store.start(anime(1), 1, resolution: '480');
+    await settle();
+    backend.progress['hash-good'] = size;
+    store.start(anime(1), 2);
+    await settle();
+    expect(backend.asked, ['480', '720']);
+  });
+
+  test('download quality falls back on the streaming quality', () {
+    AppSettings.instance.resolution = '720';
+    expect(AppSettings.instance.downloadResolution, '720');
+    AppSettings.instance.downloadResolution = '480';
+    expect(AppSettings.instance.resolution, '720');
+  });
+
+  test('a source picked by hand is used without searching', () async {
+    store.start(anime(1), 1, link: 'mine');
+    await settle();
+    expect(backend.added, ['mine']);
+    expect(backend.asked, isEmpty);
+  });
+
+  test('a season adds every missing aired episode', () async {
+    final airing = Media({...anime(1).json, 'nextAiringEpisode': {'episode': 5, 'airingAt': 1}});
+    store.start(airing, 2);
+    await settle();
+    expect(store.missing(airing), [1, 3, 4]);
+    store.startSeason(airing, resolution: '720');
+    expect(store.missing(airing), isEmpty);
+    expect(store.entries.map((e) => e.episode), [2, 1, 3, 4]);
+    expect(store.entry(1, 4)!.resolution, '720');
+  });
+
+  test('changing the quality deletes the file and downloads again', () async {
+    backend.progress['hash-good'] = size;
+    store.start(anime(1), 1, resolution: '1080');
+    await settle();
+    final old = File(store.localPath(1, 1)!);
+    backend.progress.clear();
+    await store.changeQuality(store.entry(1, 1)!, '480');
+    await settle();
+    expect(old.existsSync(), isFalse);
+    expect(store.entry(1, 1)!.state, DownloadState.running);
+    expect(store.entry(1, 1)!.resolution, '480');
+    expect(backend.asked.last, '480');
+  });
+
+  test('the queue can be reordered, around what is not waiting', () async {
+    store.start(anime(1), 1);
+    store.start(anime(1), 2);
+    store.start(anime(1), 3);
+    store.start(anime(1), 4);
+    await settle();
+    store.pause(store.entry(1, 3)!);
+    await settle();
+    expect(store.queue.map((e) => e.episode), [2, 4]);
+    store.reorder(1, 0);
+    expect(store.entries.map((e) => e.episode), [1, 4, 3, 2]);
+    expect(store.queue.map((e) => e.episode), [4, 2]);
+    final saved = jsonDecode(AppSettings.instance.prefs.getString('downloads')!) as List;
+    expect(saved.map((e) => e['episode']), [1, 4, 3, 2]);
+  });
+
+  test('any speed limit can be typed', () {
+    expect(parseSpeedLimit('2.5'), 2500000);
+    expect(parseSpeedLimit('2,5'), 2500000);
+    expect(parseSpeedLimit(' 7 '), 7000000);
+    expect(parseSpeedLimit('0.3'), 300000);
+    expect(parseSpeedLimit(''), 0);
+    expect(parseSpeedLimit('0'), 0);
+    expect(parseSpeedLimit('-3'), 0);
+    expect(parseSpeedLimit('abc'), 0);
+    expect(speedLimitText(2500000), '2.5');
+    expect(speedLimitText(7000000), '7');
+    expect(speedLimitText(0), '');
+  });
+
+  test('pause all and resume all', () async {
+    store.start(anime(1), 1);
+    store.start(anime(1), 2);
+    await settle();
+    expect(store.canPauseAll, isTrue);
+    expect(store.canResumeAll, isFalse);
+    store.pauseAll();
+    await settle();
+    expect(store.entries.every((e) => e.state == DownloadState.paused), isTrue);
+    expect(store.canPauseAll, isFalse);
+    store.resumeAll();
+    await settle();
+    expect(store.entry(1, 1)!.state, DownloadState.running);
+    expect(store.entry(1, 2)!.state, DownloadState.queued);
+  });
+
+  test('Wi-Fi only holds the queue on mobile data and picks up on Wi-Fi', () async {
+    AppSettings.instance.downloadWifiOnly = true;
+    store.networkChanged(cellular: true);
+    store.start(anime(1), 1);
+    await settle();
+    expect(store.entry(1, 1)!.state, DownloadState.queued);
+    expect(backend.added, isEmpty);
+    store.networkChanged(cellular: false);
+    await settle();
+    expect(store.entry(1, 1)!.state, DownloadState.running);
+  });
+
+  test('leaving Wi-Fi puts a running download back in line', () async {
+    AppSettings.instance.downloadWifiOnly = true;
+    store.start(anime(1), 1);
+    await settle();
+    store.networkChanged(cellular: true);
+    await settle();
+    expect(store.entry(1, 1)!.state, DownloadState.queued);
+    expect(backend.paused, ['hash-good/0']);
+    store.networkChanged(cellular: false);
+    await settle();
+    expect(store.entry(1, 1)!.state, DownloadState.running);
+  });
+
+  test('without the setting mobile data changes nothing', () async {
+    store.networkChanged(cellular: true);
+    store.start(anime(1), 1);
+    await settle();
+    expect(store.entry(1, 1)!.state, DownloadState.running);
+  });
+
+  test('at launch partial data nothing needs is removed', () async {
+    final keep = Directory('${store.partialDir}${Platform.pathSeparator}hash-keep')..createSync(recursive: true);
+    final old = Directory('${store.partialDir}${Platform.pathSeparator}hash-old')..createSync(recursive: true);
+    AppSettings.instance.prefs.setString(
+      'downloads',
+      jsonEncode([
+        DownloadEntry(media: anime(1), episode: 1, state: DownloadState.paused, link: 'l', hash: 'hash-keep').toJson(),
+      ]),
+    );
+    await store.load();
+    expect(keep.existsSync(), isTrue);
+    expect(old.existsSync(), isFalse);
+  });
+
+  test('the speed limit reaches the engine', () async {
+    AppSettings.instance.downloadLimit = 2000000;
+    await store.load();
+    expect(backend.limits, [2000000]);
+  });
+
+  test('the time left comes from a smoothed speed', () async {
+    var done = 0;
+    final s = store;
+    backend.progress['hash-good'] = 0;
+    s.start(anime(1), 1);
+    await settle();
+    final e = s.entry(1, 1)!;
+    expect(e.remaining, isNull);
+    e
+      ..speed = 2048
+      ..done = 0
+      ..total = 2048 * 60;
+    done = e.remaining!.inSeconds;
+    expect(done, 60);
+    e.speed = 100;
+    expect(e.remaining, isNull);
   });
 
   test('starting an episode twice does nothing', () async {

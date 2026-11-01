@@ -13,6 +13,22 @@ import 'settings.dart';
 
 enum DownloadState { queued, running, paused, failed, done }
 
+/// Bytes per second from what was typed, in MB/s; 0 for no limit.
+int parseSpeedLimit(String text) {
+  final mb = double.tryParse(text.trim().replaceAll(',', '.'));
+  return mb == null || mb <= 0 ? 0 : (mb * 1000000).round();
+}
+
+/// The limit as it is typed: 2.5, not 2500000.
+String speedLimitText(int bytes) {
+  if (bytes <= 0) return '';
+  final mb = bytes / 1000000;
+  return mb == mb.roundToDouble() ? '${mb.round()}' : '$mb';
+}
+
+/// Qualities offered when downloading, the setting first.
+List<String> downloadQualities() => {AppSettings.instance.downloadResolution, '1080', '720', '480'}.toList();
+
 /// One episode kept on the device. File names are relative to the downloads
 /// folder, whose full path changes when the iPhone app is reinstalled.
 class DownloadEntry {
@@ -26,6 +42,7 @@ class DownloadEntry {
     this.file,
     this.done = 0,
     this.total = 0,
+    this.resolution,
   });
 
   factory DownloadEntry.fromJson(Map<String, dynamic> j) => DownloadEntry(
@@ -38,6 +55,7 @@ class DownloadEntry {
     file: j['file'],
     done: j['done'] ?? 0,
     total: j['total'] ?? 0,
+    resolution: j['resolution'],
   );
 
   final Media media;
@@ -50,9 +68,19 @@ class DownloadEntry {
   int done;
   int total;
 
+  /// The quality asked for; null when a source was picked by hand.
+  String? resolution;
+
   /// Live figures of a running download; not saved.
-  int speed = 0;
+  double speed = 0;
   int peers = 0;
+
+  /// Seconds since the last new data.
+  int quiet = 0;
+
+  /// Unknown until data comes in.
+  Duration? get remaining =>
+      speed < 1024 || total <= done ? null : Duration(seconds: ((total - done) / speed).ceil());
 
   double get fraction => total > 0 ? (done / total).clamp(0.0, 1.0) : 0;
 
@@ -66,12 +94,14 @@ class DownloadEntry {
     'file': file,
     'done': done,
     'total': total,
+    'resolution': resolution,
   };
 }
 
 /// The outside world of the store, replaced in tests.
 abstract class DownloadBackend {
-  Future<List<String>> sources(Media media, int episode);
+  Future<List<String>> sources(Media media, int episode, String resolution);
+  Future<void> limit(int bytesPerSecond);
   Future<EngineTorrent> add(String link, String dir);
   Future<void> keep(String hash, int index);
   Future<void> pause(String hash, int index);
@@ -83,10 +113,13 @@ abstract class DownloadBackend {
 
 class EngineDownloads implements DownloadBackend {
   @override
-  Future<List<String>> sources(Media media, int episode) async {
-    final found = await SourceSearch.run(media, episode);
-    return [for (final r in rankReleases(found.results)) r.result.link];
+  Future<List<String>> sources(Media media, int episode, String resolution) async {
+    final found = await SourceSearch.run(media, episode, resolution: resolution);
+    return [for (final r in rankReleases(found.results, resolution: resolution)) r.result.link];
   }
+
+  @override
+  Future<void> limit(int bytesPerSecond) => Engine.instance.limit(bytesPerSecond);
 
   @override
   Future<EngineTorrent> add(String link, String dir) => Engine.instance.addKept(link, dir);
@@ -157,6 +190,64 @@ class Downloads extends ChangeNotifier {
     return null;
   }
 
+  /// Finished episodes on the device.
+  int get usedBytes =>
+      entries.where((e) => e.state == DownloadState.done).fold(0, (sum, e) => sum + e.total);
+
+  bool get canPauseAll =>
+      entries.any((e) => e.state == DownloadState.running || e.state == DownloadState.queued);
+  bool get canResumeAll => entries.any((e) => e.state == DownloadState.paused);
+
+  void pauseAll() => [...entries].forEach(pause);
+  void resumeAll() => [...entries].forEach(resume);
+
+  /// Holding for Wi-Fi: the setting is on and only mobile data is there.
+  bool get heldForWifi => _cellular && AppSettings.instance.downloadWifiOnly;
+  bool _cellular = false;
+
+  /// The network or the Wi-Fi setting changed.
+  void networkChanged({bool? cellular}) {
+    _cellular = cellular ?? _cellular;
+    notifyListeners();
+    _pump();
+  }
+
+  /// Applies the speed limit from the settings.
+  void limitChanged() => _backend.limit(AppSettings.instance.downloadLimit).catchError((_) {});
+
+  /// Every aired episode that is not here or on its way.
+  List<int> missing(Media media) => [
+    for (var n = 1; n <= media.availableEpisodes; n++)
+      if (entry(media.id, n) == null) n,
+  ];
+
+  void startSeason(Media media, {String? resolution}) {
+    for (final n in missing(media)) {
+      start(media, n, resolution: resolution);
+    }
+  }
+
+  /// A finished file cannot be converted: another release replaces it.
+  Future<void> changeQuality(DownloadEntry e, String resolution) async {
+    await remove(e);
+    start(e.media, e.episode, resolution: resolution);
+  }
+
+  /// Waiting downloads, in the order they will start.
+  List<DownloadEntry> get queue => entries.where((e) => e.state == DownloadState.queued).toList();
+
+  /// Moves a waiting download to [to] in [queue]; the others keep their places.
+  void reorder(int from, int to) {
+    final line = queue;
+    final slots = [for (final e in line) entries.indexOf(e)];
+    line.insert(to, line.removeAt(from));
+    for (var i = 0; i < slots.length; i++) {
+      entries[slots[i]] = line[i];
+    }
+    _save();
+    notifyListeners();
+  }
+
   /// How many more are in line behind [current].
   int get waiting => entries.where((e) => e.state == DownloadState.queued && e != current).length;
 
@@ -191,17 +282,21 @@ class Downloads extends ChangeNotifier {
       } catch (_) {}
     }
     entries.removeWhere((e) => e.state == DownloadState.done && !File(path(e)).existsSync());
+    _sweepPartial();
     for (final e in entries) {
       if (e.state == DownloadState.running) e.state = DownloadState.queued;
     }
     _save();
     notifyListeners();
+    limitChanged();
     _pump();
   }
 
-  void start(Media media, int episode) {
+  /// With [link], that source is used; otherwise the best one in [resolution].
+  void start(Media media, int episode, {String? resolution, String? link}) {
     if (entry(media.id, episode) != null) return;
-    final e = DownloadEntry(media: media, episode: episode);
+    final e = DownloadEntry(media: media, episode: episode, resolution: resolution, link: link);
+    if (link != null) _retrying.add(e);
     entries.add(e);
     _save();
     notifyListeners();
@@ -295,6 +390,19 @@ class Downloads extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Partial data nothing needs any more, left by a file that was held open.
+  void _sweepPartial() {
+    final dir = Directory(partialDir);
+    if (!dir.existsSync()) return;
+    final wanted = {for (final e in entries) e.hash};
+    for (final d in dir.listSync().whereType<Directory>()) {
+      if (wanted.contains(d.path.split(Platform.pathSeparator).last)) continue;
+      try {
+        d.deleteSync(recursive: true);
+      } catch (_) {}
+    }
+  }
+
   void _deleteFile(String file) {
     try {
       File(file).deleteSync();
@@ -306,7 +414,7 @@ class Downloads extends ChangeNotifier {
   }
 
   void _pump() {
-    if (_running != null) return;
+    if (_running != null || heldForWifi) return;
     for (final e in entries) {
       if (e.state == DownloadState.queued && !_waitingForPlayer.contains(e)) {
         _running = e;
@@ -384,7 +492,7 @@ class Downloads extends ChangeNotifier {
     }
     final List<String> links;
     try {
-      links = await _backend.sources(e.media, e.episode);
+      links = await _backend.sources(e.media, e.episode, e.resolution ?? AppSettings.instance.downloadResolution);
     } catch (_) {
       return false;
     }
@@ -428,11 +536,20 @@ class Downloads extends ChangeNotifier {
     while (entries.contains(e) && e.state == DownloadState.running) {
       await _wait(const Duration(seconds: 1));
       if (!entries.contains(e) || e.state != DownloadState.running) return false;
+      if (heldForWifi) {
+        e.state = DownloadState.queued;
+        _pauseEngine(e);
+        _save();
+        notifyListeners();
+        return false;
+      }
       quiet++;
       final s = await _backend.stats(e.hash!, e.fileIndex!);
       if (s != null) {
+        // Smoothed, so the time left does not jump every second.
+        final now = last < 0 ? 0 : (s.done - last).clamp(0, s.total);
         e
-          ..speed = last < 0 ? 0 : (s.done - last).clamp(0, s.total)
+          ..speed = e.speed == 0 ? now.toDouble() : e.speed * 0.8 + now * 0.2
           ..peers = s.peers
           ..done = s.done
           ..total = s.total;
@@ -441,6 +558,7 @@ class Downloads extends ChangeNotifier {
           last = s.done;
           quiet = 0;
         }
+        e.quiet = quiet;
         notifyListeners();
       }
       if (quiet >= stallLimit.inSeconds) {

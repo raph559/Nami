@@ -6,10 +6,12 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../anilist.dart';
+import '../downloads.dart';
 import '../extensions.dart';
 import '../platform.dart';
 import '../settings.dart';
 import '../theme.dart';
+import '../ui/downloads_section.dart';
 import '../ui/motion.dart';
 import '../widgets.dart';
 
@@ -211,6 +213,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onChanged: (v) => settings.titleLanguage = v,
                   items: {for (final l in TitleLanguage.values) l: Text(l.label)},
                 ),
+              ),
+            ],
+          );
+          final downloads = _Section(
+            title: t('Téléchargements', 'Downloads'),
+            flat: isDesktop,
+            children: [
+              const DownloadsLink(),
+              _Setting(
+                label: t('Qualité des téléchargements', 'Download quality'),
+                detail: t('À part de la lecture en streaming.', 'Apart from streaming.'),
+                control: _Segments<String>(
+                  value: settings.downloadResolution,
+                  onChanged: (v) => settings.downloadResolution = v,
+                  items: {
+                    for (final r in ['480', '720', '1080', '1440', '2160']) r: Text('${r}p'),
+                  },
+                ),
+              ),
+              _Setting(
+                label: t('Wi-Fi uniquement', 'Wi-Fi only'),
+                detail: t(
+                  'Met les téléchargements en attente sur les données mobiles.',
+                  'Holds downloads while on mobile data.',
+                ),
+                control: Switch(
+                  value: settings.downloadWifiOnly,
+                  onChanged: (v) {
+                    settings.downloadWifiOnly = v;
+                    Downloads.instance.networkChanged();
+                  },
+                ),
+                inline: true,
+              ),
+              _Setting(
+                label: t('Limite de vitesse', 'Speed limit'),
+                detail: t('Levée pendant la lecture d\'un épisode en streaming.', 'Lifted while an episode streams.'),
+                control: const _SpeedLimitField(),
               ),
             ],
           );
@@ -418,7 +458,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           );
-          final all = [account, playback, subtitles, extensions, language, about];
+          final all = [account, playback, downloads, subtitles, extensions, language, about];
           if (isDesktop) {
             // Sections on the left, the chosen one on the right.
             final left = MediaQuery.paddingOf(context).left;
@@ -475,7 +515,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(child: Column(children: [account, language, playback, subtitles])),
+                        Expanded(child: Column(children: [account, language, playback, downloads, subtitles])),
                         const SizedBox(width: 32),
                         Expanded(child: Column(children: [extensions, about])),
                       ],
@@ -873,6 +913,40 @@ class _Shortcuts extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Any limit, typed in MB/s; empty for none.
+class _SpeedLimitField extends StatefulWidget {
+  const _SpeedLimitField();
+
+  @override
+  State<_SpeedLimitField> createState() => _SpeedLimitFieldState();
+}
+
+class _SpeedLimitFieldState extends State<_SpeedLimitField> {
+  late final _text = TextEditingController(text: speedLimitText(AppSettings.instance.downloadLimit));
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 150,
+      child: TextField(
+        controller: _text,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: InputDecoration(hintText: t('Aucune', 'None'), suffixText: 'MB/s'),
+        onChanged: (text) {
+          AppSettings.instance.downloadLimit = parseSpeedLimit(text);
+          Downloads.instance.limitChanged();
+        },
       ),
     );
   }

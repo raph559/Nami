@@ -24,6 +24,7 @@ import (
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/storage"
+	"golang.org/x/time/rate"
 )
 
 type engine struct {
@@ -37,6 +38,9 @@ type engine struct {
 	// Torrents being downloaded to keep: the player cannot drop them.
 	kept     map[string]*keptTorrent
 	storages map[string]storage.ClientImplCloser
+	limiter  *rate.Limiter
+	// Bytes per second for downloads; 0 for none.
+	limit int
 }
 
 // keptTorrent lives in its own dir, so it outlives a restart; files are the
@@ -84,6 +88,8 @@ func newEngine(dir string) (*engine, error) {
 	cfg.Seed = false
 	cfg.ListenPort = 0
 	cfg.EstablishedConnsPerTorrent = 60
+	limiter := rate.NewLimiter(rate.Inf, 1<<20)
+	cfg.DownloadRateLimiter = limiter
 	cl, err := torrent.NewClient(cfg)
 	if err != nil {
 		return nil, err
@@ -91,6 +97,7 @@ func newEngine(dir string) (*engine, error) {
 	e := &engine{
 		client: cl, dataDir: dir, last: map[string]time.Time{},
 		kept: map[string]*keptTorrent{}, storages: map[string]storage.ClientImplCloser{dir: streams},
+		limiter: limiter,
 	}
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -108,6 +115,7 @@ func newEngine(dir string) (*engine, error) {
 	mux.HandleFunc("POST /finish/{hash}/{index}", e.handleFinish)
 	mux.HandleFunc("POST /pause/{hash}/{index}", e.handlePause)
 	mux.HandleFunc("POST /unkeep/{hash}/{index}", e.handleUnkeep)
+	mux.HandleFunc("POST /limit", e.handleLimit)
 	e.mux = mux
 	e.listener = ln
 	e.port = ln.Addr().(*net.TCPAddr).Port
@@ -250,7 +258,40 @@ func (e *engine) addURI(ctx context.Context, uri, dir string) (*torrent.Torrent,
 		}
 	}
 	t.AddTrackers(extraTrackers)
+	e.applyLimit()
 	return t, nil
+}
+
+// applyLimit holds downloads to the limit, except while a stream plays: the
+// library has one limit for the whole client, and a stream must not stutter.
+// The caller holds e.mu.
+func (e *engine) applyLimit() {
+	limit := rate.Inf
+	if e.limit > 0 {
+		limit = rate.Limit(e.limit)
+		for _, t := range e.client.Torrents() {
+			if _, kept := e.kept[t.InfoHash().HexString()]; !kept {
+				limit = rate.Inf
+				break
+			}
+		}
+	}
+	e.limiter.SetLimit(limit)
+}
+
+func (e *engine) handleLimit(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		BytesPerSecond int `json:"bytesPerSecond"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.limit = body.BytesPerSecond
+	e.applyLimit()
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (e *engine) storageFor(dir string) (storage.ClientImpl, error) {
@@ -366,6 +407,7 @@ func (e *engine) drop(t *torrent.Torrent) {
 	_ = os.RemoveAll(filepath.Join(e.dataDir, hash))
 	e.mu.Lock()
 	delete(e.last, hash)
+	e.applyLimit()
 	e.mu.Unlock()
 }
 
@@ -507,9 +549,18 @@ func (e *engine) handleFinish(w http.ResponseWriter, r *http.Request) {
 // On Windows a closed torrent keeps its mapped files a moment longer.
 const releaseWait = 3 * time.Second
 
+// removeAll waits a little, then goes on trying in the background.
 func removeAll(path string) {
 	deadline := time.Now().Add(releaseWait)
-	for os.RemoveAll(path) != nil && time.Now().Before(deadline) {
+	for os.RemoveAll(path) != nil {
+		if time.Now().After(deadline) {
+			go func() {
+				for i := 0; i < 60 && os.RemoveAll(path) != nil; i++ {
+					time.Sleep(time.Second)
+				}
+			}()
+			return
+		}
 		time.Sleep(100 * time.Millisecond)
 	}
 }

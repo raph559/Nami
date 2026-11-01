@@ -145,6 +145,9 @@ class Engine {
 
   Future<void> pause(String hash, int index) => _call('pause/$hash/$index');
 
+  /// Bytes per second for downloads; 0 for none.
+  Future<void> limit(int bytesPerSecond) => _call('limit', body: {'bytesPerSecond': bytesPerSecond});
+
   /// Moving a large file may mean copying it.
   Future<void> finish(String hash, int index, String dest) =>
       _call('finish/$hash/$index', body: {'dest': dest}, timeout: const Duration(minutes: 5));

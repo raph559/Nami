@@ -118,7 +118,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     ),
                   ),
                 ),
-                SliverToBoxAdapter(child: DownloadsSection(padding: EdgeInsets.fromLTRB(side, 20, 16, 0))),
+                SliverToBoxAdapter(child: DownloadsLink(padding: EdgeInsets.fromLTRB(side, 12, 16, 0))),
                 if (!isDesktop)
                   SliverToBoxAdapter(
                     child: Padding(
@@ -201,7 +201,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         return ListView(
           padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 16, 16, 16),
           children: [
-            const DownloadsSection(),
+            const DownloadsLink(),
             message,
           ],
         );

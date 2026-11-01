@@ -125,8 +125,8 @@ enum SeedHealth {
 }
 
 /// Sorts results best first and returns them parsed.
-List<ReleaseInfo> rankReleases(List<TorrentResult> results) {
-  final pref = AppSettings.instance.resolution;
+List<ReleaseInfo> rankReleases(List<TorrentResult> results, {String? resolution}) {
+  final pref = resolution ?? AppSettings.instance.resolution;
   final parsed = [for (final r in results) ReleaseInfo.parse(r)];
   parsed.sort((a, b) => b.score(pref).compareTo(a.score(pref)));
   return parsed;

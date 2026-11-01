@@ -20,7 +20,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// A download that never gets anywhere.
 class HeldBackend implements DownloadBackend {
   @override
-  Future<List<String>> sources(Media media, int episode) => Completer<List<String>>().future;
+  Future<List<String>> sources(Media media, int episode, String resolution) => Completer<List<String>>().future;
+  @override
+  Future<void> limit(int bytesPerSecond) async {}
   @override
   Future<EngineTorrent> add(String link, String dir) => throw EngineException('no');
   @override
@@ -328,6 +330,29 @@ void main() {
         await tester.tap(find.widgetWithText(FilledButton, 'Annuler le téléchargement'));
         await tester.pumpAndSettle();
         expect(store.entry(195539, 6), isNull);
+      });
+
+      testWidgets('the question offers qualities and starts in the chosen one', (tester) async {
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        await tester.tap(find.byTooltip('Télécharger').at(5));
+        await tester.pumpAndSettle();
+        expect(find.text('Choisir la source'), findsOneWidget);
+        await tester.tap(find.text('720p'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilledButton, 'Télécharger'));
+        await tester.pumpAndSettle();
+        expect(store.entry(195539, 6)!.resolution, '720');
+      });
+
+      testWidgets('the season button asks, then queues every episode', (tester) async {
+        await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+        await tester.tap(find.text('Télécharger la saison'));
+        await tester.pumpAndSettle();
+        expect(find.text('Télécharger 10 épisodes ?'), findsOneWidget);
+        await tester.tap(find.widgetWithText(FilledButton, 'Télécharger'));
+        await tester.pumpAndSettle();
+        expect(store.entries.length, 10);
+        expect(find.text('Télécharger la saison'), findsNothing);
       });
 
       testWidgets('refusing the question starts nothing', (tester) async {
