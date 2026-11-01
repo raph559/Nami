@@ -12,9 +12,10 @@
 
 ## Anime page
 
-- [ ] Relations graph: prequels, sequels, side stories, spin-offs and films as a graph with
+- [x] Relations: prequels, sequels, side stories, spin-offs and films, with
       covers; tap a node to open it.
-- [ ] Related anime, recommendations, characters and voice actors.
+- [x] Recommendations, characters and voice actors, staff, tags, rankings and scores.
+- [x] Trailers, played in the app.
 - [ ] UI polish: featured banner on the home screen, scores on covers, cleaner anime page.
 
 ## Player

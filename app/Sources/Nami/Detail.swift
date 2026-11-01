@@ -9,6 +9,11 @@ struct MediaDetailView: View {
     @State private var showBarButton = false
     @State private var editingList = false
     @State private var saveFailed = false
+    /// What only this page needs; nil until it arrives.
+    @State private var details: AnimeDetails?
+    @State private var detailsFailed = false
+    @State private var tab = 0
+    @State private var playing: AnimeDetails.Trailer?
     @EnvironmentObject private var center: PlayerCenter
     @ObservedObject private var downloads = Downloads.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -47,6 +52,14 @@ struct MediaDetailView: View {
                         .disabled(!canWatch)
                         if anilist.isLoggedIn { listButton }
                     }
+                    if let trailer = details?.trailer {
+                        Button { playing = trailer } label: {
+                            Label(t("Bande-annonce", "Trailer"), systemImage: "play.rectangle")
+                                .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(Nami.text)
+                    }
 
                     if let genres = media.genres, !genres.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -64,7 +77,7 @@ struct MediaDetailView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .onTapGesture { withAnimation { expanded.toggle() } }
                     }
-                    if !media.isMovie { episodes }
+                    tabs
                 }
                 .padding(.horizontal)
             }
@@ -86,14 +99,59 @@ struct MediaDetailView: View {
             ListEditorSheet(media: media) { media = $0 }
         }
         .alert(t("L'enregistrement a échoué. Réessaie.", "Saving failed. Try again."), isPresented: $saveFailed) {}
+        .fullScreenCover(item: $playing) { TrailerView(trailer: $0, title: media.title.display) }
         .task {
             if let fresh = try? await anilist.media(id: media.id) { media = fresh }
+            await loadDetails()
             mappings = await Mappings.load(anilistID: media.id)
         }
         // The player may have moved the AniList progress.
         .onChange(of: center.finished) { _, _ in
             Task { if let fresh = try? await anilist.media(id: media.id) { media = fresh } }
         }
+    }
+
+    private func loadDetails() async {
+        detailsFailed = false
+        do {
+            details = try await anilist.details(id: media.id)
+        } catch {
+            detailsFailed = true
+        }
+    }
+
+    /// The tabs under the header. A movie has no episodes to list.
+    private var tabs: some View {
+        let labels = (media.isMovie ? [] : [t("Épisodes", "Episodes")])
+            + [t("Détails", "Details"), t("Personnages", "Characters"), t("Liés", "Related")]
+        let shown = min(tab, labels.count - 1)
+        let extra = shown - (media.isMovie ? 0 : 1)
+        return VStack(alignment: .leading, spacing: 10) {
+            Picker(t("Partie de la page", "Part of the page"), selection: $tab) {
+                ForEach(labels.indices, id: \.self) { Text(labels[$0]).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .padding(.top, 6)
+            if extra < 0 {
+                episodes
+            } else if let details {
+                switch extra {
+                case 0: AnimeDetailsTab(media: media, details: details) { playing = $0 }
+                case 1: AnimeCastTab(details: details)
+                default: AnimeRelatedTab(media: media, details: details)
+                }
+            } else if detailsFailed {
+                VStack(spacing: 8) {
+                    Text(t("Impossible de joindre AniList.", "Can't reach AniList.")).foregroundStyle(Nami.textSecondary)
+                    Button(t("Réessayer", "Try again")) { Task { await loadDetails() } }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 30)
+            } else {
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 30)
+            }
+        }
+        .padding(.bottom, 30)
     }
 
     /// Opens the list editor; its label is where the anime stands in the list.
@@ -152,15 +210,10 @@ struct MediaDetailView: View {
 
     private var episodes: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(t("Épisodes", "Episodes")).font(.title3.bold())
-                Spacer(minLength: 0)
-                if downloads.missing(media).count > 1 {
-                    Button(t("Télécharger la saison", "Download season"), systemImage: "arrow.down.circle") { downloads.askSeason(media) }
-                        .font(.footnote)
-                }
+            if downloads.missing(media).count > 1 {
+                Button(t("Télécharger la saison", "Download season"), systemImage: "arrow.down.circle") { downloads.askSeason(media) }
+                    .font(.footnote)
             }
-            .padding(.top, 6)
             if media.availableEpisodes == 0 {
                 Text(t("Aucun épisode diffusé pour l'instant.", "No episode has aired yet.")).font(.footnote).foregroundStyle(.secondary)
             } else {
@@ -171,7 +224,6 @@ struct MediaDetailView: View {
                 }
             }
         }
-        .padding(.bottom, 30)
     }
 
     private func episodeRow(_ n: Int) -> some View {

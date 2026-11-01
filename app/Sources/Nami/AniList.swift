@@ -105,6 +105,8 @@ struct Media: Codable, Identifiable, Hashable {
     var episodes: Int?
     var duration: Int?
     var format: String?
+    /// ANIME or MANGA; only asked for in relations.
+    var type: String?
     var status: String?
     var season: String?
     var seasonYear: Int?

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../anilist.dart';
+import '../anime_details.dart';
 import '../downloads.dart';
 import '../mappings.dart';
 import '../platform.dart';
@@ -10,8 +11,10 @@ import '../settings.dart';
 import '../theme.dart';
 import '../ui/downloads_section.dart';
 import '../ui/motion.dart';
+import '../ui/tabs.dart';
 import '../ui/tags.dart';
 import '../widgets.dart';
+import 'anime_extras.dart';
 import 'home.dart' show HomeScreen;
 import 'list_editor.dart';
 
@@ -71,6 +74,13 @@ class _DetailScreenState extends State<DetailScreen> {
   /// Once the main button has scrolled away, the top bar offers it instead.
   bool showBarButton = false;
 
+  /// What only this page needs; null until it arrives.
+  AnimeDetails? details;
+  bool detailsFailed = false;
+
+  /// Which part of the page shows below the header.
+  int tab = 0;
+
   @override
   void initState() {
     super.initState();
@@ -82,6 +92,7 @@ class _DetailScreenState extends State<DetailScreen> {
       if (show != showBarButton) setState(() => showBarButton = show);
     });
     _refresh();
+    _loadDetails();
     Mappings.load(media.id).then((m) {
       if (mounted) setState(() => mappings = m);
     });
@@ -110,6 +121,16 @@ class _DetailScreenState extends State<DetailScreen> {
       final fresh = await AniList.instance.media(media.id);
       if (mounted) setState(() => media = fresh);
     } catch (_) {}
+  }
+
+  Future<void> _loadDetails() async {
+    setState(() => detailsFailed = false);
+    try {
+      final found = await AniList.instance.details(media.id);
+      if (mounted) setState(() => details = found);
+    } catch (_) {
+      if (mounted) setState(() => detailsFailed = true);
+    }
   }
 
   int get nextEpisode {
@@ -154,6 +175,20 @@ class _DetailScreenState extends State<DetailScreen> {
     Widget c = SizedBox(width: width, height: width * 1.45, child: CoverImage(media.cover));
     if (widget.heroTag != null) c = Hero(tag: widget.heroTag!, child: c);
     return c;
+  }
+
+  /// Shown once AniList says there is a trailer.
+  Widget? _trailerButton({required bool tall}) {
+    final trailer = details?.trailer;
+    if (trailer == null) return null;
+    return FocusOutline(
+      child: OutlinedButton.icon(
+        style: tall ? OutlinedButton.styleFrom(minimumSize: const Size(0, 50)) : null,
+        onPressed: () => openTrailer(context, media, trailer),
+        icon: const Icon(Icons.smart_display_outlined, size: 20),
+        label: Text(t('Bande-annonce', 'Trailer')),
+      ),
+    );
   }
 
   Widget _watchButton({required bool expand}) => FocusOutline(
@@ -245,7 +280,13 @@ class _DetailScreenState extends State<DetailScreen> {
       body: ListView(
         controller: scroll,
         padding: EdgeInsets.zero,
-        children: [desktop ? _desktopHeader() : _phoneHeader(), _episodes(desktop)],
+        children: [
+          // One child: the tabs overlap the header, and a list would give their taps to it.
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [desktop ? _desktopHeader() : _phoneHeader(), _below(desktop)],
+          ),
+        ],
       ),
     );
   }
@@ -363,6 +404,7 @@ class _DetailScreenState extends State<DetailScreen> {
                       ],
                     ),
                   ],
+                  if (_trailerButton(tall: true) case final trailer?) ...[const SizedBox(height: 10), trailer],
                   _description(maxWidth: 680),
                   _factTags(),
                 ],
@@ -399,7 +441,11 @@ class _DetailScreenState extends State<DetailScreen> {
         ],
         _progress(fontSize: 12),
         const SizedBox(height: 16),
-        Wrap(spacing: 8, runSpacing: 8, children: [_watchButton(expand: false), ..._listButtons(tall: false)]),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [_watchButton(expand: false), ..._listButtons(tall: false), ?_trailerButton(tall: false)],
+        ),
         _description(maxWidth: 640),
         if (!showCard) _factTags(),
       ],
@@ -459,61 +505,92 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
+  /// The tabs under the header. A movie has no episodes to list.
+  Widget _below(bool desktop) {
+    final side = desktop ? MediaQuery.paddingOf(context).left + 24 : 20.0;
+    final labels = [
+      if (!media.isMovie) t('Épisodes', 'Episodes'),
+      t('Détails', 'Details'),
+      t('Personnages', 'Characters'),
+      t('Liés', 'Related'),
+    ];
+    final shown = tab.clamp(0, labels.length - 1);
+    final extra = shown - (media.isMovie ? 0 : 1);
+    return Transform.translate(
+      offset: Offset(0, desktop ? 0 : -50),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(side, desktop ? 28 : 0, desktop ? 40 : side, 0),
+            child: UnderlineTabs(labels: labels, selected: shown, onSelect: (i) => setState(() => tab = i)),
+          ),
+          if (extra < 0)
+            _episodes(desktop)
+          else
+            Padding(
+              padding: EdgeInsets.fromLTRB(side, 0, desktop ? 40 : side, 40),
+              child: _extra(extra),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _extra(int which) {
+    final d = details;
+    if (d == null) {
+      return detailsFailed
+          ? StateMessage(title: t('Rien à afficher', 'Nothing to show'), body: networkError(), action: t('Réessayer', 'Try again'), onAction: _loadDetails)
+          : StateMessage(title: t('Chargement…', 'Loading…'), loading: true);
+    }
+    return switch (which) {
+      0 => AnimeDetailsTab(media: media, details: d),
+      1 => AnimeCastTab(details: d),
+      _ => AnimeRelatedTab(media: media, details: d),
+    };
+  }
+
   Widget _episodes(bool desktop) {
-    if (media.isMovie) return const SizedBox(height: 32);
     final accent = Nami.accentOf(media.color);
     final side = desktop ? MediaQuery.paddingOf(context).left + 24 : 20.0;
-    final title = Semantics(
-      header: true,
-      child: Text(t('Épisodes', 'Episodes'), style: desktop ? Nami.section.copyWith(fontSize: 15) : Nami.section),
-    );
-    final header = Padding(
-      padding: EdgeInsets.fromLTRB(side, desktop ? 32 : 0, side, 12),
-      child: Downloads.instance.missing(media).length > 1
-          ? Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 12,
-              children: [
-                title,
-                TextButton.icon(
-                  onPressed: () => confirmSeason(context, media),
-                  icon: const Icon(Icons.download_outlined, size: 18),
-                  label: Text(t('Télécharger la saison', 'Download season')),
-                ),
-              ],
-            )
-          : title,
-    );
-    if (media.availableEpisodes == 0) {
-      return Transform.translate(
-        offset: Offset(0, desktop ? 0 : -50),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            header,
-            Padding(
-              padding: EdgeInsets.fromLTRB(side, 0, side, 32),
-              child: Text(t("Aucun épisode diffusé pour l'instant.", 'No episode has aired yet.'), style: Nami.meta),
+    final header = Downloads.instance.missing(media).length > 1
+        ? Padding(
+            padding: EdgeInsets.fromLTRB(side - 8, 8, side, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => confirmSeason(context, media),
+                icon: const Icon(Icons.download_outlined, size: 18),
+                label: Text(t('Télécharger la saison', 'Download season')),
+              ),
             ),
-          ],
-        ),
+          )
+        : const SizedBox(height: 12);
+    if (media.availableEpisodes == 0) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          header,
+          Padding(
+            padding: EdgeInsets.fromLTRB(side, 0, side, 32),
+            child: Text(t("Aucun épisode diffusé pour l'instant.", 'No episode has aired yet.'), style: Nami.meta),
+          ),
+        ],
       );
     }
     final numbers = [for (var n = 1; n <= media.availableEpisodes; n++) n];
     if (!desktop) {
-      return Transform.translate(
-        offset: const Offset(0, -50),
-        child: ContentWidth(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              header,
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: side),
-                child: Column(children: [for (final n in numbers) _episodeRow(n, accent)]),
-              ),
-            ],
-          ),
+      return ContentWidth(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            header,
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: side),
+              child: Column(children: [for (final n in numbers) _episodeRow(n, accent)]),
+            ),
+          ],
         ),
       );
     }

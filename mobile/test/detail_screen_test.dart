@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:nami/anilist.dart';
+import 'package:nami/anime_details.dart';
 import 'package:nami/downloads.dart';
 import 'package:nami/engine.dart';
 import 'package:nami/platform.dart';
@@ -184,6 +185,175 @@ void main() {
     });
     await pumpDetail(tester, media, desktop: false);
     expect(find.byType(Wrap), findsNothing);
+  });
+
+  group('the rest of the page', () {
+    Map<String, dynamic> card(int id, String title) => {
+      'id': id,
+      'type': 'ANIME',
+      'format': 'TV',
+      'title': {'romaji': title},
+    };
+
+    final details = <String, dynamic>{
+      'trailer': {'id': 'abc123', 'site': 'youtube', 'thumbnail': 'https://x/t.jpg'},
+      'tags': [
+        {'name': 'Cyberpunk', 'rank': 90, 'isMediaSpoiler': false, 'isGeneralSpoiler': false},
+        {'name': 'Death', 'rank': 60, 'isMediaSpoiler': true, 'isGeneralSpoiler': false},
+      ],
+      'rankings': [
+        {'rank': 12, 'type': 'RATED', 'allTime': true},
+        {'rank': 3, 'type': 'POPULAR', 'allTime': false, 'season': 'FALL', 'year': 2026},
+      ],
+      'externalLinks': [
+        {'site': 'Official Site', 'url': 'https://x', 'type': 'INFO'},
+      ],
+      'stats': {
+        'scoreDistribution': [
+          {'score': 80, 'amount': 10},
+          {'score': 90, 'amount': 20},
+        ],
+        'statusDistribution': [
+          {'status': 'COMPLETED', 'amount': 120000},
+          {'status': 'CURRENT', 'amount': 800},
+        ],
+      },
+      'relations': {
+        'edges': [
+          {'relationType': 'PREQUEL', 'node': card(10, 'Before')},
+          {'relationType': 'SEQUEL', 'node': card(11, 'After')},
+          {'relationType': 'SPIN_OFF', 'node': card(12, 'Aside')},
+          {
+            'relationType': 'ADAPTATION',
+            'node': {...card(13, 'The manga'), 'type': 'MANGA'},
+          },
+        ],
+      },
+      'characters': {
+        'edges': [
+          {
+            'role': 'MAIN',
+            'voiceActors': [
+              {
+                'name': {'full': 'A Voice'},
+                'image': {'large': null},
+              },
+            ],
+            'node': {
+              'name': {'full': 'David'},
+              'image': {'large': null},
+            },
+          },
+        ],
+      },
+      'staff': {
+        'edges': [
+          {
+            'role': 'Director',
+            'node': {
+              'name': {'full': 'Someone'},
+              'image': {'large': null},
+            },
+          },
+        ],
+      },
+      'recommendations': {
+        'nodes': [
+          {'mediaRecommendation': card(20, 'Similar')},
+          {'mediaRecommendation': null},
+        ],
+      },
+    };
+
+    void answer({bool fail = false}) {
+      AniList.instance.post = (uri, headers, body) async {
+        if (fail || !body.contains('trailer')) return http.Response('{}', 500);
+        return http.Response(
+          jsonEncode({
+            'data': {'Media': details},
+          }),
+          200,
+        );
+      };
+      addTearDown(() => AniList.instance.post = null);
+    }
+
+    test('a youtube trailer plays from an embed, and links to its page', () {
+      final trailer = AnimeDetails(details).trailer!;
+      expect(trailer.embedUrl, contains('youtube-nocookie.com/embed/abc123'));
+      expect(trailer.pageUrl, 'https://www.youtube.com/watch?v=abc123');
+      expect(AnimeDetails(const {}).trailer, isNull);
+      expect(AnimeDetails(const {'trailer': {'id': 'abc	', 'site': 'youtube'}}).trailer!.id, 'abc');
+      expect(AnimeDetails(const {'trailer': {'id': 'x', 'site': 'vimeo'}}).trailer, isNull);
+    });
+
+    test('rankings read as sentences, and manga stay out of the relations', () {
+      final d = AnimeDetails(details);
+      expect(d.rankings, ['#12 mieux noté de tous les temps', '#3 plus populaire Automne 2026']);
+      expect(d.related.map((r) => r.media.title.display), ['Before', 'After', 'Aside']);
+      expect(d.recommendations.length, 1);
+    });
+
+    testWidgets('the tabs show details, characters and what is related', (tester) async {
+      answer();
+      await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+      await tester.pumpAndSettle();
+      expect(find.text('Bande-annonce'), findsOneWidget);
+      expect(find.text('Épisode 6'), findsOneWidget);
+      await tester.tap(find.text('Détails'));
+      await tester.pump();
+      expect(find.text('Épisode 6'), findsNothing);
+      expect(find.text('#12 mieux noté de tous les temps'), findsOneWidget);
+      expect(find.text('120 k ont terminé · 800 regardent'), findsOneWidget);
+      expect(find.text('Cyberpunk 90 %'), findsOneWidget);
+      expect(find.text('Death 60 %'), findsNothing);
+      await tester.tap(find.text('Montrer 1 tags avec spoilers'));
+      await tester.pump();
+      expect(find.text('Death 60 %'), findsOneWidget);
+      await tester.tap(find.text('Personnages'));
+      await tester.pump();
+      expect(find.text('David'), findsOneWidget);
+      expect(find.text('A Voice'), findsOneWidget);
+      await tester.ensureVisible(find.text('Liés'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Liés'));
+      await tester.pumpAndSettle();
+      expect(find.text('Préquelle'), findsOneWidget);
+      expect(find.text('Suite'), findsOneWidget);
+      expect(find.text('Cet anime'), findsOneWidget);
+      expect(find.text('Spin-off'), findsOneWidget);
+      expect(find.text('Si tu as aimé'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the tabs fit a Windows window', (tester) async {
+      answer();
+      await pumpDetail(tester, full(), desktop: true, size: const Size(1600, 1600));
+      await tester.pumpAndSettle();
+      for (final label in ['Détails', 'Personnages', 'Liés']) {
+        await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      }
+    });
+
+    testWidgets('a movie has no episodes tab', (tester) async {
+      answer();
+      await pumpDetail(tester, Media({...full().json, 'format': 'MOVIE'}), desktop: false, size: const Size(390, 2400));
+      await tester.pumpAndSettle();
+      expect(find.text('Épisodes'), findsNothing);
+      expect(find.text('#12 mieux noté de tous les temps'), findsOneWidget);
+    });
+
+    testWidgets('a failed load offers to try again', (tester) async {
+      answer(fail: true);
+      await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Détails'));
+      await tester.pump();
+      expect(find.text('Réessayer'), findsOneWidget);
+      expect(find.text('Bande-annonce'), findsNothing);
+    });
   });
 
   group('marking episodes', () {
