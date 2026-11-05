@@ -91,6 +91,21 @@ void main() {
     expect(find.descendant(of: bio, matching: find.textContaining('twist', findRichText: true)), findsOneWidget);
   });
 
+  testWidgets('Plus only when the bio is cut', (tester) async {
+    // In tests every letter is as wide as it is tall (15 px).
+    final bio = List.filled(20, 'word').join(' ');
+    await pumpLibrary(tester, viewer: {'about': bio});
+    expect(find.text('Plus'), findsNothing);
+  });
+
+  testWidgets('Plus for a short bio that is cut on a phone', (tester) async {
+    final bio = List.filled(20, 'word').join(' ');
+    // Under 180 letters but more than 3 lines on a phone.
+    await pumpLibrary(tester, desktop: false, viewer: {'about': bio});
+    expect(bio.length, lessThan(180));
+    expect(find.text('Plus'), findsOneWidget);
+  });
+
   testWidgets('no bio and no stats link for a new account', (tester) async {
     await pumpLibrary(
       tester,

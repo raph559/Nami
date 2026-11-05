@@ -74,10 +74,18 @@ class ProfileStats {
       for (final e in (a[key] as List?) ?? const [])
         if (e is Map<String, dynamic>) StatCount(name(e), (e['count'] as num?)?.toInt() ?? 0),
     ];
-    Map<int, int> byNumber(String key, int Function(Map<String, dynamic>) number) => {
-      for (final e in (a[key] as List?) ?? const [])
-        if (e is Map<String, dynamic>) number(e): (e['count'] as num?)?.toInt() ?? 0,
-    };
+    // Entries that end up on the same number add up; 0 and below (not rated, no year) are left out.
+    Map<int, int> byNumber(String key, int Function(Map<String, dynamic>) number) {
+      final out = <int, int>{};
+      for (final e in (a[key] as List?) ?? const []) {
+        if (e is! Map<String, dynamic>) continue;
+        final n = number(e);
+        if (n <= 0) continue;
+        out[n] = (out[n] ?? 0) + ((e['count'] as num?)?.toInt() ?? 0);
+      }
+      return out;
+    }
+
     return ProfileStats(
       count: (a['count'] as num?)?.toInt() ?? 0,
       episodes: (a['episodesWatched'] as num?)?.toInt() ?? 0,
@@ -88,7 +96,10 @@ class ProfileStats {
       studios: counts('studios', (e) => e['studio']?['name'] ?? ''),
       formats: counts('formats', (e) => e['format'] ?? ''),
       statuses: counts('statuses', (e) => e['status'] ?? ''),
-      scores: byNumber('scores', (e) => format.distributionToOutOf100((e['score'] as num?)?.toInt() ?? 0).round()),
+      scores: byNumber('scores', (e) {
+        final score = (e['score'] as num?)?.toInt() ?? 0;
+        return score <= 0 ? 0 : format.distributionToOutOf100(score).round();
+      }),
       releaseYears: byNumber('releaseYears', (e) => (e['releaseYear'] as num?)?.toInt() ?? 0),
     );
   }
@@ -164,6 +175,18 @@ final _pieces = RegExp(
 final _tags = RegExp(r'<[^>]+>');
 final _marks = RegExp(r'__|\*\*|~~~');
 final _headers = RegExp(r'^#+\s*', multiLine: true);
+final _strike = RegExp(r'~~(.+?)~~');
+// Single * or _ around words; an underscore inside a word (snake_case) stays.
+final _italics = RegExp(r'(?<![\w*])[*_](?=\S)(.+?)(?<=\S)[*_](?![\w*])');
+const _entities = {'&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&apos;': "'", '&nbsp;': ' '};
+final _entity = RegExp(r'&(amp|lt|gt|quot|apos|nbsp|#39);|&#(\d+);');
+
+/// A link Nami can open: a web address that parses.
+bool _web(String url) {
+  final uri = Uri.tryParse(url);
+  return uri != null && (uri.scheme == 'http' || uri.scheme == 'https') && uri.host.isNotEmpty;
+}
+
 final _spaces = RegExp(r'[ \t]{2,}');
 final _blankLines = RegExp(r'\n{3,}');
 
@@ -176,6 +199,9 @@ List<BioPart> parseBio(String? about) {
       .replaceAll(_tags, '')
       .replaceAll(_marks, '')
       .replaceAll(_headers, '')
+      .replaceAllMapped(_strike, (m) => m[1]!)
+      .replaceAllMapped(_italics, (m) => m[1]!)
+      .replaceAllMapped(_entity, (m) => m[2] != null ? String.fromCharCode(int.parse(m[2]!)) : _entities[m[0]]!)
       .replaceAll(_spaces, ' ')
       .replaceAll(_blankLines, '\n\n');
 
@@ -200,13 +226,13 @@ List<BioPart> parseBio(String? about) {
     } else if (m[2] != null) {
       // A link around nothing left (an image) is dropped.
       final text = clean(m[3]!).trim();
-      if (text.isNotEmpty) parts.add(BioLink(text, m[2]!));
+      if (text.isNotEmpty) _web(m[2]!) ? parts.add(BioLink(text, m[2]!)) : addText(text);
     } else if (m[4] != null) {
       final text = clean(m[4]!).trim();
-      if (text.isNotEmpty) parts.add(BioLink(text, m[5]!));
+      if (text.isNotEmpty) _web(m[5]!) ? parts.add(BioLink(text, m[5]!)) : addText(text);
     } else {
       final url = m[6]!;
-      parts.add(BioLink(url.replaceFirst(RegExp(r'^https?://'), ''), url));
+      _web(url) ? parts.add(BioLink(url.replaceFirst(RegExp(r'^https?://'), ''), url)) : addText(url);
     }
   }
   addText(source.substring(at));

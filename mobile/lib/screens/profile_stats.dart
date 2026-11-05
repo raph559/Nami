@@ -17,7 +17,11 @@ class ProfileStatsScreen extends StatelessWidget {
     final s = viewer.stats;
     final format = viewer.scoreFormat;
     final days = s.minutes / 60 / 24;
-    String number(double v) => v.toStringAsFixed(1).replaceAll('.', t(',', '.'));
+    String number(double v) {
+      final text = v.toStringAsFixed(1);
+      return (text.endsWith('.0') ? text.substring(0, text.length - 2) : text).replaceAll('.', t(',', '.'));
+    }
+
     final facts = [
       (t('Animes', 'Anime'), '${s.count}'),
       (t('Épisodes vus', 'Episodes watched'), '${s.episodes}'),

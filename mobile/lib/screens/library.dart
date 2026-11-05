@@ -358,7 +358,11 @@ class _ProfileHeader extends StatelessWidget {
           const SizedBox(height: 14),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 680),
-            child: _Bio(key: const ValueKey('bio'), parts: bio),
+            // A new bio starts with its spoilers hidden again.
+            child: KeyedSubtree(
+              key: const ValueKey('bio'),
+              child: _Bio(key: ValueKey(viewer.about), parts: bio),
+            ),
           ),
         ],
         if (!stats.isEmpty) ...[
@@ -388,9 +392,9 @@ class _BioState extends State<_Bio> {
   bool _open = false;
   final _shown = <int>{};
 
-  /// Long enough to need "Plus": measuring with the spoilers and links inside
-  /// would need a layout pass, and length tells it as well.
-  bool get _long {
+  /// More than 3 lines at [width]. Links and spoilers are measured as their words
+  /// ("Spoiler" for a hidden one), close enough to the real line breaks.
+  bool _long(BuildContext context, double width) {
     final text = widget.parts
         .map(
           (p) => switch (p) {
@@ -400,7 +404,15 @@ class _BioState extends State<_Bio> {
           },
         )
         .join();
-    return text.length > 180 || '\n'.allMatches(text).length >= 3;
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: Nami.body),
+      maxLines: 3,
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: width);
+    final cut = painter.didExceedMaxLines;
+    painter.dispose();
+    return cut;
   }
 
   @override
@@ -415,11 +427,14 @@ class _BioState extends State<_Bio> {
             WidgetSpan(
               alignment: PlaceholderAlignment.baseline,
               baseline: TextBaseline.alphabetic,
-              child: GestureDetector(
-                onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: Text(text, style: Nami.body.copyWith(decoration: TextDecoration.underline)),
+              child: Semantics(
+                link: true,
+                child: GestureDetector(
+                  onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: Text(text, style: Nami.body.copyWith(decoration: TextDecoration.underline)),
+                  ),
                 ),
               ),
             ),
@@ -451,27 +466,31 @@ class _BioState extends State<_Bio> {
           );
       }
     }
-    final long = _long;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AnimatedSize(
-          duration: const Duration(milliseconds: 200),
-          alignment: Alignment.topLeft,
-          child: Text.rich(
-            TextSpan(children: spans),
-            style: Nami.body,
-            maxLines: _open || !long ? null : 3,
-            overflow: _open || !long ? null : TextOverflow.ellipsis,
-          ),
-        ),
-        if (long)
-          TextButton(
-            style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(44, 36)),
-            onPressed: () => setState(() => _open = !_open),
-            child: Text(_open ? t('Moins', 'Less') : t('Plus', 'More')),
-          ),
-      ],
+    return LayoutBuilder(
+      builder: (context, box) {
+        final long = _long(context, box.maxWidth);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              alignment: Alignment.topLeft,
+              child: Text.rich(
+                TextSpan(children: spans),
+                style: Nami.body,
+                maxLines: _open || !long ? null : 3,
+                overflow: _open || !long ? null : TextOverflow.ellipsis,
+              ),
+            ),
+            if (long)
+              TextButton(
+                style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(44, 36)),
+                onPressed: () => setState(() => _open = !_open),
+                child: Text(_open ? t('Moins', 'Less') : t('Plus', 'More')),
+              ),
+          ],
+        );
+      },
     );
   }
 }

@@ -396,7 +396,8 @@ private struct ProfileHeader: View {
         let bio = parseBio(viewer.about)
         VStack(alignment: .leading, spacing: 12) {
             banner
-            if !bio.isEmpty { BioView(parts: bio).padding(.horizontal, 20) }
+            // A new bio starts with its spoilers hidden again.
+            if !bio.isEmpty { BioView(parts: bio).id(viewer.about).padding(.horizontal, 20) }
             if (viewer.statistics?.anime?.count ?? 0) > 0 {
                 NavigationLink { ProfileStatsView(viewer: viewer) } label: {
                     Label(t("Statistiques", "Statistics"), systemImage: "chart.bar.fill")

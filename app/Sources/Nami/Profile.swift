@@ -48,6 +48,35 @@ private let marks = regex(#"__|\*\*|~~~"#)
 private let headers = regex(#"^#+\s*"#, [.anchorsMatchLines])
 private let spaces = regex(#"[ \t]{2,}"#)
 private let blankLines = regex(#"\n{3,}"#)
+private let strike = regex(#"~~(.+?)~~"#)
+// Single * or _ around words; an underscore inside a word (snake_case) stays.
+private let italics = regex(#"(?<![\w*])[*_](?=\S)(.+?)(?<=\S)[*_](?![\w*])"#)
+private let entities = ["&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&#39;": "'", "&apos;": "'", "&nbsp;": " "]
+private let entity = regex(#"&(amp|lt|gt|quot|apos|nbsp|#39);|&#(\d+);"#)
+
+/// A link Nami can open: a web address that parses.
+private func web(_ href: String) -> URL? {
+    guard let url = URL(string: href), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+          url.host?.isEmpty == false else { return nil }
+    return url
+}
+
+private func decodeEntities(_ s: String) -> String {
+    let ns = s as NSString
+    var out = ""
+    var at = 0
+    for m in entity.matches(in: s, range: NSRange(location: 0, length: ns.length)) {
+        out += ns.substring(with: NSRange(location: at, length: m.range.location - at))
+        let whole = ns.substring(with: m.range)
+        if m.range(at: 2).location != NSNotFound, let code = Int(ns.substring(with: m.range(at: 2))), let scalar = Unicode.Scalar(code) {
+            out += String(Character(scalar))
+        } else {
+            out += entities[whole] ?? whole
+        }
+        at = m.range.location + m.range.length
+    }
+    return out + ns.substring(from: at)
+}
 
 private extension String {
     func replacing(_ re: NSRegularExpression, with template: String) -> String {
@@ -61,7 +90,8 @@ func parseBio(_ about: String?) -> [BioPart] {
     guard let about, !about.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
     let source = about.replacing(media, with: "").replacing(lineBreak, with: "\n")
     func clean(_ s: String) -> String {
-        s.replacing(tags, with: "").replacing(marks, with: "").replacing(headers, with: "")
+        decodeEntities(s.replacing(tags, with: "").replacing(marks, with: "").replacing(headers, with: "")
+            .replacing(strike, with: "$1").replacing(italics, with: "$1"))
             .replacing(spaces, with: " ").replacing(blankLines, with: "\n\n")
     }
     var parts: [BioPart] = []
@@ -82,12 +112,16 @@ func parseBio(_ about: String?) -> [BioPart] {
         } else if let href = group(2) {
             // A link around nothing left (an image) is dropped.
             let text = clean(group(3) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty { parts.append(URL(string: href).map { .link(text, $0) } ?? .text(text)) }
+            if !text.isEmpty { if let url = web(href) { parts.append(.link(text, url)) } else { addText(text) } }
         } else if let label = group(4), let href = group(5) {
             let text = clean(label).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty { parts.append(URL(string: href).map { .link(text, $0) } ?? .text(text)) }
-        } else if let href = group(6), let url = URL(string: href) {
-            parts.append(.link(href.replacingOccurrences(of: #"^https?://"#, with: "", options: .regularExpression), url))
+            if !text.isEmpty { if let url = web(href) { parts.append(.link(text, url)) } else { addText(text) } }
+        } else if let href = group(6) {
+            if let url = web(href) {
+                parts.append(.link(href.replacingOccurrences(of: #"^https?://"#, with: "", options: .regularExpression), url))
+            } else {
+                addText(href)
+            }
         }
     }
     addText(ns.substring(from: at))
@@ -130,16 +164,12 @@ struct BioView: View {
     let parts: [BioPart]
     @State private var open = false
     @State private var shown: Set<Int> = []
+    /// Heights of the text cut to 3 lines and in full, measured at the real width.
+    @State private var cutHeight: CGFloat = 0
+    @State private var fullHeight: CGFloat = 0
 
-    private var long: Bool {
-        let text = parts.map { p -> String in
-            switch p {
-            case .text(let s), .link(let s, _): s
-            case .spoiler: "Spoiler"
-            }
-        }.joined()
-        return text.count > 180 || text.filter { $0 == "\n" }.count >= 3
-    }
+    /// More than 3 lines: "Plus" is needed.
+    private var long: Bool { fullHeight > cutHeight + 1 }
 
     /// Links open in the browser; a hidden spoiler is a link to itself, caught below.
     private var attributed: AttributedString {
@@ -173,6 +203,17 @@ struct BioView: View {
             Text(attributed)
                 .lineLimit(open || !long ? nil : 3)
                 .tint(Nami.text)
+                .background {
+                    // Two hidden copies, one cut and one whole, to know whether the text is cut.
+                    ZStack {
+                        Text(attributed).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                            .background(GeometryReader { g in Color.clear.task(id: g.size.height) { cutHeight = g.size.height } })
+                        Text(attributed).fixedSize(horizontal: false, vertical: true)
+                            .background(GeometryReader { g in Color.clear.task(id: g.size.height) { fullHeight = g.size.height } })
+                    }
+                    .hidden()
+                    .accessibilityHidden(true)
+                }
                 .environment(\.openURL, OpenURLAction { url in
                     guard url.scheme == "nami-spoiler", let i = Int(url.absoluteString.dropFirst("nami-spoiler:".count)) else {
                         return .systemAction
@@ -211,8 +252,13 @@ struct ProfileStatsView: View {
         let studios = (a?.studios ?? []).map { ($0.studio?.name ?? "", $0.count ?? 0) }
         let formats = (a?.formats ?? []).map { (formatLabel($0.format ?? ""), $0.count ?? 0) }
         let statuses = (a?.statuses ?? []).map { (statusLabel($0.status ?? ""), $0.count ?? 0) }
-        let scores = (a?.scores ?? []).map { (format.distributionToOutOf100($0.score ?? 0), $0.count ?? 0) }.sorted { $0.0 < $1.0 }
-        let years = (a?.releaseYears ?? []).compactMap { y in y.releaseYear.map { ($0, y.count ?? 0) } }.sorted { $0.0 < $1.0 }
+        // Entries that end up on the same number add up; 0 (not rated, no year) is left out.
+        let scores = Dictionary((a?.scores ?? []).filter { ($0.score ?? 0) > 0 }
+            .map { (format.distributionToOutOf100($0.score ?? 0), $0.count ?? 0) }, uniquingKeysWith: +)
+            .sorted { $0.key < $1.key }.map { ($0.key, $0.value) }
+        let years = Dictionary((a?.releaseYears ?? []).filter { ($0.releaseYear ?? 0) > 0 }
+            .map { ($0.releaseYear ?? 0, $0.count ?? 0) }, uniquingKeysWith: +)
+            .sorted { $0.key < $1.key }.map { ($0.key, $0.value) }
         return ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 heading(t("En bref", "In brief"))

@@ -94,4 +94,29 @@ void main() {
   test('links with other attributes', () {
     expect(parseBio('<a target="_blank" href="https://x.co">X</a>'), [const BioLink('X', 'https://x.co')]);
   });
+
+  test('italics, strikethrough and entities read as plain text', () {
+    expect(parseBio('*so* _good_ ~~bad~~ Tom &amp; Jerry&nbsp;&lt;3 &#39;hi&#39;'), [
+      const BioText("so good bad Tom & Jerry <3 'hi'"),
+    ]);
+    // Underscores inside words stay.
+    expect(parseBio('snake_case_name'), [const BioText('snake_case_name')]);
+  });
+
+  test('a link that is not a web address stays text', () {
+    expect(parseBio('<a href="https://[bad">X</a>'), [const BioText('X')]);
+    expect(parseBio('<a href="javascript:alert(1)">X</a>'), [const BioText('X')]);
+  });
+
+  test('unrated scores are skipped and equal ones add up', () {
+    final s = ProfileStats.fromJson({
+      'count': 3,
+      'scores': [
+        {'score': 3, 'count': 4},
+        {'score': 0, 'count': 2},
+        {'score': 3, 'count': 1},
+      ],
+    }, ScoreFormat.point3);
+    expect(s.scores, {85: 5});
+  });
 }
