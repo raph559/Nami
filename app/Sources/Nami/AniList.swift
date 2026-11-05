@@ -198,6 +198,7 @@ struct Viewer: Codable, Hashable {
     var options: Options?
     var mediaListOptions: ListOptions?
     var statistics: Statistics?
+    var favourites: Favourites?
 
     var scoreFormat: ScoreFormat { ScoreFormat(rawValue: mediaListOptions?.scoreFormat ?? "") ?? .point100 }
 }
@@ -448,7 +449,11 @@ final class AniList: ObservableObject {
               statistics { anime { count episodesWatched minutesWatched meanScore standardDeviation
                 genres(limit: 6, sort: COUNT_DESC) { genre count } studios(limit: 6, sort: COUNT_DESC) { studio { name } count }
                 formats(sort: COUNT_DESC) { format count } statuses(sort: COUNT_DESC) { status count }
-                scores(sort: MEAN_SCORE) { score count } releaseYears(sort: ID) { releaseYear count } } } } }
+                scores(sort: MEAN_SCORE) { score count } releaseYears(sort: ID) { releaseYear count } } }
+              favourites { anime(perPage: 25) { nodes { \(Self.cardFields) } }
+                characters(perPage: 25) { nodes { id name { full } image { large } siteUrl } }
+                staff(perPage: 25) { nodes { id name { full } image { large } siteUrl } }
+                studios(perPage: 25) { nodes { id name siteUrl } } } } }
             """, as: D.self).Viewer
             viewerError = nil
             Task { await sendHeldProgress() }
@@ -549,6 +554,15 @@ final class AniList: ObservableObject {
         """, ["id": media.id, "s": status.rawValue, "p": progress, "r": Int(score.rounded())], as: D.self)
         listChanged()
         return d.SaveMediaListEntry
+    }
+
+    /// Adds `id` to the viewer's favourites, or removes it if it is one, then
+    /// reloads the profile so its Favoris rows follow.
+    func toggleFavourite(_ kind: FavouriteKind, id: Int) async throws {
+        struct D: Decodable {}
+        _ = try await query("mutation($id: Int) { ToggleFavourite(\(kind.argument): $id) { anime { pageInfo { total } } } }",
+                            ["id": id], as: D.self)
+        await loadViewer()
     }
 
     func deleteEntry(id: Int) async throws {

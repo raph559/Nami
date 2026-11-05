@@ -407,6 +407,9 @@ private struct ProfileHeader: View {
                 .tint(Nami.text)
                 .padding(.horizontal, 20)
             }
+            if let favourites = viewer.favourites, !favourites.isEmpty {
+                FavouritesView(favourites: favourites).padding(.horizontal, 20)
+            }
         }
     }
 

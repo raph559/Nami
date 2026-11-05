@@ -50,7 +50,13 @@ struct MediaDetailView: View {
                         .tint(Nami.accent(media.coverImage?.color))
                         .foregroundStyle(Nami.ground)
                         .disabled(!canWatch)
-                        if anilist.isLoggedIn { listButton }
+                        if anilist.isLoggedIn {
+                            listButton
+                            // Once AniList has said whether it is a favourite.
+                            if let details {
+                                FavouriteButton(kind: .anime, id: media.id, initial: details.isFavourite == true)
+                            }
+                        }
                     }
                     if let trailer = details?.trailer {
                         Button { playing = trailer } label: {

@@ -75,6 +75,10 @@ struct AnimeDetails: Decodable {
         struct Picture: Decodable { var large: String? }
         var name: Name?
         var image: Picture?
+        /// Only characters carry these: they can be favourites from the Characters tab.
+        var id: Int?
+        var isFavourite: Bool?
+        var siteUrl: String?
     }
 
     struct Relations: Decodable {
@@ -107,6 +111,8 @@ struct AnimeDetails: Decodable {
         var nodes: [Node]
     }
 
+    /// One of the viewer's favourites (false when logged out).
+    var isFavourite: Bool?
     var trailer: Trailer?
     var tags: [Tag]?
     var rankings: [Ranking]?
@@ -142,7 +148,7 @@ enum AnimeRelation {
 }
 
 extension AniList {
-    private static let cardFields = """
+    static let cardFields = """
     id title { romaji english native userPreferred } coverImage { extraLarge large color }
     format type status episodes seasonYear averageScore nextAiringEpisode { episode airingAt }
     """
@@ -151,6 +157,7 @@ extension AniList {
         struct D: Decodable { var Media: AnimeDetails }
         return try await query("""
         query($id: Int) { Media(id: $id) {
+        isFavourite
         trailer { id site thumbnail }
         tags { name rank isMediaSpoiler isGeneralSpoiler }
         rankings { rank type allTime season year }
@@ -159,7 +166,7 @@ extension AniList {
         relations { edges { relationType(version: 2) node { \(Self.cardFields) } } }
         characters(sort: [ROLE, RELEVANCE], perPage: 12) { edges { role
           voiceActors(language: JAPANESE, sort: [RELEVANCE]) { name { full } image { large } }
-          node { name { full } image { large } } } }
+          node { id isFavourite siteUrl name { full } image { large } } } }
         staff(sort: [RELEVANCE], perPage: 8) { edges { role node { name { full } image { large } } } }
         recommendations(sort: [RATING_DESC], perPage: 12) { nodes { mediaRecommendation { \(Self.cardFields) } } }
         } }
@@ -355,6 +362,9 @@ struct AnimeCastTab: View {
             ForEach(cast.indices, id: \.self) { i in
                 HStack(spacing: 8) {
                     PersonRow(person: cast[i].node, detail: cast[i].role == "MAIN" ? t("Principal", "Main") : t("Secondaire", "Supporting"))
+                    if AniList.shared.isLoggedIn, let id = cast[i].node.id {
+                        FavouriteButton(kind: .character, id: id, initial: cast[i].node.isFavourite == true, compact: true)
+                    }
                     if let voice = cast[i].voiceActors?.first {
                         PersonRow(person: voice, detail: t("Voix", "Voice"))
                     }

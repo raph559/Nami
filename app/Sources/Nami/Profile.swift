@@ -374,3 +374,178 @@ struct ProfileStatsView: View {
         .accessibilityLabel(label)
     }
 }
+
+enum FavouriteKind {
+    case anime, character, staff, studio
+
+    var argument: String {
+        switch self {
+        case .anime: "animeId"
+        case .character: "characterId"
+        case .staff: "staffId"
+        case .studio: "studioId"
+        }
+    }
+}
+
+/// The viewer's favourites, the first 25 of each kind. Characters, staff and
+/// studios open on AniList, as Nami has no page for them.
+struct Favourites: Codable, Hashable {
+    struct Item: Codable, Hashable, Identifiable {
+        struct Name: Codable, Hashable { var full: String? }
+        struct Picture: Codable, Hashable { var large: String? }
+        var id: Int
+        var name: Name?
+        var image: Picture?
+        var siteUrl: String?
+        var title: String { name?.full ?? "" }
+        var url: URL? { siteUrl.flatMap(URL.init(string:)) }
+    }
+
+    struct Studio: Codable, Hashable, Identifiable {
+        var id: Int
+        var name: String
+        var siteUrl: String?
+        var url: URL? { siteUrl.flatMap(URL.init(string:)) }
+    }
+
+    struct Page<T: Codable & Hashable>: Codable, Hashable { var nodes: [T]? }
+
+    var anime: Page<Media>?
+    var characters: Page<Item>?
+    var staff: Page<Item>?
+    var studios: Page<Studio>?
+
+    var isEmpty: Bool {
+        (anime?.nodes ?? []).isEmpty && (characters?.nodes ?? []).isEmpty && (staff?.nodes ?? []).isEmpty
+            && (studios?.nodes ?? []).isEmpty
+    }
+}
+
+/// The heart of a favourite on AniList. It changes at once; AniList is told after,
+/// one request at a time, and the heart goes back if AniList refuses.
+struct FavouriteButton: View {
+    let kind: FavouriteKind
+    let id: Int
+    let initial: Bool
+    var compact = false
+
+    static let red = Color(red: 0xE8 / 255, green: 0x5D / 255, blue: 0x75 / 255)
+
+    /// What the heart shows: what the viewer asked for last.
+    @State private var on: Bool?
+    /// What AniList has.
+    @State private var sent: Bool?
+    @State private var busy = false
+    @State private var failed = false
+
+    var body: some View {
+        let shown = on ?? initial
+        let label = shown ? t("Retirer des favoris", "Remove from favourites") : t("Ajouter aux favoris", "Add to favourites")
+        let heart = Image(systemName: shown ? "heart.fill" : "heart")
+            .foregroundStyle(shown ? Self.red : Nami.text)
+            .contentTransition(.symbolEffect(.replace))
+        Group {
+            if compact {
+                Button(action: tap) { heart.font(.title3).frame(width: 44, height: 44) }
+                    .buttonStyle(.plain)
+            } else {
+                Button(action: tap) { heart.font(.headline).padding(.vertical, 6) }
+                    .buttonStyle(.bordered)
+                    .tint(Nami.text)
+                    .fixedSize()
+            }
+        }
+        .accessibilityLabel(label)
+        .alert(t("Les favoris n'ont pas pu être modifiés.", "Favourites could not be changed."), isPresented: $failed) {
+            Button("OK", role: .cancel) {}
+        }
+    }
+
+    private func tap() {
+        on = !(on ?? initial)
+        guard !busy else { return }
+        busy = true
+        Task {
+            // Taps during a request only change what is wanted; it is sent once that request ends.
+            do {
+                while (on ?? initial) != (sent ?? initial) {
+                    try await AniList.shared.toggleFavourite(kind, id: id)
+                    sent = !(sent ?? initial)
+                }
+            } catch {
+                on = sent ?? initial
+                failed = true
+            }
+            busy = false
+        }
+    }
+}
+
+/// The viewer's favourites on the profile, a row per kind.
+struct FavouritesView: View {
+    let favourites: Favourites
+    @Environment(\.openURL) private var openURL
+
+    private func heading(_ text: String, big: Bool = false) -> some View {
+        Text(text).font(big ? .title3.bold() : .subheadline.weight(.semibold))
+            .foregroundStyle(big ? Nami.text : Nami.textSecondary)
+            .padding(.top, big ? 10 : 6)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func people(_ items: [Favourites.Item]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 14) {
+                ForEach(items) { p in
+                    Button { if let url = p.url { openURL(url) } } label: {
+                        VStack(spacing: 6) {
+                            CoverImageView(url: p.image?.large, corner: 32).frame(width: 64, height: 64)
+                            Text(p.title).font(.caption).lineLimit(2).multilineTextAlignment(.center)
+                        }
+                        .frame(width: 76)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(p.url == nil)
+                }
+            }
+        }
+    }
+
+    var body: some View {
+        let anime = favourites.anime?.nodes ?? []
+        let characters = favourites.characters?.nodes ?? []
+        let staff = favourites.staff?.nodes ?? []
+        let studios = favourites.studios?.nodes ?? []
+        VStack(alignment: .leading, spacing: 8) {
+            heading(t("Favoris", "Favourites"), big: true)
+            if !anime.isEmpty {
+                heading(t("Animes", "Anime"))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(anime) { m in
+                            NavigationLink(value: MediaRoute(media: m, source: "favourite-\(m.id)")) {
+                                MediaCard(media: m, width: 104)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            if !characters.isEmpty { heading(t("Personnages", "Characters")); people(characters) }
+            if !staff.isEmpty { heading(t("Équipe", "Staff")); people(staff) }
+            if !studios.isEmpty {
+                heading("Studios")
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(studios) { s in
+                            Button(s.name) { if let url = s.url { openURL(url) } }
+                                .buttonStyle(.bordered).tint(Nami.text)
+                                .disabled(s.url == nil)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
