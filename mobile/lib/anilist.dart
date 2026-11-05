@@ -422,6 +422,18 @@ class AniList extends ChangeNotifier {
     await loadViewer();
   }
 
+  /// Whether [id] is one of the viewer's favourites right now, read from AniList.
+  Future<bool> isFavourite(FavouriteKind kind, int id) async {
+    final type = switch (kind) {
+      FavouriteKind.anime => 'Media',
+      FavouriteKind.character => 'Character',
+      FavouriteKind.staff => 'Staff',
+      FavouriteKind.studio => 'Studio',
+    };
+    final d = await query('query(\$id: Int) { $type(id: \$id) { isFavourite } }', {'id': id});
+    return d[type]?['isFavourite'] == true;
+  }
+
   Future<void> loadViewer() async {
     if (!isLoggedIn) {
       viewer = null;

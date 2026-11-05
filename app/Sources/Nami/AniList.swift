@@ -565,6 +565,19 @@ final class AniList: ObservableObject {
         await loadViewer()
     }
 
+    /// Whether `id` is one of the viewer's favourites right now, read from AniList.
+    func isFavourite(_ kind: FavouriteKind, id: Int) async throws -> Bool {
+        let type = switch kind {
+        case .anime: "Media"
+        case .character: "Character"
+        case .staff: "Staff"
+        case .studio: "Studio"
+        }
+        struct Flag: Decodable { var isFavourite: Bool? }
+        let d = try await query("query($id: Int) { \(type)(id: $id) { isFavourite } }", ["id": id], as: [String: Flag?].self)
+        return d[type]??.isFavourite == true
+    }
+
     func deleteEntry(id: Int) async throws {
         struct D: Decodable { struct R: Decodable { var deleted: Bool? }; var DeleteMediaListEntry: R }
         _ = try await query("mutation($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }", ["id": id], as: D.self)

@@ -8,7 +8,11 @@ import 'package:nami/theme.dart';
 import 'package:nami/ui/favourite_button.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Future<void> pumpButton(WidgetTester tester, Future<void> Function(FavouriteKind, int) toggle) async {
+Future<void> pumpButton(
+  WidgetTester tester,
+  Future<void> Function(FavouriteKind, int) toggle, {
+  Future<bool> Function(FavouriteKind, int)? check,
+}) async {
   SharedPreferences.setMockInitialValues({'appLanguage': 'fr'});
   await AppSettings.load();
   await tester.pumpWidget(
@@ -16,7 +20,13 @@ Future<void> pumpButton(WidgetTester tester, Future<void> Function(FavouriteKind
       theme: Nami.theme(),
       home: Scaffold(
         body: Center(
-          child: FavouriteButton(kind: FavouriteKind.anime, id: 1, initial: false, toggle: toggle),
+          child: FavouriteButton(
+            kind: FavouriteKind.anime,
+            id: 1,
+            initial: false,
+            toggle: toggle,
+            check: check ?? (_, _) async => false,
+          ),
         ),
       ),
     ),
@@ -80,5 +90,32 @@ void main() {
     expect(calls, 2);
     expect(most, 1);
     expect(favourite, isFalse);
+  });
+
+  testWidgets('an answer lost after AniList made the change keeps the heart', (tester) async {
+    await pumpButton(tester, (_, _) async => throw Exception('timeout'), check: (_, _) async => true);
+    await tester.tap(find.byType(FavouriteButton));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.favorite), findsOneWidget);
+    expect(find.text("Les favoris n'ont pas pu être modifiés."), findsNothing);
+  });
+
+  testWidgets('after a failure it cannot check, the next tap asks AniList first', (tester) async {
+    var online = false;
+    var toggles = 0;
+    await pumpButton(tester, (_, _) async {
+      toggles++;
+      // The change reaches AniList, the answer does not.
+      throw Exception('timeout');
+    }, check: (_, _) async => online ? true : throw Exception('offline'));
+    await tester.tap(find.byType(FavouriteButton));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.favorite_border), findsOneWidget);
+    online = true;
+    await tester.tap(find.byType(FavouriteButton));
+    await tester.pumpAndSettle();
+    // AniList already has it: nothing more is sent, which would have removed it.
+    expect(toggles, 1);
+    expect(find.byIcon(Icons.favorite), findsOneWidget);
   });
 }

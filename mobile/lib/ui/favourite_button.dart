@@ -15,6 +15,7 @@ class FavouriteButton extends StatefulWidget {
     required this.initial,
     this.compact = false,
     this.toggle,
+    this.check,
   });
 
   final FavouriteKind kind;
@@ -27,6 +28,9 @@ class FavouriteButton extends StatefulWidget {
   /// Flips the favourite on AniList; [AniList.toggleFavourite] unless a test gives another.
   final Future<void> Function(FavouriteKind, int)? toggle;
 
+  /// Asks AniList whether it is a favourite now; [AniList.isFavourite] unless a test gives another.
+  final Future<bool> Function(FavouriteKind, int)? check;
+
   static const red = Color(0xFFE85D75);
 
   /// What AniList confirmed during this session, by kind and id. Pages keep the
@@ -34,8 +38,16 @@ class FavouriteButton extends StatefulWidget {
   /// opened twice) starts from here; a toggle flips, so starting wrong would undo it.
   static final _confirmed = <String, bool>{};
 
+  /// Favourites whose last change failed without AniList saying what it has: the
+  /// change may have gone through with only the answer lost. They are checked
+  /// before anything else is sent.
+  static final _unsure = <String>{};
+
   @visibleForTesting
-  static void forget() => _confirmed.clear();
+  static void forget() {
+    _confirmed.clear();
+    _unsure.clear();
+  }
 
   @override
   State<FavouriteButton> createState() => _FavouriteButtonState();
@@ -60,24 +72,43 @@ class _FavouriteButtonState extends State<FavouriteButton> {
     }
   }
 
+  /// Reads what AniList has and takes it as the truth.
+  Future<void> _ask() async {
+    final check = widget.check ?? AniList.instance.isFavourite;
+    final now = await check(widget.kind, widget.id);
+    _sent = now;
+    FavouriteButton._confirmed[_key] = now;
+    FavouriteButton._unsure.remove(_key);
+  }
+
   Future<void> _tap() async {
     setState(() => _on = !_on);
     if (_busy) return;
     _busy = true;
     final toggle = widget.toggle ?? AniList.instance.toggleFavourite;
     try {
+      if (FavouriteButton._unsure.contains(_key)) await _ask();
       // Taps during a request only change what is wanted; it is sent once that request ends.
       while (_on != _sent) {
+        FavouriteButton._unsure.add(_key);
         await toggle(widget.kind, widget.id);
         _sent = !_sent;
         FavouriteButton._confirmed[_key] = _sent;
+        FavouriteButton._unsure.remove(_key);
       }
     } catch (_) {
+      // The change may have reached AniList with only its answer lost: ask before going back.
+      try {
+        await _ask();
+      } catch (_) {}
       if (!mounted) return;
+      final done = !FavouriteButton._unsure.contains(_key) && _sent == _on;
       setState(() => _on = _sent);
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text(t("Les favoris n'ont pas pu être modifiés.", 'Favourites could not be changed.'))),
-      );
+      if (!done) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(content: Text(t("Les favoris n'ont pas pu être modifiés.", 'Favourites could not be changed.'))),
+        );
+      }
     } finally {
       _busy = false;
     }

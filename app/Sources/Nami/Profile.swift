@@ -436,6 +436,10 @@ struct FavouriteButton: View {
     /// details they loaded, so a heart built again (another tab, the same anime
     /// opened twice) starts from here; a toggle flips, so starting wrong would undo it.
     @MainActor static var confirmed: [String: Bool] = [:]
+    /// Favourites whose last change failed without AniList saying what it has: the
+    /// change may have gone through with only the answer lost. They are checked
+    /// before anything else is sent.
+    @MainActor static var unsure: Set<String> = []
 
     private var key: String { "\(kind):\(id)" }
     private var known: Bool { Self.confirmed[key] ?? initial }
@@ -475,17 +479,30 @@ struct FavouriteButton: View {
         guard !busy else { return }
         busy = true
         Task {
+            /// Reads what AniList has and takes it as the truth.
+            @MainActor func ask() async throws {
+                let now = try await AniList.shared.isFavourite(kind, id: id)
+                sent = now
+                Self.confirmed[key] = now
+                Self.unsure.remove(key)
+            }
             // Taps during a request only change what is wanted; it is sent once that request ends.
             do {
+                if Self.unsure.contains(key) { try await ask() }
                 while (on ?? known) != (sent ?? known) {
+                    Self.unsure.insert(key)
                     try await AniList.shared.toggleFavourite(kind, id: id)
                     let now = !(sent ?? known)
                     sent = now
                     Self.confirmed[key] = now
+                    Self.unsure.remove(key)
                 }
             } catch {
+                // The change may have reached AniList with only its answer lost: ask before going back.
+                try? await ask()
+                let done = !Self.unsure.contains(key) && (sent ?? known) == (on ?? known)
                 on = sent ?? known
-                failed = true
+                failed = !done
             }
             busy = false
         }
