@@ -31,7 +31,7 @@
 
 - [x] Preferred subtitle language, picked automatically.
 - [ ] External subtitles when a release has none in your language (e.g. Jimaku, OpenSubtitles).
-- [ ] Subtitle style: font, outline/background, position; keep ASS styling when present.
+- [x] Subtitle style: font, outline/background, position; keep ASS styling when present.
       Size is done.
 - [x] Sync offset (+/− ms) per episode.
 

@@ -12,6 +12,7 @@ enum SettingsBackup {
         "extensionRepos", "installedExtensions", "anilistToken",
         "appLanguage", "titleLanguage", "resolution", "downloadResolution", "downloadWifiOnly", "downloadLimit",
         "autoSkip", "autoNext", "seekStep", "subtitleLanguage", "subtitleSize", "recent",
+        "subtitleFont", "subtitleColor", "subtitleOutline", "subtitleBox", "subtitleLift", "subtitleForce",
     ]
 
     private static var file: URL {

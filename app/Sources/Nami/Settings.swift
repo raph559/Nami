@@ -8,6 +8,43 @@ struct SettingsView: View {
     @State private var flashSources = false
 
     /// The whole section lights up for a moment when a button brings you here.
+    /// Font, colour, outline, background and height of the subtitles.
+    @ViewBuilder
+    private var subtitleStyle: some View {
+        SegmentedSetting(label: t("Police", "Font"), selection: $subtitleFont,
+                         options: SubtitleFont.allCases.map { ($0.rawValue, $0.label) })
+        SegmentedSetting(label: t("Couleur", "Colour"), selection: $subtitleColor,
+                         options: SubtitleColor.allCases.map { ($0.rawValue, $0.label) })
+        SegmentedSetting(label: t("Contour", "Outline"),
+                         detail: subtitleBox ? t("Remplacé par le fond sombre.", "Replaced by the dark background.") : nil,
+                         selection: $subtitleOutline, options: SubtitleOutline.allCases.map { ($0.rawValue, $0.label) })
+        Toggle(isOn: $subtitleBox) {
+            VStack(alignment: .leading) {
+                Text(t("Fond sombre", "Dark background"))
+                Text(t("Un cadre derrière le texte.", "A box behind the text.")).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        VStack(alignment: .leading, spacing: 6) {
+            Text(t("Hauteur", "Height"))
+            Text(t("Remonte les sous-titres, au-dessus des textes incrustés par exemple.",
+                   "Raises the subtitles, above burned-in text for example."))
+                .font(.caption).foregroundStyle(.secondary)
+            Slider(value: Binding(get: { Double(subtitleLift) }, set: { subtitleLift = Int($0.rounded()) }),
+                   in: 0...Double(SubtitleStyle.maxLift), step: 10)
+                .accessibilityLabel(t("Hauteur", "Height"))
+                .accessibilityValue("\(subtitleLift) %")
+        }
+        .padding(.vertical, 4)
+        Toggle(isOn: $subtitleForce) {
+            VStack(alignment: .leading) {
+                Text(t("Toujours utiliser mon style", "Always use my style"))
+                Text(t("Remplace aussi le style des sous-titres déjà mis en forme. Les panneaux traduits peuvent mal s'afficher.",
+                       "Also replaces the style of subtitles that bring their own. Translated signs may look wrong."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private var sourcesBackground: some View {
         Rectangle().fill(flashSources ? Nami.text.opacity(0.22) : Color(uiColor: .secondarySystemGroupedBackground))
     }
@@ -37,6 +74,12 @@ struct SettingsView: View {
     @AppStorage("seekStep") private var seekStep = 10
     @AppStorage("subtitleLanguage") private var subtitleLanguage = SubtitleLanguage.fr.rawValue
     @AppStorage("subtitleSize") private var subtitleSize = 100
+    @AppStorage("subtitleFont") private var subtitleFont = SubtitleFont.standard.rawValue
+    @AppStorage("subtitleColor") private var subtitleColor = SubtitleColor.white.rawValue
+    @AppStorage("subtitleOutline") private var subtitleOutline = SubtitleOutline.thick.rawValue
+    @AppStorage("subtitleBox") private var subtitleBox = false
+    @AppStorage("subtitleLift") private var subtitleLift = 0
+    @AppStorage("subtitleForce") private var subtitleForce = false
     @State private var repoURL = ""
     @State private var busy = false
     @State private var message: String?
@@ -101,6 +144,12 @@ struct SettingsView: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }
+                        SubtitlePreview(style: SubtitleStyle(
+                            size: subtitleSize, font: SubtitleFont(rawValue: subtitleFont) ?? .standard,
+                            color: SubtitleColor(rawValue: subtitleColor) ?? .white,
+                            outline: SubtitleOutline(rawValue: subtitleOutline) ?? .thick,
+                            box: subtitleBox, lift: subtitleLift, force: subtitleForce))
+                            .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
                         SegmentedSetting(label: t("Sous-titres", "Subtitles"),
                                          detail: t("Langue choisie au début de chaque épisode.", "Language picked when an episode starts."),
                                          selection: $subtitleLanguage, options: SubtitleLanguage.allCases.map { ($0.rawValue, $0.label) })
@@ -109,6 +158,7 @@ struct SettingsView: View {
                             SubtitleSizeChoice(selection: $subtitleSize)
                         }
                         .padding(.vertical, 4)
+                        subtitleStyle
                     }
 
                     Section {
@@ -365,6 +415,7 @@ struct ThirdPartyView: View {
     private let components: [(name: String, license: String, note: String)] = [
         ("mpv, FFmpeg, libass, libplacebo", "LGPL-2.1+", t("Lecture vidéo, via MPVKit", "Video playback, through MPVKit")),
         ("MPVKit", "LGPL-3.0", t("mpv et FFmpeg pour iOS", "mpv and FFmpeg for iOS")),
+        ("Hanken Grotesk, Atkinson Hyperlegible, PT Serif", "OFL-1.1", t("Polices des sous-titres", "Subtitle fonts")),
         ("MoltenVK", "Apache-2.0", t("Vulkan sur Metal", "Vulkan on Metal")),
         ("anacrolix/torrent", "MPL-2.0", t("Moteur torrent", "Torrent engine")),
         ("Go", "BSD-3-Clause", t("Langage du moteur", "The engine's language")),

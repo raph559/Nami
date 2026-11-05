@@ -425,5 +425,11 @@ void _registerLicenses() {
     yield LicenseEntryWithLineBreaks([
       'Hanken Grotesk',
     ], await rootBundle.loadString('assets/fonts/OFL-HankenGrotesk.txt'));
+    yield LicenseEntryWithLineBreaks([
+      'Atkinson Hyperlegible',
+    ], await rootBundle.loadString('assets/subtitle-fonts/OFL-AtkinsonHyperlegible.txt'));
+    yield LicenseEntryWithLineBreaks([
+      'PT Serif',
+    ], await rootBundle.loadString('assets/subtitle-fonts/OFL-PTSerif.txt'));
   });
 }

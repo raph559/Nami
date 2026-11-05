@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'subtitle_style.dart';
+
 enum AppLanguage { fr, en }
 
 enum TitleLanguage { romaji, english, native }
@@ -99,6 +101,36 @@ class AppSettings extends ChangeNotifier {
   int get subtitleSize => _prefs.getInt('subtitleSize') ?? 100;
   set subtitleSize(int v) {
     _prefs.setInt('subtitleSize', v);
+    notifyListeners();
+  }
+
+  SubtitleStyle get subtitleStyle => SubtitleStyle(
+    size: subtitleSize,
+    font: SubtitleFont.values.asNameMap()[_prefs.getString('subtitleFont')] ?? SubtitleFont.standard,
+    color: SubtitleColor.values.asNameMap()[_prefs.getString('subtitleColor')] ?? SubtitleColor.white,
+    outline: SubtitleOutline.values.asNameMap()[_prefs.getString('subtitleOutline')] ?? SubtitleOutline.thick,
+    box: _prefs.getBool('subtitleBox') ?? false,
+    lift: (_prefs.getInt('subtitleLift') ?? 0).clamp(0, SubtitleStyle.maxLift),
+    force: _prefs.getBool('subtitleForce') ?? false,
+  );
+
+  set subtitleFont(SubtitleFont v) => _setString('subtitleFont', v.name);
+  set subtitleColor(SubtitleColor v) => _setString('subtitleColor', v.name);
+  set subtitleOutline(SubtitleOutline v) => _setString('subtitleOutline', v.name);
+  set subtitleBox(bool v) => _setBool('subtitleBox', v);
+  set subtitleForce(bool v) => _setBool('subtitleForce', v);
+  set subtitleLift(int v) {
+    _prefs.setInt('subtitleLift', v);
+    notifyListeners();
+  }
+
+  void _setString(String key, String v) {
+    _prefs.setString(key, v);
+    notifyListeners();
+  }
+
+  void _setBool(String key, bool v) {
+    _prefs.setBool(key, v);
     notifyListeners();
   }
 

@@ -26,6 +26,8 @@ final class PlayerModel: ObservableObject {
     private(set) var pip: PlayerPip?
     private var mpv: OpaquePointer?
     private var subtitleChosen = false
+    private var subtitleApplied: [String: String] = [:]
+    private var settingsObserver: NSObjectProtocol?
 
     init() {
         guard let handle = mpv_create() else { return }
@@ -48,11 +50,18 @@ final class PlayerModel: ObservableObject {
             ("sub-ass-scale-with-window", "yes"),
             ("sub-use-margins", "yes"),
             ("sub-ass-force-margins", "yes"),
-            ("sub-scale", String(Double(Playback.subtitleSize) / 100)),
         ] {
             mpv_set_option_string(handle, key, value)
         }
+        // Nami's subtitle fonts; mpv reads the folder when it sets up the subtitles.
+        if let fonts = SubtitleFonts.directory { mpv_set_option_string(handle, "sub-fonts-dir", fonts) }
         guard mpv_initialize(handle) >= 0 else { return }
+        applySubtitleStyle()
+        // Settings can change while an episode plays (the player stays open in the mini-player).
+        settingsObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil,
+                                                                  queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applySubtitleStyle() }
+        }
         for (name, format) in [
             ("time-pos", MPV_FORMAT_DOUBLE), ("duration", MPV_FORMAT_DOUBLE),
             ("pause", MPV_FORMAT_FLAG), ("paused-for-cache", MPV_FORMAT_FLAG),
@@ -109,6 +118,7 @@ final class PlayerModel: ObservableObject {
     func stop() {
         guard let handle = mpv else { return }
         mpv = nil
+        if let settingsObserver { NotificationCenter.default.removeObserver(settingsObserver) }
         mpv_set_wakeup_callback(handle, nil, nil)
         // Tearing down mpv waits for its threads; keep that off the main thread.
         let address = Int(bitPattern: UnsafeRawPointer(handle))
@@ -188,6 +198,7 @@ final class PlayerModel: ObservableObject {
             audioTrack = Int32(get("aid") ?? "") ?? -1
         case "sid":
             subtitleTrack = Int32(get("sid") ?? "") ?? -1
+            applySubtitleStyle()
         default:
             break
         }
@@ -210,6 +221,17 @@ final class PlayerModel: ObservableObject {
         audioTrack = Int32(get("aid") ?? "") ?? -1
         subtitleTrack = Int32(get("sid") ?? "") ?? -1
         chooseSubtitle()
+    }
+
+    /// Applies the subtitle style to the subtitle being shown, again whenever the
+    /// track or the settings change. A subtitle with its own design is told apart by its format.
+    private func applySubtitleStyle() {
+        guard mpv != nil else { return }
+        let codec = (get("current-tracks/sub/codec") ?? "").lowercased()
+        for (key, value) in SubtitleStyle.current.mpv(styled: codec == "ass" || codec == "ssa") where subtitleApplied[key] != value {
+            subtitleApplied[key] = value
+            set(key, value)
+        }
     }
 
     /// Picks the subtitle track in the user's language once the file's tracks are known.

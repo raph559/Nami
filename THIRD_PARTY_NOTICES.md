@@ -19,6 +19,8 @@ Direct dependencies of `mobile/` (versions in `mobile/pubspec.lock`).
 | [url_launcher](https://pub.dev/packages/url_launcher) | BSD-3-Clause | Opens the source code link |
 | [device_preview](https://pub.dev/packages/device_preview) | MIT | Only active in Windows debug builds |
 | [Hanken Grotesk](https://github.com/marcologous/hanken-grotesk) font | OFL-1.1 | `mobile/assets/fonts/OFL-HankenGrotesk.txt` |
+| [Atkinson Hyperlegible](https://github.com/googlefonts/atkinson-hyperlegible) font, for subtitles | OFL-1.1 | `mobile/assets/subtitle-fonts/OFL-AtkinsonHyperlegible.txt` |
+| [PT Serif](https://fonts.google.com/specimen/PT+Serif) font, for subtitles | OFL-1.1 | `mobile/assets/subtitle-fonts/OFL-PTSerif.txt` |
 
 ## iPhone app (SwiftUI, `app/`)
 

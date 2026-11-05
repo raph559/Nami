@@ -11,6 +11,7 @@ import 'aniskip.dart';
 import 'engine.dart';
 import 'extensions.dart';
 import 'settings.dart';
+import 'subtitle_style.dart';
 import 'widgets.dart' show formatBytes;
 
 /// What the player asks for when it closes on the way to the next episode.
@@ -44,7 +45,6 @@ class PlaybackSession extends ChangeNotifier {
         ('cache', 'yes'),
         ('demuxer-max-bytes', '64MiB'),
         ('network-timeout', '90'),
-        ('sub-scale', (AppSettings.instance.subtitleSize / 100).toString()),
         // mpv draws subtitles at the size of its output, which is the screen
         // while the player is full screen (see setOutputSize), so they keep
         // their size when the video is cropped to fill it.
@@ -60,6 +60,7 @@ class PlaybackSession extends ChangeNotifier {
       player.stream.position.listen(_onPosition),
       player.stream.duration.listen(_onDuration),
       player.stream.tracks.listen(_chooseSubtitle),
+      player.stream.track.listen((_) => _applySubtitleStyle()),
       player.stream.completed.listen((done) {
         if (!done) return;
         _checkWatched(force: true);
@@ -68,6 +69,8 @@ class PlaybackSession extends ChangeNotifier {
       for (final s in [player.stream.playing, player.stream.buffering, player.stream.tracks, player.stream.track])
         s.listen((_) => notifyListeners()),
     ]);
+    AppSettings.instance.addListener(_applySubtitleStyle);
+    _applySubtitleStyle();
     _start();
   }
 
@@ -114,6 +117,7 @@ class PlaybackSession extends ChangeNotifier {
   // Subtitles
   bool _subtitleChosen = false;
   double subDelay = 0;
+  final _subtitleApplied = <String, String>{};
 
   bool get hasNext => !media.isMovie && episode < media.availableEpisodes;
 
@@ -125,6 +129,7 @@ class PlaybackSession extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    AppSettings.instance.removeListener(_applySubtitleStyle);
     _saveResume();
     _statsTimer?.cancel();
     _noticeTimer?.cancel();
@@ -139,6 +144,10 @@ class PlaybackSession extends ChangeNotifier {
   }
 
   Future<void> _start() async {
+    // Before the file opens: mpv reads the folder when it sets up the subtitles.
+    final fonts = await SubtitleFonts.dir();
+    final native = player.platform;
+    if (fonts != null && native is mk.NativePlayer && !_disposed) await native.setProperty('sub-fonts-dir', fonts);
     final local = localFile;
     if (local != null) {
       phase = PlaybackPhase.playing;
@@ -290,6 +299,22 @@ class PlaybackSession extends ChangeNotifier {
     bool partial(mk.SubtitleTrack s) => RegExp(r'sign|song|forced', caseSensitive: false).hasMatch(s.title ?? '');
     final candidates = real.where(matches).toList()..sort((a, b) => (partial(a) ? 1 : 0) - (partial(b) ? 1 : 0));
     if (candidates.isNotEmpty) player.setSubtitleTrack(candidates.first);
+  }
+
+  /// Applies the subtitle style to the subtitle being shown, again whenever the
+  /// track or the settings change. A subtitle with its own design is told apart
+  /// by its format, read from mpv since media_kit does not know it for "auto".
+  Future<void> _applySubtitleStyle() async {
+    final native = player.platform;
+    if (native is! mk.NativePlayer || _disposed) return;
+    final codec = (await native.getProperty('current-tracks/sub/codec')).toLowerCase();
+    if (_disposed) return;
+    final styled = codec == 'ass' || codec == 'ssa';
+    for (final e in AppSettings.instance.subtitleStyle.mpv(styled: styled).entries) {
+      if (_subtitleApplied[e.key] == e.value) continue;
+      _subtitleApplied[e.key] = e.value;
+      await native.setProperty(e.key, e.value);
+    }
   }
 
   void setSubDelay(double seconds) {

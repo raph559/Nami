@@ -10,6 +10,7 @@ import '../downloads.dart';
 import '../extensions.dart';
 import '../platform.dart';
 import '../settings.dart';
+import '../subtitle_style.dart';
 import '../theme.dart';
 import '../ui/downloads_section.dart';
 import '../ui/motion.dart';
@@ -340,6 +341,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: t('Sous-titres', 'Subtitles'),
             flat: isDesktop,
             children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: SubtitlePreview(style: settings.subtitleStyle),
+                ),
+              ),
               _Setting(
                 label: t('Langue des sous-titres', 'Subtitle language'),
                 detail: t('Langue choisie au début de chaque épisode.', 'Language picked when an episode starts.'),
@@ -373,6 +381,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   },
                 ),
               ),
+              ..._subtitleStyle(settings),
             ],
           );
           final extensions = _Section(
@@ -565,6 +574,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
         },
       ),
     );
+  }
+
+  /// Font, colour, outline, background and height of the subtitles.
+  List<Widget> _subtitleStyle(AppSettings settings) {
+    final style = settings.subtitleStyle;
+    return [
+      _Setting(
+        label: t('Police', 'Font'),
+        control: _Segments<SubtitleFont>(
+          value: style.font,
+          onChanged: (v) => settings.subtitleFont = v,
+          items: {for (final f in SubtitleFont.values) f: Text(f.label, style: TextStyle(fontFamily: f.flutterFamily))},
+        ),
+      ),
+      _Setting(
+        label: t('Couleur', 'Colour'),
+        control: _Segments<SubtitleColor>(
+          value: style.color,
+          onChanged: (v) => settings.subtitleColor = v,
+          items: {for (final c in SubtitleColor.values) c: Text(c.label)},
+        ),
+      ),
+      _Setting(
+        label: t('Contour', 'Outline'),
+        detail: style.box ? t('Remplacé par le fond sombre.', 'Replaced by the dark background.') : null,
+        control: _Segments<SubtitleOutline>(
+          value: style.outline,
+          onChanged: (v) => settings.subtitleOutline = v,
+          items: {for (final o in SubtitleOutline.values) o: Text(o.label)},
+        ),
+      ),
+      _Setting(
+        label: t('Fond sombre', 'Dark background'),
+        detail: t('Un cadre derrière le texte.', 'A box behind the text.'),
+        inline: true,
+        control: Switch(value: style.box, onChanged: (v) => settings.subtitleBox = v),
+      ),
+      _Setting(
+        label: t('Hauteur', 'Height'),
+        detail: t(
+          'Remonte les sous-titres, au-dessus des textes incrustés par exemple.',
+          'Raises the subtitles, above burned-in text for example.',
+        ),
+        control: SizedBox(
+          width: 260,
+          child: Slider(
+            value: style.lift.toDouble(),
+            max: SubtitleStyle.maxLift.toDouble(),
+            divisions: 10,
+            label: '${style.lift} %',
+            semanticFormatterCallback: (v) => '${v.round()} %',
+            onChanged: (v) => settings.subtitleLift = v.round(),
+          ),
+        ),
+      ),
+      _Setting(
+        label: t('Toujours utiliser mon style', 'Always use my style'),
+        detail: t(
+          'Remplace aussi le style des sous-titres déjà mis en forme. Les panneaux traduits peuvent mal s\'afficher.',
+          'Also replaces the style of subtitles that bring their own. Translated signs may look wrong.',
+        ),
+        inline: true,
+        control: Switch(value: style.force, onChanged: (v) => settings.subtitleForce = v),
+      ),
+    ];
   }
 }
 

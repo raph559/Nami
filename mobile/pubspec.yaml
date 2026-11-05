@@ -35,7 +35,18 @@ flutter:
   assets:
     # Shown on the license page.
     - assets/fonts/OFL-HankenGrotesk.txt
+    # Copied next to the app for mpv, which draws the subtitles (see subtitle_style.dart).
+    - assets/subtitle-fonts/
   fonts:
+    # Subtitle fonts, here too so Settings can preview them. SIL Open Font License.
+    - family: AtkinsonHyperlegible
+      fonts:
+        - asset: assets/subtitle-fonts/AtkinsonHyperlegible-Bold.ttf
+          weight: 700
+    - family: PTSerif
+      fonts:
+        - asset: assets/subtitle-fonts/PTSerif-Bold.ttf
+          weight: 700
     # SIL Open Font License, see assets/fonts/OFL-HankenGrotesk.txt.
     - family: HankenGrotesk
       fonts:

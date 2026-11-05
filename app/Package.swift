@@ -34,6 +34,8 @@ let package = Package(
         .target(
             name: "Nami",
             dependencies: ["NamiEngine", .product(name: "MPVKit", package: "MPVKit")],
+            // Subtitle fonts, read by mpv from the app.
+            resources: [.copy("SubtitleFonts")],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
                 // Record the real SDK (27.0) rather than the minimum iOS: iOS, and
