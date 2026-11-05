@@ -83,4 +83,15 @@ void main() {
     expect(parseBio(''), isEmpty);
     expect(parseBio('img(https://x/a.png)'), isEmpty);
   });
+
+  test('linked images and html images leave nothing behind', () {
+    expect(parseBio('[img220(https://i.imgur.com/a.png)](https://anilist.co/user/x)'), isEmpty);
+    expect(parseBio('~~~[ img(https://i.imgur.com/a.png) ](https://anilist.co/user/x)~~~'), isEmpty);
+    expect(parseBio('<center><img src="https://i.imgur.com/a.png" width="200"></center>'), isEmpty);
+    expect(parseBio('<a href="https://x.co"><img src="https://i.imgur.com/a.png"></a>'), isEmpty);
+  });
+
+  test('links with other attributes', () {
+    expect(parseBio('<a target="_blank" href="https://x.co">X</a>'), [const BioLink('X', 'https://x.co')]);
+  });
 }

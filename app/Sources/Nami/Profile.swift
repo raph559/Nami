@@ -39,9 +39,9 @@ private func regex(_ pattern: String, _ options: NSRegularExpression.Options = [
     try! NSRegularExpression(pattern: pattern, options: options)
 }
 
-private let media = regex(#"(img\d*%?|youtube|webm)\([^)]*\)"#)
+private let media = regex(#"(img\d*%?|youtube|webm)\([^)]*\)|<(img|video|iframe|source)\b[^>]*>|</(video|iframe)>"#)
 private let lineBreak = regex(#"<br\s*/?>"#)
-private let pieces = regex(#"~!(.*?)!~|<a\s+href="([^"]+)"[^>]*>(.*?)</a>|\[([^\]]+)\]\((https?://[^)\s]+)\)|(https?://[^\s<)\]]+)"#,
+private let pieces = regex(#"~!(.*?)!~|<a\b[^>]*?\bhref="([^"]+)"[^>]*>(.*?)</a>|\[([^\]]*)\]\((https?://[^)\s]+)\)|(https?://[^\s<>"')\]]+)"#,
                            [.caseInsensitive, .dotMatchesLineSeparators])
 private let tags = regex(#"<[^>]+>"#)
 private let marks = regex(#"__|\*\*|~~~"#)
@@ -79,10 +79,13 @@ func parseBio(_ about: String?) -> [BioPart] {
         if let hidden = group(1) {
             let text = clean(hidden).trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty { parts.append(.spoiler(text)) }
-        } else if let href = group(2), let url = URL(string: href) {
-            parts.append(.link(clean(group(3) ?? href).trimmingCharacters(in: .whitespaces), url))
-        } else if let label = group(4), let href = group(5), let url = URL(string: href) {
-            parts.append(.link(clean(label).trimmingCharacters(in: .whitespaces), url))
+        } else if let href = group(2) {
+            // A link around nothing left (an image) is dropped.
+            let text = clean(group(3) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { parts.append(URL(string: href).map { .link(text, $0) } ?? .text(text)) }
+        } else if let label = group(4), let href = group(5) {
+            let text = clean(label).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { parts.append(URL(string: href).map { .link(text, $0) } ?? .text(text)) }
         } else if let href = group(6), let url = URL(string: href) {
             parts.append(.link(href.replacingOccurrences(of: #"^https?://"#, with: "", options: .regularExpression), url))
         }
@@ -269,17 +272,22 @@ struct ProfileStatsView: View {
     /// Columns with a label under each, like the anime page's score chart.
     private func columns(_ entries: [(String, Int)], label: String) -> some View {
         let most = max(entries.map(\.1).max() ?? 1, 1)
-        return HStack(alignment: .bottom, spacing: 4) {
+        // Many columns (one per year) get thin gaps, and the labels float under them
+        // without taking width, so the chart always fits the screen.
+        return HStack(alignment: .bottom, spacing: entries.count > 20 ? 1 : 4) {
             ForEach(Array(entries.enumerated()), id: \.offset) { _, e in
-                VStack(spacing: 4) {
-                    Rectangle().fill(Nami.textSecondary).frame(height: 2 + 90 * CGFloat(e.1) / CGFloat(most))
-                    Text(e.0).font(.caption2).foregroundStyle(Nami.textSecondary).lineLimit(1).minimumScaleFactor(0.5)
-                        .fixedSize(horizontal: e.0.count > 2, vertical: false)
-                }
-                .frame(maxWidth: .infinity)
+                Rectangle().fill(Nami.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 2 + 90 * CGFloat(e.1) / CGFloat(most))
+                    .overlay(alignment: .bottom) {
+                        Text(e.0).font(.caption2).foregroundStyle(Nami.textSecondary)
+                            .fixedSize()
+                            .alignmentGuide(.bottom) { $0[.top] - 4 }
+                    }
             }
         }
-        .frame(height: 130, alignment: .bottom)
+        .frame(height: 112, alignment: .bottom)
+        .padding(.bottom, 18)
         .accessibilityElement()
         .accessibilityLabel(label)
     }

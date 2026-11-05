@@ -151,10 +151,13 @@ class BioSpoiler extends BioPart {
   String toString() => 'BioSpoiler($text)';
 }
 
-final _media = RegExp(r'(img\d*%?|youtube|webm)\([^)]*\)', caseSensitive: false);
+final _media = RegExp(
+  r'(img\d*%?|youtube|webm)\([^)]*\)|<(img|video|iframe|source)\b[^>]*>|</(video|iframe)>',
+  caseSensitive: false,
+);
 final _lineBreak = RegExp(r'<br\s*/?>', caseSensitive: false);
 final _pieces = RegExp(
-  r'~!(.*?)!~|<a\s+href="([^"]+)"[^>]*>(.*?)</a>|\[([^\]]+)\]\((https?://[^)\s]+)\)|(https?://[^\s<)\]]+)',
+  r'~!(.*?)!~|<a\b[^>]*?\bhref="([^"]+)"[^>]*>(.*?)</a>|\[([^\]]*)\]\((https?://[^)\s]+)\)|(https?://[^\s<>"\x27)\]]+)',
   dotAll: true,
   caseSensitive: false,
 );
@@ -195,9 +198,12 @@ List<BioPart> parseBio(String? about) {
       final hidden = clean(m[1]!).trim();
       if (hidden.isNotEmpty) parts.add(BioSpoiler(hidden));
     } else if (m[2] != null) {
-      parts.add(BioLink(clean(m[3]!).trim(), m[2]!));
+      // A link around nothing left (an image) is dropped.
+      final text = clean(m[3]!).trim();
+      if (text.isNotEmpty) parts.add(BioLink(text, m[2]!));
     } else if (m[4] != null) {
-      parts.add(BioLink(clean(m[4]!).trim(), m[5]!));
+      final text = clean(m[4]!).trim();
+      if (text.isNotEmpty) parts.add(BioLink(text, m[5]!));
     } else {
       final url = m[6]!;
       parts.add(BioLink(url.replaceFirst(RegExp(r'^https?://'), ''), url));
