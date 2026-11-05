@@ -41,16 +41,17 @@ struct MediaDetailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header
                 VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 10) {
-                        Button(action: watch) {
-                            Label(watchLabel, systemImage: "play.fill")
-                                .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Nami.accent(media.coverImage?.color))
-                        .foregroundStyle(Nami.ground)
-                        .disabled(!canWatch)
-                        if anilist.isLoggedIn {
+                    // Watch gets the full width; the list and the heart go on a row below, as on Android.
+                    Button(action: watch) {
+                        Label(watchLabel, systemImage: "play.fill")
+                            .font(.headline).lineLimit(1).frame(maxWidth: .infinity).padding(.vertical, 6)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Nami.accent(media.coverImage?.color))
+                    .foregroundStyle(Nami.ground)
+                    .disabled(!canWatch)
+                    if anilist.isLoggedIn {
+                        HStack(spacing: 10) {
                             listButton
                             // Once AniList has said whether it is a favourite.
                             if let details {
@@ -165,11 +166,10 @@ struct MediaDetailView: View {
         let status = ListStatus(rawValue: media.mediaListEntry?.status ?? "")
         return Button { editingList = true } label: {
             Label(status?.label ?? t("Ma liste", "My list"), systemImage: status == nil ? "bookmark" : "bookmark.fill")
-                .font(.headline).padding(.vertical, 6)
+                .font(.headline).lineLimit(1).frame(maxWidth: .infinity).padding(.vertical, 6)
         }
         .buttonStyle(.bordered)
         .tint(Nami.text)
-        .fixedSize()
     }
 
     private var header: some View {
