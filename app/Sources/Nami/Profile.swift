@@ -135,6 +135,35 @@ func parseBio(_ about: String?) -> [BioPart] {
     return parts
 }
 
+/// The colour the viewer picked for their AniList profile: one of AniList's seven,
+/// or a hex colour (donators). Blue, AniList's own, when there is none.
+func profileAccent(_ name: String?) -> Color {
+    let named: [String: UInt32] = ["blue": 0x3DB4F2, "purple": 0xC063FF, "pink": 0xFC9DD6, "orange": 0xEF881A,
+                                   "red": 0xE13333, "green": 0x4CCA51, "gray": 0x677B94]
+    var rgb = named[name ?? ""] ?? named["blue"]!
+    if let name, name.count == 7, name.hasPrefix("#"), let v = UInt32(name.dropFirst(), radix: 16) { rgb = v }
+    return Color(red: Double(rgb >> 16 & 0xFF) / 255, green: Double(rgb >> 8 & 0xFF) / 255, blue: Double(rgb & 0xFF) / 255)
+}
+
+/// A score's colour, from red to green, as on AniList. Most scores are between 60
+/// and 100, so red starts at 30 to spread them over the whole range.
+func scoreColor(_ outOf100: Double) -> Color {
+    Color(hue: min(max((outOf100 - 30) / 70, 0), 1) * 120 / 360, saturation: 0.7, brightness: 0.9)
+}
+
+/// Each list status in its own colour, the same ones as on AniList.
+func statusColor(_ status: String) -> Color {
+    switch status {
+    case "CURRENT": profileAccent("green")
+    case "COMPLETED": profileAccent("blue")
+    case "PAUSED": profileAccent("orange")
+    case "DROPPED": profileAccent("red")
+    case "PLANNING": profileAccent("#9FADBD")
+    case "REPEATING": profileAccent("purple")
+    default: Nami.textSecondary
+    }
+}
+
 /// AniList's format names, as Nami writes them.
 func formatLabel(_ format: String) -> String {
     switch format {
@@ -251,7 +280,14 @@ struct ProfileStatsView: View {
         let genres = (a?.genres ?? []).map { ($0.genre ?? "", $0.count ?? 0) }
         let studios = (a?.studios ?? []).map { ($0.studio?.name ?? "", $0.count ?? 0) }
         let formats = (a?.formats ?? []).map { (formatLabel($0.format ?? ""), $0.count ?? 0) }
-        let statuses = (a?.statuses ?? []).map { (statusLabel($0.status ?? ""), $0.count ?? 0) }
+        let statuses = (a?.statuses ?? []).map { (statusLabel($0.status ?? ""), $0.count ?? 0, statusColor($0.status ?? "")) }
+        let accent = profileAccent(viewer.options?.profileColor)
+        // The most-watched first in full colour, the others fading a little.
+        func fading(_ items: [(String, Int)]) -> [(String, Int, Color)] {
+            items.enumerated().map { i, item in
+                (item.0, item.1, accent.opacity(items.count < 2 ? 1 : 1 - 0.5 * Double(i) / Double(items.count - 1)))
+            }
+        }
         // Entries that end up on the same number add up; 0 (not rated, no year) is left out.
         let scores = Dictionary((a?.scores ?? []).filter { ($0.score ?? 0) > 0 }
             .map { (format.distributionToOutOf100($0.score ?? 0), $0.count ?? 0) }, uniquingKeysWith: +)
@@ -265,23 +301,23 @@ struct ProfileStatsView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), alignment: .leading)], alignment: .leading, spacing: 14) {
                     ForEach(facts, id: \.0) { fact in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(fact.1).font(.title3.bold())
+                            Text(fact.1).font(.title3.bold()).foregroundStyle(accent)
                             Text(fact.0).font(.caption).foregroundStyle(Nami.textSecondary)
                         }
                         .accessibilityElement(children: .combine)
                     }
                 }
-                if !genres.isEmpty { heading("Genres"); bars(genres) }
-                if !studios.isEmpty { heading("Studios"); bars(studios) }
-                if !formats.isEmpty { heading("Formats"); bars(formats) }
+                if !genres.isEmpty { heading("Genres"); bars(fading(genres)) }
+                if !studios.isEmpty { heading("Studios"); bars(fading(studios)) }
+                if !formats.isEmpty { heading("Formats"); bars(fading(formats)) }
                 if !statuses.isEmpty { heading(t("Statuts", "Statuses")); bars(statuses) }
                 if !scores.isEmpty {
                     heading(t("Notes", "Scores"))
-                    columns(scores.map { (format.show($0.0), $0.1) }, label: t("Répartition des notes", "Score distribution"))
+                    columns(scores.map { (format.show($0.0), $0.1, scoreColor($0.0)) }, label: t("Répartition des notes", "Score distribution"))
                 }
                 if !years.isEmpty {
                     heading(t("Années de sortie", "Release years"))
-                    columns(years.map { ($0.0 % 5 == 0 ? "\($0.0)" : "", $0.1) }, label: t("Animes par année de sortie", "Anime by release year"))
+                    columns(years.map { ($0.0 % 5 == 0 ? "\($0.0)" : "", $0.1, accent) }, label: t("Animes par année de sortie", "Anime by release year"))
                 }
             }
             .padding()
@@ -295,14 +331,14 @@ struct ProfileStatsView: View {
     }
 
     /// Names with a bar for their count, the longest for the largest.
-    private func bars(_ items: [(String, Int)]) -> some View {
+    private func bars(_ items: [(String, Int, Color)]) -> some View {
         let most = max(items.map(\.1).max() ?? 1, 1)
         return VStack(spacing: 10) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(spacing: 10) {
                     Text(item.0).lineLimit(1).frame(width: 120, alignment: .leading)
                     GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 3).fill(Nami.textSecondary)
+                        RoundedRectangle(cornerRadius: 3).fill(item.2)
                             .frame(width: 4 + (geo.size.width - 4) * CGFloat(item.1) / CGFloat(most), height: 10)
                             .frame(maxHeight: .infinity)
                     }
@@ -316,13 +352,13 @@ struct ProfileStatsView: View {
     }
 
     /// Columns with a label under each, like the anime page's score chart.
-    private func columns(_ entries: [(String, Int)], label: String) -> some View {
+    private func columns(_ entries: [(String, Int, Color)], label: String) -> some View {
         let most = max(entries.map(\.1).max() ?? 1, 1)
         // Many columns (one per year) get thin gaps, and the labels float under them
         // without taking width, so the chart always fits the screen.
         return HStack(alignment: .bottom, spacing: entries.count > 20 ? 1 : 4) {
             ForEach(Array(entries.enumerated()), id: \.offset) { _, e in
-                Rectangle().fill(Nami.textSecondary)
+                UnevenRoundedRectangle(topLeadingRadius: 3, topTrailingRadius: 3).fill(e.2)
                     .frame(maxWidth: .infinity)
                     .frame(height: 2 + 90 * CGFloat(e.1) / CGFloat(most))
                     .overlay(alignment: .bottom) {

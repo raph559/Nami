@@ -1,3 +1,5 @@
+import 'package:flutter/painting.dart';
+
 import 'settings.dart';
 
 /// How the viewer rates anime on AniList. Nami keeps scores out of 100 and shows
@@ -250,3 +252,25 @@ List<BioPart> parseBio(String? about) {
   }
   return parts;
 }
+
+/// The colour the viewer picked for their AniList profile: one of AniList's seven,
+/// or a hex colour (donators). Blue, AniList's own, when there is none.
+Color profileAccent(String? name) {
+  const named = {
+    'blue': 0xFF3DB4F2,
+    'purple': 0xFFC063FF,
+    'pink': 0xFFFC9DD6,
+    'orange': 0xFFEF881A,
+    'red': 0xFFE13333,
+    'green': 0xFF4CCA51,
+    'gray': 0xFF677B94,
+  };
+  final hex = RegExp(r'^#([0-9a-fA-F]{6})$').firstMatch(name ?? '');
+  if (hex != null) return Color(0xFF000000 | int.parse(hex[1]!, radix: 16));
+  return Color(named[name] ?? named['blue']!);
+}
+
+/// A score's colour, from red to green, as on AniList. Most scores are between 60
+/// and 100, so red starts at 30 to spread them over the whole range.
+Color scoreColor(double outOf100) =>
+    HSVColor.fromAHSV(1, ((outOf100 - 30) / 70).clamp(0.0, 1.0) * 120, 0.7, 0.9).toColor();

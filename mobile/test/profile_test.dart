@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nami/profile.dart';
 import 'package:nami/settings.dart';
@@ -118,5 +119,19 @@ void main() {
       ],
     }, ScoreFormat.point3);
     expect(s.scores, {85: 5});
+  });
+
+  test("profile colours are AniList's", () {
+    expect(profileAccent('purple'), const Color(0xFFC063FF));
+    expect(profileAccent('green'), const Color(0xFF4CCA51));
+    expect(profileAccent('#123456'), const Color(0xFF123456));
+    expect(profileAccent(null), const Color(0xFF3DB4F2));
+    expect(profileAccent('nonsense'), const Color(0xFF3DB4F2));
+  });
+
+  test('scores go from red to green', () {
+    final low = scoreColor(10), high = scoreColor(100);
+    expect(HSVColor.fromColor(low).hue, lessThan(20));
+    expect(HSVColor.fromColor(high).hue, greaterThan(100));
   });
 }

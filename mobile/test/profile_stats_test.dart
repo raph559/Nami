@@ -44,6 +44,7 @@ Future<void> pumpStats(WidgetTester tester, Map<String, dynamic> stats) async {
     'id': 1,
     'name': 'raph559',
     'mediaListOptions': {'scoreFormat': 'POINT_10_DECIMAL'},
+    'options': {'profileColor': 'purple'},
     'statistics': {'anime': stats},
   });
   await tester.pumpWidget(
@@ -91,5 +92,16 @@ void main() {
     await pumpStats(tester, anime());
     expect(find.text('Studios'), findsNothing);
     expect(find.text('Genres'), findsOneWidget);
+  });
+
+  testWidgets('the stats are in colour', (tester) async {
+    await pumpStats(tester, anime());
+    bool filled(Color c) => find
+        .byWidgetPredicate((w) => w is Container && (w.decoration as BoxDecoration?)?.color == c)
+        .evaluate()
+        .isNotEmpty;
+    // The profile's purple for the most-watched genre, AniList's blue for completed.
+    expect(filled(const Color(0xFFC063FF)), isTrue);
+    expect(filled(const Color(0xFF3DB4F2)), isTrue);
   });
 }

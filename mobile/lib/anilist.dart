@@ -143,6 +143,7 @@ class Viewer {
   String? get avatar => json['avatar']?['large'];
   String? get banner => json['bannerImage'];
   String? get about => json['about'];
+  Color get accent => profileAccent(json['options']?['profileColor']);
   late final scoreFormat = ScoreFormat.parse(json['mediaListOptions']?['scoreFormat']);
   late final stats = ProfileStats.fromJson(json['statistics']?['anime'], scoreFormat);
   int get animeCount => stats.count;
@@ -415,7 +416,7 @@ class AniList extends ChangeNotifier {
       try {
         viewer = Viewer(
           (await query(
-            'query { Viewer { id name about avatar { large } bannerImage mediaListOptions { scoreFormat } '
+            'query { Viewer { id name about avatar { large } bannerImage options { profileColor } mediaListOptions { scoreFormat } '
             'statistics { anime { count episodesWatched minutesWatched meanScore standardDeviation '
             'genres(limit: 6, sort: COUNT_DESC) { genre count } studios(limit: 6, sort: COUNT_DESC) { studio { name } count } '
             'formats(sort: COUNT_DESC) { format count } statuses(sort: COUNT_DESC) { status count } '

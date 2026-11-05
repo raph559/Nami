@@ -31,6 +31,12 @@ class ProfileStatsScreen extends StatelessWidget {
     ];
     final years = s.releaseYears.entries.where((e) => e.key > 0).toList()..sort((a, b) => a.key.compareTo(b.key));
     final scores = s.scores.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+    final accent = viewer.accent;
+    // The most-watched first in full colour, the others fading a little.
+    List<(StatCount, Color)> fading(List<StatCount> items) => [
+      for (final (i, item) in items.indexed)
+        (item, accent.withValues(alpha: items.length < 2 ? 1 : 1 - 0.5 * i / (items.length - 1))),
+    ];
     return Scaffold(
       appBar: AppBar(title: Text(t('Statistiques', 'Statistics'))),
       body: ListView(
@@ -54,35 +60,37 @@ class ProfileStatsScreen extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(value, style: Nami.section),
+                              Text(value, style: Nami.section.copyWith(color: accent)),
                               Text(label, style: Nami.caption),
                             ],
                           ),
                         ),
                     ],
                   ),
-                  if (s.genres.isNotEmpty) ...[_Heading('Genres'), _Bars(s.genres)],
-                  if (s.studios.isNotEmpty) ...[_Heading('Studios'), _Bars(s.studios)],
+                  if (s.genres.isNotEmpty) ...[_Heading('Genres'), _Bars(fading(s.genres))],
+                  if (s.studios.isNotEmpty) ...[_Heading('Studios'), _Bars(fading(s.studios))],
                   if (s.formats.isNotEmpty) ...[
                     _Heading('Formats'),
-                    _Bars([for (final f in s.formats) StatCount(formatLabel(f.name), f.count)]),
+                    _Bars(fading([for (final f in s.formats) StatCount(formatLabel(f.name), f.count)])),
                   ],
                   if (s.statuses.isNotEmpty) ...[
                     _Heading(t('Statuts', 'Statuses')),
-                    _Bars([for (final f in s.statuses) StatCount(statusLabel(f.name), f.count)]),
+                    _Bars([for (final f in s.statuses) (StatCount(statusLabel(f.name), f.count), statusColor(f.name))]),
                   ],
                   if (scores.isNotEmpty) ...[
                     _Heading(t('Notes', 'Scores')),
                     _Columns(
                       label: t('Répartition des notes', 'Score distribution'),
-                      entries: [for (final e in scores) (format.show(e.key.toDouble()), e.value)],
+                      entries: [
+                        for (final e in scores) (format.show(e.key.toDouble()), e.value, scoreColor(e.key.toDouble())),
+                      ],
                     ),
                   ],
                   if (years.isNotEmpty) ...[
                     _Heading(t('Années de sortie', 'Release years')),
                     _Columns(
                       label: t('Animes par année de sortie', 'Anime by release year'),
-                      entries: [for (final e in years) (e.key % 5 == 0 ? '${e.key}' : '', e.value)],
+                      entries: [for (final e in years) (e.key % 5 == 0 ? '${e.key}' : '', e.value, accent)],
                     ),
                   ],
                 ],
@@ -105,6 +113,17 @@ String formatLabel(String format) => switch (format) {
   'ONA' => 'ONA',
   'MUSIC' => 'Clip',
   _ => format,
+};
+
+/// Each list status in its own colour, the same ones as on AniList.
+Color statusColor(String status) => switch (status) {
+  'CURRENT' => const Color(0xFF4CCA51),
+  'COMPLETED' => const Color(0xFF3DB4F2),
+  'PAUSED' => const Color(0xFFEF881A),
+  'DROPPED' => const Color(0xFFE13333),
+  'PLANNING' => const Color(0xFF9FADBD),
+  'REPEATING' => const Color(0xFFC063FF),
+  _ => Nami.textSecondary,
 };
 
 /// AniList's list statuses, as Nami writes them.
@@ -132,14 +151,14 @@ class _Heading extends StatelessWidget {
 /// Names with a bar for their count, the longest for the largest.
 class _Bars extends StatelessWidget {
   const _Bars(this.items);
-  final List<StatCount> items;
+  final List<(StatCount, Color)> items;
 
   @override
   Widget build(BuildContext context) {
-    final most = items.fold(1, (a, b) => a > b.count ? a : b.count);
+    final most = items.fold(1, (a, b) => a > b.$1.count ? a : b.$1.count);
     return Column(
       children: [
-        for (final item in items)
+        for (final (item, color) in items)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 5),
             child: Semantics(
@@ -158,7 +177,7 @@ class _Bars extends StatelessWidget {
                         child: Container(
                           height: 10,
                           width: 4 + (box.maxWidth - 4) * item.count / most,
-                          decoration: BoxDecoration(color: Nami.textSecondary, borderRadius: BorderRadius.circular(3)),
+                          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3)),
                         ),
                       ),
                     ),
@@ -180,7 +199,7 @@ class _Bars extends StatelessWidget {
 class _Columns extends StatelessWidget {
   const _Columns({required this.label, required this.entries});
   final String label;
-  final List<(String, int)> entries;
+  final List<(String, int, Color)> entries;
 
   @override
   Widget build(BuildContext context) {
@@ -192,19 +211,26 @@ class _Columns extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            for (final (name, count) in entries)
+            for (final (name, count, color) in entries)
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 2),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      Container(height: 2 + 90 * count / most, color: Nami.textSecondary),
+                      Container(
+                        height: 2 + 90 * count / most,
+                        decoration: BoxDecoration(
+                          color: color,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                        ),
+                      ),
                       const SizedBox(height: 4),
                       SizedBox(
                         height: 16,
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
+                        // At full size, spilling over the narrow columns beside it (years).
+                        child: OverflowBox(
+                          maxWidth: 48,
                           child: Text(name, style: Nami.caption.copyWith(fontSize: 11), softWrap: false),
                         ),
                       ),
