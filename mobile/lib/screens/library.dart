@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
+import 'package:url_launcher/url_launcher.dart';
+
 import '../anilist.dart';
 import '../platform.dart';
+import '../profile.dart';
 import '../downloads.dart';
 import '../settings.dart';
 import '../theme.dart';
 import '../ui/downloads_section.dart';
 import '../ui/tabs.dart';
 import '../widgets.dart';
+import 'profile_stats.dart';
 import 'settings_screen.dart';
 
 /// The viewer's AniList profile and list, one status at a time.
@@ -200,10 +204,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         if (Downloads.instance.entries.isEmpty) return message;
         return ListView(
           padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 16, 16, 16),
-          children: [
-            const DownloadsLink(),
-            message,
-          ],
+          children: [const DownloadsLink(), message],
         );
       },
     );
@@ -316,31 +317,160 @@ class _ProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final days = viewer.minutesWatched / 60 / 24;
-    final stats = [
-      t('${viewer.animeCount} animes', '${viewer.animeCount} anime'),
-      t('${viewer.episodesWatched} épisodes vus', '${viewer.episodesWatched} episodes watched'),
+    final stats = viewer.stats;
+    final days = stats.minutes / 60 / 24;
+    final line = [
+      t('${stats.count} animes', '${stats.count} anime'),
+      t('${stats.episodes} épisodes vus', '${stats.episodes} episodes watched'),
       t('${days.toStringAsFixed(1).replaceAll('.', ',')} jours', '${days.toStringAsFixed(1)} days'),
-    ].join(' · ');
-    final avatar = isDesktop ? 64.0 : 52.0;
-    return Row(
-      children: [
-        SizedBox(
-          width: avatar,
-          height: avatar,
-          child: CoverImage(viewer.avatar, radius: avatar / 2),
+      if (stats.meanScore > 0)
+        t(
+          'note moyenne ${viewer.scoreFormat.show(stats.meanScore)}',
+          'mean score ${viewer.scoreFormat.show(stats.meanScore)}',
         ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Semantics(header: true, child: Text(viewer.name, style: Nami.pageTitle)),
-              const SizedBox(height: 2),
-              Text(stats, style: Nami.meta.copyWith(fontSize: isDesktop ? 13 : null)),
-            ],
+    ].join(' · ');
+    final bio = parseBio(viewer.about);
+    final avatar = isDesktop ? 64.0 : 52.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            SizedBox(
+              width: avatar,
+              height: avatar,
+              child: CoverImage(viewer.avatar, radius: avatar / 2),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Semantics(header: true, child: Text(viewer.name, style: Nami.pageTitle)),
+                  const SizedBox(height: 2),
+                  Text(line, style: Nami.meta.copyWith(fontSize: isDesktop ? 13 : null)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (bio.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680),
+            child: _Bio(key: const ValueKey('bio'), parts: bio),
+          ),
+        ],
+        if (!stats.isEmpty) ...[
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () =>
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProfileStatsScreen(viewer: viewer))),
+            icon: const Icon(Icons.bar_chart_rounded, size: 18),
+            label: Text(t('Statistiques', 'Statistics')),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// The bio, cut to 3 lines until "Plus". Spoilers stay hidden until tapped.
+class _Bio extends StatefulWidget {
+  const _Bio({super.key, required this.parts});
+  final List<BioPart> parts;
+
+  @override
+  State<_Bio> createState() => _BioState();
+}
+
+class _BioState extends State<_Bio> {
+  bool _open = false;
+  final _shown = <int>{};
+
+  /// Long enough to need "Plus": measuring with the spoilers and links inside
+  /// would need a layout pass, and length tells it as well.
+  bool get _long {
+    final text = widget.parts
+        .map(
+          (p) => switch (p) {
+            BioText(:final text) => text,
+            BioLink(:final text) => text,
+            BioSpoiler() => 'Spoiler',
+          },
+        )
+        .join();
+    return text.length > 180 || '\n'.allMatches(text).length >= 3;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final spans = <InlineSpan>[];
+    for (final (i, part) in widget.parts.indexed) {
+      switch (part) {
+        case BioText(:final text):
+          spans.add(TextSpan(text: text));
+        case BioLink(:final text, :final url):
+          spans.add(
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: GestureDetector(
+                onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: Text(text, style: Nami.body.copyWith(decoration: TextDecoration.underline)),
+                ),
+              ),
+            ),
+          );
+        case BioSpoiler(:final text):
+          final shown = _shown.contains(i);
+          spans.add(
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: Semantics(
+                button: !shown,
+                child: GestureDetector(
+                  key: ValueKey('spoiler-$i'),
+                  onTap: () => setState(() => _shown.add(i)),
+                  child: MouseRegion(
+                    cursor: shown ? MouseCursor.defer : SystemMouseCursors.click,
+                    child: shown
+                        ? Text(text, style: Nami.body)
+                        : Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            decoration: BoxDecoration(color: Nami.border, borderRadius: BorderRadius.circular(4)),
+                            child: Text('Spoiler', style: Nami.body.copyWith(color: Nami.textSecondary)),
+                          ),
+                  ),
+                ),
+              ),
+            ),
+          );
+      }
+    }
+    final long = _long;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          alignment: Alignment.topLeft,
+          child: Text.rich(
+            TextSpan(children: spans),
+            style: Nami.body,
+            maxLines: _open || !long ? null : 3,
+            overflow: _open || !long ? null : TextOverflow.ellipsis,
           ),
         ),
+        if (long)
+          TextButton(
+            style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(44, 36)),
+            onPressed: () => setState(() => _open = !_open),
+            child: Text(_open ? t('Moins', 'Less') : t('Plus', 'More')),
+          ),
       ],
     );
   }

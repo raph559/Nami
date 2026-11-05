@@ -27,7 +27,12 @@ Future<Map<String, List<LibraryEntry>>> fakeLibrary() async => {
   'PLANNING': [entry('Delta', 0)],
 };
 
-Future<void> pumpLibrary(WidgetTester tester, {bool desktop = true, Map<String, Object> prefs = const {}}) async {
+Future<void> pumpLibrary(
+  WidgetTester tester, {
+  bool desktop = true,
+  Map<String, Object> prefs = const {},
+  Map<String, dynamic> viewer = const {},
+}) async {
   SharedPreferences.setMockInitialValues({'appLanguage': 'fr', 'anilistToken': 'x', ...prefs});
   await AppSettings.load();
   AniList.instance.viewer = Viewer({
@@ -36,6 +41,7 @@ Future<void> pumpLibrary(WidgetTester tester, {bool desktop = true, Map<String, 
     'statistics': {
       'anime': {'count': 243, 'episodesWatched': 3879, 'minutesWatched': 95328},
     },
+    ...viewer,
   });
   addTearDown(() => AniList.instance.viewer = null);
   debugDesktopOverride = desktop;
@@ -65,6 +71,41 @@ List<String> titlesInOrder(WidgetTester tester, List<String> titles) {
 }
 
 void main() {
+  testWidgets('the profile shows the mean score and the bio', (tester) async {
+    await pumpLibrary(
+      tester,
+      viewer: {
+        'about': 'Hello ~!twist!~',
+        'mediaListOptions': {'scoreFormat': 'POINT_10'},
+        'statistics': {
+          'anime': {'count': 243, 'episodesWatched': 3879, 'minutesWatched': 95328, 'meanScore': 78.0},
+        },
+      },
+    );
+    expect(find.textContaining('note moyenne 8'), findsOneWidget);
+    expect(find.text('Statistiques'), findsOneWidget);
+    final bio = find.byKey(const ValueKey('bio'));
+    expect(find.descendant(of: bio, matching: find.textContaining('Spoiler', findRichText: true)), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('spoiler-1')));
+    await tester.pump();
+    expect(find.descendant(of: bio, matching: find.textContaining('twist', findRichText: true)), findsOneWidget);
+  });
+
+  testWidgets('no bio and no stats link for a new account', (tester) async {
+    await pumpLibrary(
+      tester,
+      viewer: {
+        'about': null,
+        'statistics': {
+          'anime': {'count': 0, 'episodesWatched': 0, 'minutesWatched': 0},
+        },
+      },
+    );
+    expect(find.text('Statistiques'), findsNothing);
+    expect(find.byKey(const ValueKey('bio')), findsNothing);
+    expect(find.textContaining('note moyenne'), findsNothing);
+  });
+
   testWidgets('statuses are underlined tabs with counts', (tester) async {
     await pumpLibrary(tester);
     expect(find.byType(UnderlineTabs), findsOneWidget);
@@ -144,7 +185,10 @@ void main() {
       expect(find.text('Épisode 2 · Téléchargement · 25 %'), findsOneWidget);
       expect(find.text('Épisode 3 · Téléchargement bloqué'), findsOneWidget);
       expect(find.byTooltip('Réessayer'), findsOneWidget);
-      expect(tester.getTopLeft(find.text('En cours')).dy, lessThan(tester.getTopLeft(find.text('Épisode 1 · 300 MB')).dy));
+      expect(
+        tester.getTopLeft(find.text('En cours')).dy,
+        lessThan(tester.getTopLeft(find.text('Épisode 1 · 300 MB')).dy),
+      );
     });
 
     testWidgets('pause all and resume all come and go', (tester) async {
@@ -286,7 +330,12 @@ void main() {
 
       SharedPreferences.setMockInitialValues({'appLanguage': 'fr', 'anilistToken': 'x'});
       await AppSettings.load();
-      await tester.pumpWidget(MaterialApp(theme: Nami.theme(), home: const LibraryScreen(key: ValueKey('token'))));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: Nami.theme(),
+          home: const LibraryScreen(key: ValueKey('token')),
+        ),
+      );
       await tester.pump();
       expect(find.text('Téléchargements'), findsOneWidget);
       expect(find.text('Connexion à AniList…'), findsOneWidget);
