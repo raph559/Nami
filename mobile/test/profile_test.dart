@@ -134,4 +134,50 @@ void main() {
     expect(HSVColor.fromColor(low).hue, lessThan(20));
     expect(HSVColor.fromColor(high).hue, greaterThan(100));
   });
+
+  test('favourites parse', () {
+    final f = Favourites.fromJson({
+      'anime': {
+        'nodes': [
+          {
+            'id': 154587,
+            'title': {'romaji': 'Sousou no Frieren'},
+            'coverImage': {'large': 'https://img/f.jpg'},
+          },
+        ],
+      },
+      'characters': {
+        'nodes': [
+          {
+            'id': 183965,
+            'name': {'full': 'Fern'},
+            'image': {'large': 'https://img/fern.jpg'},
+            'siteUrl': 'https://anilist.co/character/183965',
+          },
+        ],
+      },
+      'staff': {
+        'nodes': [
+          {
+            'id': 95991,
+            'name': {'full': 'Kana Ichinose'},
+          },
+        ],
+      },
+      'studios': {
+        'nodes': [
+          {'id': 11, 'name': 'Madhouse', 'siteUrl': 'https://anilist.co/studio/11'},
+        ],
+      },
+    });
+    expect(f.isEmpty, isFalse);
+    expect(f.anime.single.id, 154587);
+    expect(f.characters.single.name, 'Fern');
+    expect(f.characters.single.image, 'https://img/fern.jpg');
+    expect(f.characters.single.url, 'https://anilist.co/character/183965');
+    expect(f.staff.single.url, isNull);
+    expect(f.studios.single.name, 'Madhouse');
+    expect(Favourites.fromJson(null).isEmpty, isTrue);
+    expect(Favourites.fromJson({}).isEmpty, isTrue);
+  });
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/painting.dart';
 
+import 'anilist.dart';
 import 'settings.dart';
 
 /// How the viewer rates anime on AniList. Nami keeps scores out of 100 and shows
@@ -274,3 +275,51 @@ Color profileAccent(String? name) {
 /// and 100, so red starts at 30 to spread them over the whole range.
 Color scoreColor(double outOf100) =>
     HSVColor.fromAHSV(1, ((outOf100 - 30) / 70).clamp(0.0, 1.0) * 120, 0.7, 0.9).toColor();
+
+/// A favourite character, staff member or studio: Nami has no page for them, so
+/// they open on AniList.
+class FavouriteItem {
+  const FavouriteItem(this.id, this.name, {this.image, this.url});
+  final int id;
+  final String name;
+  final String? image;
+  final String? url;
+
+  static FavouriteItem? fromJson(Map<String, dynamic> j) {
+    final id = j['id'];
+    final name = j['name'] is Map ? j['name']['full'] : j['name'];
+    if (id is! int || name is! String) return null;
+    return FavouriteItem(id, name, image: j['image']?['large'], url: j['siteUrl']);
+  }
+}
+
+enum FavouriteKind { anime, character, staff, studio }
+
+/// The viewer's favourites, the first 25 of each kind.
+class Favourites {
+  const Favourites({this.anime = const [], this.characters = const [], this.staff = const [], this.studios = const []});
+
+  factory Favourites.fromJson(Map<String, dynamic>? j) {
+    List<Map<String, dynamic>> nodes(String key) => [
+      for (final n in (j?[key]?['nodes'] as List?) ?? const [])
+        if (n is Map<String, dynamic>) n,
+    ];
+    List<FavouriteItem> items(String key) => [for (final n in nodes(key)) ?FavouriteItem.fromJson(n)];
+    return Favourites(
+      anime: [
+        for (final n in nodes('anime'))
+          if (n['id'] is int) Media(n),
+      ],
+      characters: items('characters'),
+      staff: items('staff'),
+      studios: items('studios'),
+    );
+  }
+
+  final List<Media> anime;
+  final List<FavouriteItem> characters;
+  final List<FavouriteItem> staff;
+  final List<FavouriteItem> studios;
+
+  bool get isEmpty => anime.isEmpty && characters.isEmpty && staff.isEmpty && studios.isEmpty;
+}

@@ -144,6 +144,7 @@ class Viewer {
   String? get banner => json['bannerImage'];
   String? get about => json['about'];
   Color get accent => profileAccent(json['options']?['profileColor']);
+  late final favourites = Favourites.fromJson(json['favourites']);
   late final scoreFormat = ScoreFormat.parse(json['mediaListOptions']?['scoreFormat']);
   late final stats = ProfileStats.fromJson(json['statistics']?['anime'], scoreFormat);
   int get animeCount => stats.count;
@@ -408,6 +409,20 @@ class AniList extends ChangeNotifier {
     return (season, d.year);
   }
 
+  /// Adds [id] to the viewer's favourites, or removes it if it is one, then
+  /// reloads the profile so its Favoris rows follow.
+  Future<void> toggleFavourite(FavouriteKind kind, int id) async {
+    final arg = switch (kind) {
+      FavouriteKind.anime => 'animeId',
+      FavouriteKind.character => 'characterId',
+      FavouriteKind.staff => 'staffId',
+      FavouriteKind.studio => 'studioId',
+    };
+    await query('mutation(\$id: Int) { ToggleFavourite($arg: \$id) { anime { pageInfo { total } } } }', {'id': id});
+    await loadViewer();
+    notifyListeners();
+  }
+
   Future<void> loadViewer() async {
     if (!isLoggedIn) {
       viewer = null;
@@ -420,7 +435,12 @@ class AniList extends ChangeNotifier {
             'statistics { anime { count episodesWatched minutesWatched meanScore standardDeviation '
             'genres(limit: 6, sort: COUNT_DESC) { genre count } studios(limit: 6, sort: COUNT_DESC) { studio { name } count } '
             'formats(sort: COUNT_DESC) { format count } statuses(sort: COUNT_DESC) { status count } '
-            'scores(sort: MEAN_SCORE) { score count } releaseYears(sort: ID) { releaseYear count } } } } }',
+            'scores(sort: MEAN_SCORE) { score count } releaseYears(sort: ID) { releaseYear count } } } '
+            'favourites { anime(perPage: 25) { nodes { id title { romaji english native userPreferred } '
+            'coverImage { extraLarge large color } format episodes seasonYear } } '
+            'characters(perPage: 25) { nodes { id name { full } image { large } siteUrl } } '
+            'staff(perPage: 25) { nodes { id name { full } image { large } siteUrl } } '
+            'studios(perPage: 25) { nodes { id name siteUrl } } } } }',
           ))['Viewer'],
         );
         viewerFailed = false;

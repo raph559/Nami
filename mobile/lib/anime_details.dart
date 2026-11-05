@@ -10,6 +10,7 @@ format type status episodes seasonYear averageScore nextAiringEpisode { episode 
 
 const _detailsFields =
     '''
+isFavourite
 trailer { id site thumbnail }
 tags { name rank isMediaSpoiler isGeneralSpoiler }
 rankings { rank type allTime season year }
@@ -18,7 +19,7 @@ stats { scoreDistribution { score amount } statusDistribution { status amount } 
 relations { edges { relationType(version: 2) node { $_cardFields } } }
 characters(sort: [ROLE, RELEVANCE], perPage: 12) { edges { role
   voiceActors(language: JAPANESE, sort: [RELEVANCE]) { name { full } image { large } }
-  node { name { full } image { large } } } }
+  node { id isFavourite siteUrl name { full } image { large } } } }
 staff(sort: [RELEVANCE], perPage: 8) { edges { role node { name { full } image { large } } } }
 recommendations(sort: [RATING_DESC], perPage: 12) { nodes { mediaRecommendation { $_cardFields } } }
 ''';
@@ -70,14 +71,27 @@ String relationLabel(String relation) => switch (relation) {
 };
 
 class Person {
-  Person(this.name, this.image, this.role);
+  Person(this.name, this.image, this.role, {this.id, this.isFavourite = false, this.url});
   final String name;
   final String? image;
   final String? role;
 
+  /// Only characters carry these: they can be favourites from the Characters tab.
+  final int? id;
+  final bool isFavourite;
+  final String? url;
+
   static Person? fromJson(Map<String, dynamic>? j, {String? role}) {
     final name = j?['name']?['full'] as String?;
-    return name == null ? null : Person(name, j?['image']?['large'], role);
+    if (name == null) return null;
+    return Person(
+      name,
+      j?['image']?['large'],
+      role,
+      id: j?['id'] as int?,
+      isFavourite: j?['isFavourite'] == true,
+      url: j?['siteUrl'] as String?,
+    );
   }
 }
 
@@ -96,7 +110,8 @@ class AnimeLink {
 
 class AnimeDetails {
   AnimeDetails(Map<String, dynamic> j)
-    : trailer = _trailer(j['trailer']),
+    : isFavourite = j['isFavourite'] == true,
+      trailer = _trailer(j['trailer']),
       tags = [
         for (final tag in j['tags'] as List? ?? const [])
           AnimeTag(tag['name'], tag['rank'] ?? 0, tag['isMediaSpoiler'] == true || tag['isGeneralSpoiler'] == true),
@@ -128,14 +143,14 @@ class AnimeDetails {
               e['role'] == 'MAIN',
             ),
       ],
-      staff = [
-        for (final e in j['staff']?['edges'] as List? ?? const []) ?Person.fromJson(e['node'], role: e['role']),
-      ],
+      staff = [for (final e in j['staff']?['edges'] as List? ?? const []) ?Person.fromJson(e['node'], role: e['role'])],
       recommendations = [
         for (final r in j['recommendations']?['nodes'] as List? ?? const [])
           if (r['mediaRecommendation'] != null) Media(Map<String, dynamic>.from(r['mediaRecommendation'])),
       ];
 
+  /// One of the viewer's favourites (false when logged out).
+  final bool isFavourite;
   final Trailer? trailer;
   final List<AnimeTag> tags;
   final List<String> rankings;
