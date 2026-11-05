@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'profile.dart';
 import 'settings.dart';
 
 /// AniList API client registered for Nami (redirect URL nami://auth).
@@ -141,10 +142,12 @@ class Viewer {
   String get name => json['name'];
   String? get avatar => json['avatar']?['large'];
   String? get banner => json['bannerImage'];
-  Map<String, dynamic>? get _stats => json['statistics']?['anime'];
-  int get animeCount => _stats?['count'] ?? 0;
-  int get episodesWatched => _stats?['episodesWatched'] ?? 0;
-  int get minutesWatched => _stats?['minutesWatched'] ?? 0;
+  String? get about => json['about'];
+  late final scoreFormat = ScoreFormat.parse(json['mediaListOptions']?['scoreFormat']);
+  late final stats = ProfileStats.fromJson(json['statistics']?['anime'], scoreFormat);
+  int get animeCount => stats.count;
+  int get episodesWatched => stats.episodes;
+  int get minutesWatched => stats.minutes;
 }
 
 /// One anime of the viewer's list with its entry.
@@ -412,7 +415,11 @@ class AniList extends ChangeNotifier {
       try {
         viewer = Viewer(
           (await query(
-            'query { Viewer { id name avatar { large } bannerImage statistics { anime { count episodesWatched minutesWatched } } } }',
+            'query { Viewer { id name about avatar { large } bannerImage mediaListOptions { scoreFormat } '
+            'statistics { anime { count episodesWatched minutesWatched meanScore standardDeviation '
+            'genres(limit: 6, sort: COUNT_DESC) { genre count } studios(limit: 6, sort: COUNT_DESC) { studio { name } count } '
+            'formats(sort: COUNT_DESC) { format count } statuses(sort: COUNT_DESC) { status count } '
+            'scores(sort: MEAN_SCORE) { score count } releaseYears(sort: ID) { releaseYear count } } } } }',
           ))['Viewer'],
         );
         viewerFailed = false;

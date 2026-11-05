@@ -1,0 +1,220 @@
+import 'settings.dart';
+
+/// How the viewer rates anime on AniList. Nami keeps scores out of 100 and shows
+/// them in this format.
+enum ScoreFormat {
+  point100,
+  point10Decimal,
+  point10,
+  point5,
+  point3;
+
+  static ScoreFormat parse(String? anilist) => switch (anilist) {
+    'POINT_10_DECIMAL' => point10Decimal,
+    'POINT_10' => point10,
+    'POINT_5' => point5,
+    'POINT_3' => point3,
+    _ => point100,
+  };
+
+  /// A score out of 100, the way AniList shows it in this format.
+  String show(double outOf100) => switch (this) {
+    point100 => '${outOf100.round()}',
+    point10Decimal => _decimal(outOf100 / 10),
+    point10 => '${(outOf100 / 10).round()}',
+    point5 => '★' * (outOf100 / 20).round().clamp(1, 5),
+    point3 => outOf100 >= 61 ? '🙂' : (outOf100 >= 36 ? '😐' : '🙁'),
+  };
+
+  /// AniList gives the score distribution in the viewer's format, apart from
+  /// "10 with decimals", which comes out of 100.
+  double distributionToOutOf100(int score) => switch (this) {
+    point100 || point10Decimal => score.toDouble(),
+    point10 => score * 10.0,
+    point5 => score * 20.0,
+    point3 => switch (score) {
+      1 => 35.0,
+      2 => 60.0,
+      _ => 85.0,
+    },
+  };
+
+  static String _decimal(double v) {
+    final text = v.toStringAsFixed(1);
+    final trimmed = text.endsWith('.0') ? text.substring(0, text.length - 2) : text;
+    return trimmed.replaceAll('.', t(',', '.'));
+  }
+}
+
+class StatCount {
+  const StatCount(this.name, this.count);
+  final String name;
+  final int count;
+}
+
+/// The viewer's anime statistics, as AniList counts them.
+class ProfileStats {
+  const ProfileStats({
+    this.count = 0,
+    this.episodes = 0,
+    this.minutes = 0,
+    this.meanScore = 0,
+    this.standardDeviation = 0,
+    this.genres = const [],
+    this.studios = const [],
+    this.formats = const [],
+    this.statuses = const [],
+    this.scores = const {},
+    this.releaseYears = const {},
+  });
+
+  factory ProfileStats.fromJson(Map<String, dynamic>? anime, ScoreFormat format) {
+    final a = anime ?? const {};
+    List<StatCount> counts(String key, String Function(Map<String, dynamic>) name) => [
+      for (final e in (a[key] as List?) ?? const [])
+        if (e is Map<String, dynamic>) StatCount(name(e), (e['count'] as num?)?.toInt() ?? 0),
+    ];
+    Map<int, int> byNumber(String key, int Function(Map<String, dynamic>) number) => {
+      for (final e in (a[key] as List?) ?? const [])
+        if (e is Map<String, dynamic>) number(e): (e['count'] as num?)?.toInt() ?? 0,
+    };
+    return ProfileStats(
+      count: (a['count'] as num?)?.toInt() ?? 0,
+      episodes: (a['episodesWatched'] as num?)?.toInt() ?? 0,
+      minutes: (a['minutesWatched'] as num?)?.toInt() ?? 0,
+      meanScore: (a['meanScore'] as num?)?.toDouble() ?? 0,
+      standardDeviation: (a['standardDeviation'] as num?)?.toDouble() ?? 0,
+      genres: counts('genres', (e) => e['genre'] ?? ''),
+      studios: counts('studios', (e) => e['studio']?['name'] ?? ''),
+      formats: counts('formats', (e) => e['format'] ?? ''),
+      statuses: counts('statuses', (e) => e['status'] ?? ''),
+      scores: byNumber('scores', (e) => format.distributionToOutOf100((e['score'] as num?)?.toInt() ?? 0).round()),
+      releaseYears: byNumber('releaseYears', (e) => (e['releaseYear'] as num?)?.toInt() ?? 0),
+    );
+  }
+
+  final int count;
+  final int episodes;
+  final int minutes;
+
+  /// Out of 100, whatever the score format; 0 when nothing is rated.
+  final double meanScore;
+  final double standardDeviation;
+  final List<StatCount> genres;
+  final List<StatCount> studios;
+  final List<StatCount> formats;
+  final List<StatCount> statuses;
+
+  /// Scores out of 100, and how many anime got each.
+  final Map<int, int> scores;
+  final Map<int, int> releaseYears;
+
+  bool get isEmpty => count == 0;
+}
+
+/// A piece of an AniList bio, as Nami shows it.
+sealed class BioPart {
+  const BioPart();
+}
+
+class BioText extends BioPart {
+  const BioText(this.text);
+  final String text;
+  @override
+  bool operator ==(Object other) => other is BioText && other.text == text;
+  @override
+  int get hashCode => text.hashCode;
+  @override
+  String toString() => 'BioText($text)';
+}
+
+class BioLink extends BioPart {
+  const BioLink(this.text, this.url);
+  final String text;
+  final String url;
+  @override
+  bool operator ==(Object other) => other is BioLink && other.text == text && other.url == url;
+  @override
+  int get hashCode => Object.hash(text, url);
+  @override
+  String toString() => 'BioLink($text, $url)';
+}
+
+class BioSpoiler extends BioPart {
+  const BioSpoiler(this.text);
+  final String text;
+  @override
+  bool operator ==(Object other) => other is BioSpoiler && other.text == text;
+  @override
+  int get hashCode => text.hashCode;
+  @override
+  String toString() => 'BioSpoiler($text)';
+}
+
+final _media = RegExp(r'(img\d*%?|youtube|webm)\([^)]*\)', caseSensitive: false);
+final _lineBreak = RegExp(r'<br\s*/?>', caseSensitive: false);
+final _pieces = RegExp(
+  r'~!(.*?)!~|<a\s+href="([^"]+)"[^>]*>(.*?)</a>|\[([^\]]+)\]\((https?://[^)\s]+)\)|(https?://[^\s<)\]]+)',
+  dotAll: true,
+  caseSensitive: false,
+);
+final _tags = RegExp(r'<[^>]+>');
+final _marks = RegExp(r'__|\*\*|~~~');
+final _headers = RegExp(r'^#+\s*', multiLine: true);
+final _spaces = RegExp(r'[ \t]{2,}');
+final _blankLines = RegExp(r'\n{3,}');
+
+/// An AniList bio (Markdown, some HTML and AniList's own codes) as plain text,
+/// links and spoilers. Images and videos are left out.
+List<BioPart> parseBio(String? about) {
+  if (about == null || about.trim().isEmpty) return const [];
+  final source = about.replaceAll(_media, '').replaceAll(_lineBreak, '\n');
+  String clean(String s) => s
+      .replaceAll(_tags, '')
+      .replaceAll(_marks, '')
+      .replaceAll(_headers, '')
+      .replaceAll(_spaces, ' ')
+      .replaceAll(_blankLines, '\n\n');
+
+  final parts = <BioPart>[];
+  void addText(String s) {
+    final text = clean(s);
+    if (text.isEmpty) return;
+    if (parts.isNotEmpty && parts.last is BioText) {
+      parts[parts.length - 1] = BioText((parts.last as BioText).text + text);
+    } else {
+      parts.add(BioText(text));
+    }
+  }
+
+  var at = 0;
+  for (final m in _pieces.allMatches(source)) {
+    addText(source.substring(at, m.start));
+    at = m.end;
+    if (m[1] != null) {
+      final hidden = clean(m[1]!).trim();
+      if (hidden.isNotEmpty) parts.add(BioSpoiler(hidden));
+    } else if (m[2] != null) {
+      parts.add(BioLink(clean(m[3]!).trim(), m[2]!));
+    } else if (m[4] != null) {
+      parts.add(BioLink(clean(m[4]!).trim(), m[5]!));
+    } else {
+      final url = m[6]!;
+      parts.add(BioLink(url.replaceFirst(RegExp(r'^https?://'), ''), url));
+    }
+  }
+  addText(source.substring(at));
+
+  // No blank space at either end.
+  while (parts.isNotEmpty && parts.first is BioText && (parts.first as BioText).text.trim().isEmpty) {
+    parts.removeAt(0);
+  }
+  while (parts.isNotEmpty && parts.last is BioText && (parts.last as BioText).text.trim().isEmpty) {
+    parts.removeLast();
+  }
+  if (parts.isNotEmpty && parts.first is BioText) parts[0] = BioText((parts.first as BioText).text.trimLeft());
+  if (parts.isNotEmpty && parts.last is BioText) {
+    parts[parts.length - 1] = BioText((parts.last as BioText).text.trimRight());
+  }
+  return parts;
+}
