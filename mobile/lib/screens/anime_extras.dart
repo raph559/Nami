@@ -355,10 +355,36 @@ class AnimeCastTab extends StatelessWidget {
 }
 
 /// What came before, this anime, what comes after; then everything else linked to it.
-class AnimeRelatedTab extends StatelessWidget {
-  const AnimeRelatedTab({super.key, required this.media, required this.details});
+class AnimeRelatedTab extends StatefulWidget {
+  const AnimeRelatedTab({super.key, required this.media, required this.details, this.loadChain});
   final Media media;
   final AnimeDetails details;
+
+  /// The whole order of seasons; [AnimeDetailsQuery.chain] unless a test gives another.
+  final Future<AnimeChain> Function(Media, AnimeDetails)? loadChain;
+
+  @override
+  State<AnimeRelatedTab> createState() => _AnimeRelatedTabState();
+}
+
+class _AnimeRelatedTabState extends State<AnimeRelatedTab> {
+  /// The direct prequels and sequels the page already has, until the whole order arrives.
+  late AnimeChain _chain = (
+    before: widget.details.related.where((r) => r.isBefore).toList(),
+    after: widget.details.related.where((r) => r.isAfter).toList(),
+  );
+
+  Media get media => widget.media;
+  AnimeDetails get details => widget.details;
+
+  @override
+  void initState() {
+    super.initState();
+    final load = widget.loadChain ?? AniList.instance.chain;
+    load(media, details).then((found) {
+      if (mounted) setState(() => _chain = found);
+    }, onError: (_) {});
+  }
 
   Widget _node(Media m, String label) => SizedBox(
     width: 118,
@@ -380,8 +406,7 @@ class AnimeRelatedTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final before = details.related.where((r) => r.isBefore).toList();
-    final after = details.related.where((r) => r.isAfter).toList();
+    final (:before, :after) = _chain;
     final others = details.related.where((r) => !r.isBefore && !r.isAfter).toList();
     final chain = before.isNotEmpty || after.isNotEmpty;
     final desktop = isDesktop;

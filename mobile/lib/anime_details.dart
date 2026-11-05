@@ -195,7 +195,65 @@ class AnimeDetails {
   }
 }
 
+/// The seasons in order around an anime: what comes [before] it, oldest first,
+/// and what comes [after] it.
+typedef AnimeChain = ({List<RelatedAnime> before, List<RelatedAnime> after});
+
+/// How far the chain is followed each way: a long franchise, not an endless loop.
+const chainSteps = 8;
+
+/// AniList only gives an anime's direct prequel and sequel, so part 1 only knows
+/// part 2. This follows them step by step ([fetch] gets the relations of several
+/// anime in one request) to show the whole order. Already seen anime are skipped,
+/// and a failed request keeps what is known so far.
+Future<AnimeChain> followChain(
+  Media media,
+  AnimeDetails details,
+  Future<List<Map<String, dynamic>>> Function(List<int> ids) fetch,
+) async {
+  final before = details.related.where((r) => r.isBefore).toList();
+  final after = details.related.where((r) => r.isAfter).toList();
+  final seen = {media.id, ...details.related.map((r) => r.media.id)};
+  var back = [
+    for (final r in before)
+      if (r.relation == 'PREQUEL') r.media.id,
+  ];
+  var forth = [for (final r in after) r.media.id];
+  for (var step = 0; step < chainSteps && (back.isNotEmpty || forth.isNotEmpty); step++) {
+    final List<Map<String, dynamic>> found;
+    try {
+      found = await fetch([...back, ...forth]);
+    } catch (_) {
+      break;
+    }
+    final byId = {for (final m in found) m['id']: m};
+    List<RelatedAnime> next(List<int> from, String relation) => [
+      for (final id in from)
+        for (final e in byId[id]?['relations']?['edges'] as List? ?? const [])
+          if (e['relationType'] == relation && e['node']?['type'] == 'ANIME' && seen.add(e['node']['id']))
+            RelatedAnime(Media(Map<String, dynamic>.from(e['node'])), relation),
+    ];
+    final older = next(back, 'PREQUEL');
+    final newer = next(forth, 'SEQUEL');
+    before.insertAll(0, older.reversed);
+    after.addAll(newer);
+    back = [for (final r in older) r.media.id];
+    forth = [for (final r in newer) r.media.id];
+  }
+  return (before: before, after: after);
+}
+
 extension AnimeDetailsQuery on AniList {
+  /// The whole order of seasons around [media], several anime per request.
+  Future<AnimeChain> chain(Media media, AnimeDetails details) => followChain(media, details, (ids) async {
+    final d = await query(
+      r'query($ids: [Int]) { Page(perPage: 50) { media(id_in: $ids, type: ANIME) { id '
+      'relations { edges { relationType(version: 2) node { $_cardFields } } } } } }',
+      {'ids': ids},
+    );
+    return [for (final m in d['Page']?['media'] as List? ?? const []) Map<String, dynamic>.from(m)];
+  });
+
   /// What only the anime page needs, apart from the fields every list uses.
   Future<AnimeDetails> details(int id) async {
     final d = await query(

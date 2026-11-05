@@ -128,6 +128,53 @@ struct AnimeDetails: Decodable {
     var similar: [Media] { recommendations?.nodes.compactMap(\.mediaRecommendation) ?? [] }
 }
 
+/// The seasons in order around an anime: what comes before it, oldest first, and
+/// what comes after it.
+struct AnimeChain {
+    var before: [AnimeDetails.Relations.Edge]
+    var after: [AnimeDetails.Relations.Edge]
+}
+
+extension AniList {
+    /// AniList only gives an anime's direct prequel and sequel, so part 1 only knows
+    /// part 2. This follows them step by step, several anime per request and at most
+    /// 8 steps each way, to show the whole order. Same rules as mobile/lib/anime_details.dart.
+    func chain(media: Media, details: AnimeDetails) async -> AnimeChain {
+        struct Found: Decodable {
+            struct Page: Decodable { var media: [Node] }
+            struct Node: Decodable { var id: Int; var relations: AnimeDetails.Relations? }
+            var Page: Page
+        }
+        let related = details.related
+        var before = related.filter { AnimeRelation.isBefore($0.relationType) }
+        var after = related.filter { $0.relationType == "SEQUEL" }
+        var seen = Set([media.id] + related.map(\.node.id))
+        var back = before.filter { $0.relationType == "PREQUEL" }.map(\.node.id)
+        var forth = after.map(\.node.id)
+        for _ in 0..<8 where !back.isEmpty || !forth.isEmpty {
+            guard let found = try? await query("""
+            query($ids: [Int]) { Page(perPage: 50) { media(id_in: $ids, type: ANIME) { id
+              relations { edges { relationType(version: 2) node { \(Self.cardFields) } } } } } }
+            """, ["ids": back + forth], as: Found.self) else { break }
+            let byID = Dictionary(found.Page.media.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            func next(_ from: [Int], _ relation: String) -> [AnimeDetails.Relations.Edge] {
+                from.flatMap { id in
+                    (byID[id]?.relations?.edges ?? []).filter {
+                        $0.relationType == relation && $0.node.type == "ANIME" && seen.insert($0.node.id).inserted
+                    }
+                }
+            }
+            let older = next(back, "PREQUEL")
+            let newer = next(forth, "SEQUEL")
+            before.insert(contentsOf: older.reversed(), at: 0)
+            after.append(contentsOf: newer)
+            back = older.map(\.node.id)
+            forth = newer.map(\.node.id)
+        }
+        return AnimeChain(before: before, after: after)
+    }
+}
+
 enum AnimeRelation {
     static func label(_ relation: String?) -> String {
         switch relation {
@@ -380,6 +427,8 @@ struct AnimeCastTab: View {
 struct AnimeRelatedTab: View {
     let media: Media
     let details: AnimeDetails
+    /// The whole order of seasons, once AniList has answered.
+    @State private var chain: AnimeChain?
 
     private func link(_ m: Media, label: String?) -> some View {
         NavigationLink(value: MediaRoute(media: m, source: "related-\(m.id)")) {
@@ -394,8 +443,9 @@ struct AnimeRelatedTab: View {
 
     var body: some View {
         let related = details.related
-        let before = related.filter { AnimeRelation.isBefore($0.relationType) }
-        let after = related.filter { $0.relationType == "SEQUEL" }
+        // The direct prequels and sequels the page already has, until the whole order arrives.
+        let before = chain?.before ?? related.filter { AnimeRelation.isBefore($0.relationType) }
+        let after = chain?.after ?? related.filter { $0.relationType == "SEQUEL" }
         let others = related.filter { !AnimeRelation.isBefore($0.relationType) && $0.relationType != "SEQUEL" }
         let grid = [GridItem(.adaptive(minimum: 104), spacing: 12, alignment: .top)]
         VStack(alignment: .leading, spacing: 8) {
@@ -432,5 +482,9 @@ struct AnimeRelatedTab: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: media.id) {
+            let found = await AniList.shared.chain(media: media, details: details)
+            withAnimation { chain = found }
+        }
     }
 }
