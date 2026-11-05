@@ -168,7 +168,24 @@ struct Viewer: Codable, Hashable {
             var episodesWatched: Int?
             var minutesWatched: Int?
             var meanScore: Double?
+            var standardDeviation: Double?
+            var genres: [Genre]?
+            var studios: [Studio]?
+            var formats: [Format]?
+            var statuses: [Status]?
+            var scores: [Score]?
+            var releaseYears: [Year]?
         }
+        struct Genre: Codable, Hashable { var genre: String?; var count: Int? }
+        struct Studio: Codable, Hashable {
+            struct Name: Codable, Hashable { var name: String? }
+            var studio: Name?
+            var count: Int?
+        }
+        struct Format: Codable, Hashable { var format: String?; var count: Int? }
+        struct Status: Codable, Hashable { var status: String?; var count: Int? }
+        struct Score: Codable, Hashable { var score: Int?; var count: Int? }
+        struct Year: Codable, Hashable { var releaseYear: Int?; var count: Int? }
         var anime: Anime?
     }
 
@@ -181,6 +198,8 @@ struct Viewer: Codable, Hashable {
     var options: Options?
     var mediaListOptions: ListOptions?
     var statistics: Statistics?
+
+    var scoreFormat: ScoreFormat { ScoreFormat(rawValue: mediaListOptions?.scoreFormat ?? "") ?? .point100 }
 }
 
 /// One anime of the viewer's list with its entry.
@@ -426,7 +445,10 @@ final class AniList: ObservableObject {
             viewer = try await query("""
             query { Viewer { id name about avatar { large } bannerImage siteUrl
               options { titleLanguage displayAdultContent profileColor } mediaListOptions { scoreFormat }
-              statistics { anime { count episodesWatched minutesWatched meanScore } } } }
+              statistics { anime { count episodesWatched minutesWatched meanScore standardDeviation
+                genres(limit: 6, sort: COUNT_DESC) { genre count } studios(limit: 6, sort: COUNT_DESC) { studio { name } count }
+                formats(sort: COUNT_DESC) { format count } statuses(sort: COUNT_DESC) { status count }
+                scores(sort: MEAN_SCORE) { score count } releaseYears(sort: ID) { releaseYear count } } } } }
             """, as: D.self).Viewer
             viewerError = nil
             Task { await sendHeldProgress() }

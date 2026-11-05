@@ -380,14 +380,36 @@ private struct ProfileHeader: View {
         let a = viewer.statistics?.anime
         let days = Double(a?.minutesWatched ?? 0) / 60 / 24
         let dayText = ListEditorSheet.format((days * 10).rounded() / 10)
-        return [
+        var parts = [
             t("\(a?.count ?? 0) animes", "\(a?.count ?? 0) anime"),
             t("\(a?.episodesWatched ?? 0) épisodes vus", "\(a?.episodesWatched ?? 0) episodes watched"),
             t("\(dayText) jours", "\(dayText) days"),
-        ].joined(separator: " · ")
+        ]
+        if let mean = a?.meanScore, mean > 0 {
+            let shown = viewer.scoreFormat.show(mean)
+            parts.append(t("note moyenne \(shown)", "mean score \(shown)"))
+        }
+        return parts.joined(separator: " · ")
     }
 
     var body: some View {
+        let bio = parseBio(viewer.about)
+        VStack(alignment: .leading, spacing: 12) {
+            banner
+            if !bio.isEmpty { BioView(parts: bio).padding(.horizontal, 20) }
+            if (viewer.statistics?.anime?.count ?? 0) > 0 {
+                NavigationLink { ProfileStatsView(viewer: viewer) } label: {
+                    Label(t("Statistiques", "Statistics"), systemImage: "chart.bar.fill")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .tint(Nami.text)
+                .padding(.horizontal, 20)
+            }
+        }
+    }
+
+    private var banner: some View {
         ZStack(alignment: .bottomLeading) {
             CoverImageView(url: viewer.bannerImage, corner: 0)
                 .frame(maxWidth: .infinity)
