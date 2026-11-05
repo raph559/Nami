@@ -4,6 +4,27 @@ struct SettingsView: View {
     @EnvironmentObject private var anilist: AniList
     @EnvironmentObject private var extensions: ExtensionStore
     @ObservedObject private var downloadsStore = Downloads.shared
+    @State private var sourcesShown = 0
+    @State private var flashSources = false
+
+    /// The whole section lights up for a moment when a button brings you here.
+    private var sourcesBackground: some View {
+        Rectangle().fill(flashSources ? Nami.text.opacity(0.22) : Color(uiColor: .secondarySystemGroupedBackground))
+    }
+
+    private func showSources(_ proxy: ScrollViewProxy) {
+        guard downloadsStore.sourcesOpened != sourcesShown else { return }
+        sourcesShown = downloadsStore.sourcesOpened
+        Task {
+            // The tab appears first, then the list can move.
+            try? await Task.sleep(for: .milliseconds(350))
+            // In the middle of the screen, where the eye already is.
+            withAnimation { proxy.scrollTo("sources", anchor: .center) }
+            withAnimation(.easeOut(duration: 0.3)) { flashSources = true }
+            try? await Task.sleep(for: .milliseconds(1600))
+            withAnimation(.easeOut(duration: 0.6)) { flashSources = false }
+        }
+    }
     @AppStorage("resolution") private var resolution = "1080"
     @AppStorage("downloadResolution") private var downloadResolution = "1080"
     @AppStorage("downloadWifiOnly") private var downloadWifiOnly = false
@@ -100,6 +121,10 @@ struct SettingsView: View {
                                 Button(t("Ajouter", "Add")) { addRepo() }.disabled(repoURL.isEmpty)
                             }
                         }
+                        // A row, not the section: a form scrolls to its rows.
+                        .id("sources")
+                        // Lit up for a moment when a button brings you here.
+                        .listRowBackground(sourcesBackground)
                         ForEach(extensions.repos, id: \.self) { repo in
                             NavigationLink {
                                 RepoView(repo: repo)
@@ -111,13 +136,14 @@ struct SettingsView: View {
                             }
                         }
                         .onDelete { idx in idx.map { extensions.repos[$0] }.forEach(extensions.removeRepo) }
+                        .listRowBackground(sourcesBackground)
                     } header: {
-                        Text("Extensions")
+                        Text("Extensions").anchorPreference(key: SourcesBubble.self, value: .bounds) { [$0] }
                     } footer: {
                         Text(t("Colle l'URL de l'index.json du dépôt.",
                                "Paste the repository's index.json URL."))
+                            .anchorPreference(key: SourcesBubble.self, value: .bounds) { [$0] }
                     }
-                    .id("sources")
 
                     Section(t("Téléchargements", "Downloads")) {
                         DownloadsLink()
@@ -175,17 +201,27 @@ struct SettingsView: View {
                         }
                     }
                 }
+                // A bubble around the whole section, title included, while it is lit.
+                .overlayPreferenceValue(SourcesBubble.self) { anchors in
+                    GeometryReader { geo in
+                        if flashSources, let top = anchors.first, let bottom = anchors.last, anchors.count == 2 {
+                            let a = geo[top], b = geo[bottom]
+                            RoundedRectangle(cornerRadius: 18)
+                                .stroke(Nami.text, lineWidth: 2.5)
+                                .frame(width: geo.size.width - 20, height: b.maxY - a.minY + 28)
+                                .position(x: geo.size.width / 2, y: (a.minY + b.maxY) / 2)
+                                .transition(.opacity)
+                        }
+                    }
+                    .allowsHitTesting(false)
+                }
                 .navigationTitle(t("Réglages", "Settings"))
                 .alert("Nami", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
                     Button("OK", role: .cancel) {}
                 } message: { Text(message ?? "") }
-                .onChange(of: downloadsStore.sourcesOpened) { _, _ in
-                    Task {
-                        // The tab appears first, then the list can move.
-                        try? await Task.sleep(for: .milliseconds(300))
-                        withAnimation { proxy.scrollTo("sources", anchor: .top) }
-                    }
-                }
+                // The first time, the tab is built after the request: it asks on appearing too.
+                .onAppear { showSources(proxy) }
+                .onChange(of: downloadsStore.sourcesOpened) { _, _ in showSources(proxy) }
             }
         }
     }
@@ -361,4 +397,10 @@ struct ThirdPartyView: View {
         }
         .navigationTitle(t("Licences", "Licenses"))
     }
+}
+
+/// Where the Extensions section starts and ends, to draw a bubble around it.
+private struct SourcesBubble: PreferenceKey {
+    static let defaultValue: [Anchor<CGRect>] = []
+    static func reduce(value: inout [Anchor<CGRect>], nextValue: () -> [Anchor<CGRect>]) { value += nextValue() }
 }

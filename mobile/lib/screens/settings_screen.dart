@@ -38,11 +38,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const _sourcesSection = 4;
   final _sourcesKey = GlobalKey();
 
+  /// The repository field lights up for a moment, so the eye finds it.
+  bool _flashSources = false;
+
   void _showSources() {
-    setState(() => section = _sourcesSection);
+    setState(() {
+      section = _sourcesSection;
+      _flashSources = true;
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final sources = _sourcesKey.currentContext;
-      if (sources != null) Scrollable.ensureVisible(sources, duration: Motion.of(sources).medium, curve: Motion.curve);
+      // In the middle of the screen, where the eye already is.
+      if (sources != null) {
+        Scrollable.ensureVisible(sources, alignment: 0.5, duration: Motion.of(sources).medium, curve: Motion.curve);
+      }
+    });
+    Future.delayed(const Duration(milliseconds: 1600), () {
+      if (mounted) setState(() => _flashSources = false);
     });
   }
 
@@ -365,12 +377,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           );
           final extensions = _Section(
             key: _sourcesKey,
+            lit: _flashSources,
             title: t('Sources et extensions', 'Sources and extensions'),
             flat: isDesktop,
-            footer: t(
-              "Colle l'URL de l'index.json du dépôt.",
-              "Paste the repository's index.json URL.",
-            ),
+            footer: t("Colle l'URL de l'index.json du dépôt.", "Paste the repository's index.json URL."),
             children: [
               Padding(
                 padding: const EdgeInsets.all(16),
@@ -663,7 +673,14 @@ class _LoginScreenState extends State<LoginScreen> {
 /// A labelled dropdown that wraps under its label when the text is large.
 /// A titled group of settings on its own card.
 class _Section extends StatelessWidget {
-  const _Section({super.key, required this.title, required this.children, this.footer, this.flat = false});
+  const _Section({
+    super.key,
+    required this.title,
+    required this.children,
+    this.footer,
+    this.flat = false,
+    this.lit = false,
+  });
   final String title;
   final List<Widget> children;
   final String? footer;
@@ -671,8 +688,25 @@ class _Section extends StatelessWidget {
   /// Desktop pane: rows on lines, no card around them.
   final bool flat;
 
+  /// Lights up for a moment when a button brings you here.
+  final bool lit;
+
   @override
   Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: Motion.of(context).slow,
+      curve: Motion.curve,
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
+      decoration: BoxDecoration(
+        color: lit ? Nami.text.withValues(alpha: 0.08) : Colors.transparent,
+        border: Border.all(color: lit ? Nami.text.withValues(alpha: 0.6) : Colors.transparent, width: 2),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: _body(context),
+    );
+  }
+
+  Widget _body(BuildContext context) {
     if (flat) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

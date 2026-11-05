@@ -8,6 +8,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../aniskip.dart';
+import '../pip.dart';
 import '../platform.dart';
 import '../playback.dart';
 import '../player_center.dart';
@@ -51,12 +52,46 @@ class _PlayerScreenState extends State<PlayerScreen> {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     }
     _scheduleHide();
+    final pip = Pip.instance;
+    pip.onTogglePause = s.player.playOrPause;
+    pip.onClosed = s.player.pause;
+    pip.setAuto(s.player.state.playing);
+    _playing = s.player.stream.playing.listen((playing) {
+      pip.setPlaying(playing);
+      pip.setAuto(playing);
+    });
+  }
+
+  StreamSubscription<bool>? _playing;
+
+  Future<void> _enterPip() async {
+    if (_windowFull) await _toggleWindowFull();
+    windowChromeVisible.value = false;
+    await Pip.instance.enter();
+  }
+
+  Future<void> _exitPip() async {
+    await Pip.instance.exit();
+    windowChromeVisible.value = true;
+    _setControls(true);
+    _scheduleHide();
+  }
+
+  /// Only the video: controls would not fit, and Android does not let them be touched.
+  Widget _pipView() {
+    final video = Video(controller: s.controller, controls: NoVideoControls, fill: Colors.black);
+    if (!isDesktop) return video;
+    return _PipOverlay(session: s, onExpand: _exitPip, child: video);
   }
 
   @override
   void dispose() {
     _flashTimer?.cancel();
     _hideTimer?.cancel();
+    _playing?.cancel();
+    Pip.instance
+      ..setAuto(false)
+      ..exit();
     windowChromeVisible.value = true;
     if (_windowFull) windowManager.setFullScreen(false);
     // The mini-player shows the video at its own size.
@@ -171,7 +206,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
           autofocus: true,
           child: Scaffold(
             backgroundColor: Colors.black,
-            body: LayoutBuilder(
+            body: ListenableBuilder(
+              listenable: Pip.instance,
+              builder: (context, _) => Pip.instance.active ? _pipView() : _player(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _player() {
+    return LayoutBuilder(
               builder: (context, box) {
                 // mpv renders at the screen's size, so subtitles are drawn at screen size.
                 final dpr = MediaQuery.devicePixelRatioOf(context);
@@ -180,10 +226,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 );
                 return ListenableBuilder(listenable: s, builder: (context, _) => _content());
               },
-            ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -417,6 +459,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
                     _trackMenu(),
+                    if (Pip.instance.supported)
+                      FocusOutline(
+                        child: IconButton(
+                          tooltip: t("Image dans l'image", 'Picture-in-Picture'),
+                          icon: const Icon(Icons.picture_in_picture_alt, color: Colors.white),
+                          onPressed: _enterPip,
+                        ),
+                      ),
                     FocusOutline(
                       child: IconButton(
                         tooltip: s.fill
@@ -742,6 +792,67 @@ extension on String {
 
 /// The mini-player: above the bottom bar on a phone, a card in the corner on a
 /// wide window. Tap or swipe up to go back to full screen, swipe down to close.
+/// Windows: the small window, moved by dragging; its buttons show under the pointer.
+class _PipOverlay extends StatefulWidget {
+  const _PipOverlay({required this.session, required this.onExpand, required this.child});
+  final PlaybackSession session;
+  final VoidCallback onExpand;
+  final Widget child;
+
+  @override
+  State<_PipOverlay> createState() => _PipOverlayState();
+}
+
+class _PipOverlayState extends State<_PipOverlay> {
+  bool hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.session;
+    Widget button(String tip, IconData icon, VoidCallback onTap) => IconButton(
+      tooltip: tip,
+      onPressed: onTap,
+      icon: Icon(icon, color: Colors.white),
+      style: IconButton.styleFrom(backgroundColor: Colors.black54),
+    );
+    return MouseRegion(
+      onEnter: (_) => setState(() => hovered = true),
+      onExit: (_) => setState(() => hovered = false),
+      child: DragToMoveArea(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            widget.child,
+            AnimatedOpacity(
+              opacity: hovered ? 1 : 0,
+              duration: Motion.of(context).fast,
+              child: Center(
+                child: ListenableBuilder(
+                  listenable: s,
+                  builder: (context, _) => Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      button(t('Agrandir', 'Expand'), Icons.open_in_full, widget.onExpand),
+                      const SizedBox(width: 8),
+                      button(
+                        s.player.state.playing ? t('Pause', 'Pause') : t('Lecture', 'Play'),
+                        s.player.state.playing ? Icons.pause : Icons.play_arrow,
+                        s.player.playOrPause,
+                      ),
+                      const SizedBox(width: 8),
+                      button(t('Fermer', 'Close'), Icons.close, PlayerCenter.instance.close),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class MiniPlayerHost extends StatelessWidget {
   const MiniPlayerHost({super.key});
 

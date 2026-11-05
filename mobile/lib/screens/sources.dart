@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../anilist.dart';
+import '../downloads.dart';
 import '../extensions.dart';
 import '../platform.dart';
 import '../release.dart';
@@ -219,6 +220,11 @@ class _SourcesSheetState extends State<SourcesSheet> {
               "Ajoute un dépôt d'extensions dans Réglages, puis reviens ici.",
               'Add an extension repository in Settings, then come back here.',
             ),
+            action: t('Ajouter des sources', 'Add sources'),
+            onAction: () {
+              Navigator.of(context).pop();
+              Downloads.instance.onOpenSources?.call();
+            },
           ),
         ),
       ];

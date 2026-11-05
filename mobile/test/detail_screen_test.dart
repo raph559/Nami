@@ -13,6 +13,7 @@ import 'package:nami/downloads.dart';
 import 'package:nami/engine.dart';
 import 'package:nami/platform.dart';
 import 'package:nami/screens/detail.dart';
+import 'package:nami/screens/sources.dart';
 import 'package:nami/settings.dart';
 import 'package:nami/theme.dart';
 import 'package:nami/widgets.dart';
@@ -548,6 +549,32 @@ void main() {
         expect(find.byType(ChoiceChip), findsNothing);
         expect(find.text('Choisir la source'), findsNothing);
         expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Télécharger')).onPressed, isNull);
+      });
+
+      testWidgets('watching with no extension leads to the sources', (tester) async {
+        var opened = 0;
+        Downloads.instance.onOpenSources = () => opened++;
+        addTearDown(() => Downloads.instance.onOpenSources = null);
+        SharedPreferences.setMockInitialValues({'appLanguage': 'fr'});
+        await AppSettings.load();
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: Nami.theme(),
+            home: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => pickSource(context, full(), 6),
+                child: const Text('Regarder'),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('Regarder'));
+        await tester.pumpAndSettle();
+        expect(find.text('Aucune source installée'), findsOneWidget);
+        await tester.tap(find.text('Ajouter des sources'));
+        await tester.pumpAndSettle();
+        expect(opened, 1);
+        expect(find.text('Aucune source installée'), findsNothing);
       });
 
       testWidgets('with no extension the question leads to the sources', (tester) async {

@@ -163,6 +163,9 @@ struct PlayerView: View {
                                 .frame(width: surfaceSize.width, height: surfaceSize.height)
                                 .scaleEffect(mini ? 63 / surfaceSize.height : 1)
                         }
+                        // mpv keeps drawing underneath, since the window copies its pictures.
+                        .overlay { if model.inPip { pipCover(mini: mini) } }
+                        .animation(.easeInOut(duration: 0.25), value: model.inPip)
                         .clipShape(RoundedRectangle(cornerRadius: mini ? 8 : 0))
                         .ignoresSafeArea(.all, edges: mini ? [] : .all)
                         .allowsHitTesting(false)
@@ -460,6 +463,38 @@ struct PlayerView: View {
         .padding()
     }
 
+    @ViewBuilder
+    private var pipButton: some View {
+        if model.pip?.supported == true {
+            Button {
+                if model.inPip {
+                    model.pip?.stop()
+                } else {
+                    model.pip?.onProblem = { show(Notice(text: $0)) }
+                    model.pip?.start()
+                }
+            } label: {
+                Image(systemName: model.inPip ? "pip.exit" : "pip.enter").font(.title3).foregroundStyle(.white).padding(8)
+            }
+            .accessibilityLabel(model.inPip ? t("Revenir dans l'app", "Back to the app") : t("Image dans l'image", "Picture-in-Picture"))
+        }
+    }
+
+    /// What the player shows while the video plays in the Picture-in-Picture window.
+    private func pipCover(mini: Bool) -> some View {
+        ZStack {
+            Color.black
+            VStack(spacing: 10) {
+                Image(systemName: "pip").font(mini ? .body : .system(size: 44, weight: .light))
+                if !mini {
+                    Text(t("Lecture en image dans l'image", "Playing in Picture-in-Picture")).font(.headline)
+                }
+            }
+            .foregroundStyle(.white.opacity(0.7))
+        }
+        .transition(.opacity)
+    }
+
     private func overlay(size: CGSize) -> some View {
         ZStack {
             LinearGradient(colors: [.black.opacity(0.7), .clear, .clear, .black.opacity(0.7)], startPoint: .top, endPoint: .bottom)
@@ -476,6 +511,7 @@ struct PlayerView: View {
                     .foregroundStyle(.white)
                     Spacer()
                     trackMenu
+                    pipButton
                     Button { model.setFill(!model.fill, screen: size); scheduleHide() } label: {
                         Image(systemName: model.fill ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                             .font(.title3).foregroundStyle(.white).frame(width: 44, height: 44)

@@ -399,7 +399,7 @@ struct SourcesSheet: View {
     private var content: some View {
         if extensions.enabled.isEmpty {
             message(t("Aucune source installée", "No sources installed"),
-                    t("Ajoute un dépôt d'extensions dans Réglages, puis reviens ici.", "Add an extension repository in Settings, then come back here."))
+                    t("Ajoute un dépôt d'extensions dans Réglages, puis reviens ici.", "Add an extension repository in Settings, then come back here."), addSources: true)
         } else if let search {
             if releases.isEmpty {
                 message(t("Aucune source trouvée", "No source found"),
@@ -422,10 +422,18 @@ struct SourcesSheet: View {
         }
     }
 
-    private func message(_ title: String, _ body: String) -> some View {
+    private func message(_ title: String, _ body: String, addSources: Bool = false) -> some View {
         VStack(spacing: 8) {
             Text(title).font(.headline)
             Text(body).font(.subheadline).foregroundStyle(Nami.textSecondary).multilineTextAlignment(.center)
+            if addSources {
+                Button(t("Ajouter des sources", "Add sources")) {
+                    PlayerCenter.shared.sources = nil
+                    Downloads.shared.openSources()
+                }
+                .buttonStyle(.borderedProminent).tint(Nami.text).foregroundStyle(Nami.ground)
+                .padding(.top, 8)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 32).padding(.top, 60)

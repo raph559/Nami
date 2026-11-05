@@ -25,7 +25,7 @@
 - [x] Autoplay the next episode with a countdown.
 - [x] Mini-player when you swipe the player down.
 - [x] Fill the screen without enlarging the subtitles.
-- [ ] Picture-in-Picture.
+- [x] Picture-in-Picture.
 
 ## Subtitles
 

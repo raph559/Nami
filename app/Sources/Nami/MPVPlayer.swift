@@ -18,9 +18,12 @@ final class PlayerModel: ObservableObject {
     @Published var fill = false
     @Published var ended = false
     @Published var subDelay: Double = 0
+    /// The video is playing in the Picture-in-Picture window, not here.
+    @Published var inPip = false
 
     /// The view mpv renders into; created first because mpv needs it at start.
     let view = MPVVideoView()
+    private(set) var pip: PlayerPip?
     private var mpv: OpaquePointer?
     private var subtitleChosen = false
 
@@ -88,6 +91,16 @@ final class PlayerModel: ObservableObject {
         return String(cString: raw)
     }
 
+    func attach(to container: UIView) {
+        view.frame = container.bounds
+        view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        container.addSubview(view)
+        pip = PlayerPip(model: self, container: container)
+    }
+
+    /// Width over height of the picture as shown, once a video plays.
+    var videoAspect: Double? { self.get("video-params/aspect").flatMap(Double.init) }
+
     func play(url: URL) {
         command(["loadfile", url.absoluteString])
         set("pause", "no")
@@ -106,6 +119,8 @@ final class PlayerModel: ObservableObject {
     }
 
     func togglePause() { set("pause", isPlaying ? "yes" : "no") }
+
+    func setPaused(_ paused: Bool) { set("pause", paused ? "yes" : "no") }
 
     func jump(_ seconds: Int32) { command(["seek", String(seconds), "relative"]) }
 
@@ -235,10 +250,42 @@ final class MPVMetalLayer: CAMetalLayer {
         get { super.drawableSize }
         set { if newValue.width > 1, newValue.height > 1 { super.drawableSize = newValue } }
     }
+
+    /// MoltenVK sets this back to true each time it makes its pictures, which forbids
+    /// copying them. Picture-in-Picture needs to copy them, so it can keep it off.
+    var readable = false
+    override var framebufferOnly: Bool {
+        get { super.framebufferOnly }
+        set { super.framebufferOnly = readable ? false : newValue }
+    }
+
+    private let lock = NSLock()
+    private var presented: (@Sendable (MTLTexture) -> Void)?
+
+    /// Called with each picture once it is on screen, for Picture-in-Picture to copy.
+    /// Nothing keeps the picture afterwards: mpv has only a few and waits for them.
+    func onPresent(_ handler: (@Sendable (MTLTexture) -> Void)?) { lock.withLock { presented = handler } }
+
+    override func nextDrawable() -> CAMetalDrawable? {
+        let drawable = super.nextDrawable()
+        if let drawable, let handler = lock.withLock({ presented }) {
+            drawable.addPresentedHandler { shown in
+                if let texture = (shown as? CAMetalDrawable)?.texture { handler(texture) }
+            }
+        }
+        return drawable
+    }
 }
 
 struct MPVSurface: UIViewRepresentable {
-    let model: PlayerModel
-    func makeUIView(context: Context) -> MPVVideoView { model.view }
-    func updateUIView(_ uiView: MPVVideoView, context: Context) {}
+    @ObservedObject var model: PlayerModel
+
+    /// A container, so the video can leave it for Picture-in-Picture and come back.
+    func makeUIView(context: Context) -> UIView {
+        let container = UIView()
+        model.attach(to: container)
+        return container
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
 }
