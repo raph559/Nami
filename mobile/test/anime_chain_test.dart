@@ -22,7 +22,7 @@ final gate2 = node(195496, 'GATE 2');
 
 final relations = <int, List<Map<String, dynamic>>>{
   20994: [edge('SEQUEL', gate1b)],
-  21364: [edge('PREQUEL', gate1), edge('SEQUEL', gate2)],
+  21364: [edge('PREQUEL', gate1), edge('SEQUEL', gate2), edge('SIDE_STORY', node(5000, 'GATE OVA'))],
   195496: [edge('PREQUEL', gate1b), edge('ADAPTATION', node(1, 'GATE manga', type: 'MANGA'))],
 };
 
@@ -116,5 +116,13 @@ void main() {
     expect(find.text('GATE 2'), findsNothing);
     await tester.pumpAndSettle();
     expect(find.text('GATE 2'), findsOneWidget);
+  });
+
+  test('side stories of the other seasons come around the series', () async {
+    final chain = await followChain(Media(gate1), detailsOf(20994), fetch);
+    expect(chain.around.map((r) => (r.media.id, r.relation)), [(5000, 'SIDE_STORY')]);
+    // Not the manga: Nami is anime only.
+    final last = await followChain(Media(gate2), detailsOf(195496), fetch);
+    expect(last.around.map((r) => r.media.id), [5000]);
   });
 }

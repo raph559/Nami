@@ -196,8 +196,9 @@ class AnimeDetails {
 }
 
 /// The seasons in order around an anime: what comes [before] it, oldest first,
-/// and what comes [after] it.
-typedef AnimeChain = ({List<RelatedAnime> before, List<RelatedAnime> after});
+/// and what comes [after] it; [around] holds what hangs off the other seasons
+/// (side stories, spin-offs, films, specials).
+typedef AnimeChain = ({List<RelatedAnime> before, List<RelatedAnime> after, List<RelatedAnime> around});
 
 /// How far the chain is followed each way: a long franchise, not an endless loop.
 const chainSteps = 8;
@@ -219,6 +220,7 @@ Future<AnimeChain> followChain(
       if (r.relation == 'PREQUEL') r.media.id,
   ];
   var forth = [for (final r in after) r.media.id];
+  final around = <RelatedAnime>[];
   for (var step = 0; step < chainSteps && (back.isNotEmpty || forth.isNotEmpty); step++) {
     final List<Map<String, dynamic>> found;
     try {
@@ -235,12 +237,20 @@ Future<AnimeChain> followChain(
     ];
     final older = next(back, 'PREQUEL');
     final newer = next(forth, 'SEQUEL');
+    // The rest of each season's links, once the chain has taken its own.
+    for (final m in found) {
+      for (final e in m['relations']?['edges'] as List? ?? const []) {
+        final relation = e['relationType'] as String? ?? 'OTHER';
+        if (relation == 'PREQUEL' || relation == 'SEQUEL' || e['node']?['type'] != 'ANIME') continue;
+        if (seen.add(e['node']['id'])) around.add(RelatedAnime(Media(Map<String, dynamic>.from(e['node'])), relation));
+      }
+    }
     before.insertAll(0, older.reversed);
     after.addAll(newer);
     back = [for (final r in older) r.media.id];
     forth = [for (final r in newer) r.media.id];
   }
-  return (before: before, after: after);
+  return (before: before, after: after, around: around);
 }
 
 extension AnimeDetailsQuery on AniList {

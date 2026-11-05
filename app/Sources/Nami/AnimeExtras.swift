@@ -129,10 +129,12 @@ struct AnimeDetails: Decodable {
 }
 
 /// The seasons in order around an anime: what comes before it, oldest first, and
-/// what comes after it.
+/// what comes after it; `around` holds what hangs off the other seasons (side
+/// stories, spin-offs, films, specials).
 struct AnimeChain {
     var before: [AnimeDetails.Relations.Edge]
     var after: [AnimeDetails.Relations.Edge]
+    var around: [AnimeDetails.Relations.Edge] = []
 }
 
 extension AniList {
@@ -151,6 +153,7 @@ extension AniList {
         var seen = Set([media.id] + related.map(\.node.id))
         var back = before.filter { $0.relationType == "PREQUEL" }.map(\.node.id)
         var forth = after.map(\.node.id)
+        var around: [AnimeDetails.Relations.Edge] = []
         for _ in 0..<8 where !back.isEmpty || !forth.isEmpty {
             guard let found = try? await query("""
             query($ids: [Int]) { Page(perPage: 50) { media(id_in: $ids, type: ANIME) { id
@@ -166,12 +169,19 @@ extension AniList {
             }
             let older = next(back, "PREQUEL")
             let newer = next(forth, "SEQUEL")
+            // The rest of each season's links, once the chain has taken its own.
+            for m in found.Page.media {
+                for e in m.relations?.edges ?? [] where e.relationType != "PREQUEL" && e.relationType != "SEQUEL"
+                    && e.node.type == "ANIME" && seen.insert(e.node.id).inserted {
+                    around.append(e)
+                }
+            }
             before.insert(contentsOf: older.reversed(), at: 0)
             after.append(contentsOf: newer)
             back = older.map(\.node.id)
             forth = newer.map(\.node.id)
         }
-        return AnimeChain(before: before, after: after)
+        return AnimeChain(before: before, after: after, around: around)
     }
 }
 
@@ -469,6 +479,12 @@ struct AnimeRelatedTab: View {
                 Heading(t("Aussi lié", "Also related"))
                 LazyVGrid(columns: grid, alignment: .leading, spacing: 14) {
                     ForEach(others, id: \.node.id) { link($0.node, label: AnimeRelation.label($0.relationType)) }
+                }
+            }
+            if let around = chain?.around, !around.isEmpty {
+                Heading(t("Autour de la série", "Around the series"))
+                LazyVGrid(columns: grid, alignment: .leading, spacing: 14) {
+                    ForEach(around, id: \.node.id) { link($0.node, label: AnimeRelation.label($0.relationType)) }
                 }
             }
             if !details.similar.isEmpty {

@@ -372,6 +372,7 @@ class _AnimeRelatedTabState extends State<AnimeRelatedTab> {
   late AnimeChain _chain = (
     before: widget.details.related.where((r) => r.isBefore).toList(),
     after: widget.details.related.where((r) => r.isAfter).toList(),
+    around: const <RelatedAnime>[],
   );
 
   Media get media => widget.media;
@@ -406,7 +407,7 @@ class _AnimeRelatedTabState extends State<AnimeRelatedTab> {
 
   @override
   Widget build(BuildContext context) {
-    final (:before, :after) = _chain;
+    final (:before, :after, :around) = _chain;
     final others = details.related.where((r) => !r.isBefore && !r.isAfter).toList();
     final chain = before.isNotEmpty || after.isNotEmpty;
     final desktop = isDesktop;
@@ -435,6 +436,14 @@ class _AnimeRelatedTabState extends State<AnimeRelatedTab> {
             children: [for (final r in others) _node(r.media, relationLabel(r.relation))],
           ),
         ],
+        if (around.isNotEmpty) ...[
+          _Heading(t('Autour de la série', 'Around the series')),
+          Wrap(
+            spacing: 12,
+            runSpacing: 14,
+            children: [for (final r in around) _node(r.media, relationLabel(r.relation))],
+          ),
+        ],
         if (details.recommendations.isNotEmpty) ...[
           _Heading(t('Si tu as aimé', 'If you liked this')),
           Wrap(
@@ -443,7 +452,7 @@ class _AnimeRelatedTabState extends State<AnimeRelatedTab> {
             children: [for (final m in details.recommendations.take(desktop ? 12 : 9)) MediaCard(m, width: 110)],
           ),
         ],
-        if (!chain && others.isEmpty && details.recommendations.isEmpty)
+        if (!chain && others.isEmpty && around.isEmpty && details.recommendations.isEmpty)
           StateMessage(title: t('Rien de lié pour le moment', 'Nothing related yet')),
       ],
     );
