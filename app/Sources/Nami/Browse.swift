@@ -273,6 +273,23 @@ private struct HeroSlide: View {
         return t("Regarder l'épisode \(item.episode)", "Watch episode \(item.episode)")
     }
 
+    private var watchButton: some View {
+        Button { PlayerCenter.shared.openSources(media, episode: item.episode) } label: {
+            Label(watchLabel, systemImage: "play.fill")
+                .font(.headline).lineLimit(1).padding(.horizontal, 6).padding(.vertical, 4)
+        }
+        .buttonStyle(.borderedProminent).tint(Nami.text).foregroundStyle(Nami.ground)
+        .fixedSize()
+    }
+
+    private var detailsButton: some View {
+        Button(action: open) {
+            Text(t("Voir la fiche", "See details")).font(.headline).lineLimit(1).padding(.horizontal, 6).padding(.vertical, 4)
+        }
+        .buttonStyle(.bordered).tint(Nami.text)
+        .fixedSize()
+    }
+
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             CoverImageView(url: media.bannerImage ?? media.coverImage?.extraLarge, corner: 0)
@@ -291,16 +308,10 @@ private struct HeroSlide: View {
                 Text(kicker).font(.footnote.weight(.semibold)).foregroundStyle(Nami.accent(media.coverImage?.color))
                 Text(media.title.display).font(.largeTitle.bold()).lineLimit(3)
                 if !meta.isEmpty { Text(meta).font(.subheadline).foregroundStyle(Nami.textSecondary).lineLimit(2) }
-                HStack(spacing: 10) {
-                    Button { PlayerCenter.shared.openSources(media, episode: item.episode) } label: {
-                        Label(watchLabel, systemImage: "play.fill")
-                            .font(.headline).padding(.horizontal, 6).padding(.vertical, 4)
-                    }
-                    .buttonStyle(.borderedProminent).tint(Nami.text).foregroundStyle(Nami.ground)
-                    Button(action: open) {
-                        Text(t("Voir la fiche", "See details")).font(.headline).padding(.horizontal, 6).padding(.vertical, 4)
-                    }
-                    .buttonStyle(.bordered).tint(Nami.text)
+                // Side by side when both fit on one line each, otherwise one above the other.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { watchButton; detailsButton }
+                    VStack(alignment: .leading, spacing: 10) { watchButton; detailsButton }
                 }
                 .padding(.top, 6)
                 if count > 1 {
