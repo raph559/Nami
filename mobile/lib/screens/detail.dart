@@ -6,10 +6,12 @@ import '../anime_details.dart';
 import '../downloads.dart';
 import '../mappings.dart';
 import '../platform.dart';
+import '../profile.dart' show FavouriteKind;
 import '../player_center.dart';
 import '../settings.dart';
 import '../theme.dart';
 import '../ui/downloads_section.dart';
+import '../ui/favourite_button.dart';
 import '../ui/motion.dart';
 import '../ui/tabs.dart';
 import '../ui/tags.dart';
@@ -206,7 +208,13 @@ class _DetailScreenState extends State<DetailScreen> {
     final status = media.listEntry?.status;
     final score = media.listEntry?.score ?? 0;
     final style = tall ? OutlinedButton.styleFrom(minimumSize: const Size(0, 50)) : null;
+    final loaded = details;
     return [
+      // Once AniList has said whether it is a favourite.
+      if (loaded != null)
+        FocusOutline(
+          child: FavouriteButton(kind: FavouriteKind.anime, id: media.id, initial: loaded.isFavourite),
+        ),
       FocusOutline(
         child: OutlinedButton.icon(
           style: style,
@@ -528,10 +536,7 @@ class _DetailScreenState extends State<DetailScreen> {
           if (extra < 0)
             _episodes(desktop)
           else
-            Padding(
-              padding: EdgeInsets.fromLTRB(side, 0, desktop ? 40 : side, 40),
-              child: _extra(extra),
-            ),
+            Padding(padding: EdgeInsets.fromLTRB(side, 0, desktop ? 40 : side, 40), child: _extra(extra)),
         ],
       ),
     );
@@ -541,7 +546,12 @@ class _DetailScreenState extends State<DetailScreen> {
     final d = details;
     if (d == null) {
       return detailsFailed
-          ? StateMessage(title: t('Rien à afficher', 'Nothing to show'), body: networkError(), action: t('Réessayer', 'Try again'), onAction: _loadDetails)
+          ? StateMessage(
+              title: t('Rien à afficher', 'Nothing to show'),
+              body: networkError(),
+              action: t('Réessayer', 'Try again'),
+              onAction: _loadDetails,
+            )
           : StateMessage(title: t('Chargement…', 'Loading…'), loading: true);
     }
     return switch (which) {
@@ -720,7 +730,10 @@ class _DetailScreenState extends State<DetailScreen> {
         (t('Reprendre', 'Resume'), () => store.resume(d!)),
         (t('Annuler le téléchargement', 'Cancel download'), () => confirmRemove(context, d!)),
       ],
-      DownloadState.failed => [(t('Réessayer', 'Retry'), () => store.retry(d!)), (delete, () => confirmRemove(context, d!))],
+      DownloadState.failed => [
+        (t('Réessayer', 'Retry'), () => store.retry(d!)),
+        (delete, () => confirmRemove(context, d!)),
+      ],
       DownloadState.done => [(delete, () => confirmRemove(context, d!))],
     };
   }
@@ -740,7 +753,9 @@ class _DetailScreenState extends State<DetailScreen> {
         if (AniList.instance.isLoggedIn)
           PopupMenuItem(
             value: () => _setWatched(watched ? n - 1 : n),
-            child: Text(watched ? t("Non vu à partir d'ici", 'Unwatched from here') : t("Vu jusqu'ici", 'Watched up to here')),
+            child: Text(
+              watched ? t("Non vu à partir d'ici", 'Unwatched from here') : t("Vu jusqu'ici", 'Watched up to here'),
+            ),
           ),
       ],
     );
@@ -815,12 +830,8 @@ class _DetailScreenState extends State<DetailScreen> {
           height: 34,
           child: SmoothProgress(
             value: d.fraction,
-            builder: (context, value) => CircularProgressIndicator(
-              value: value,
-              strokeWidth: 2.5,
-              color: accent,
-              backgroundColor: Nami.line,
-            ),
+            builder: (context, value) =>
+                CircularProgressIndicator(value: value, strokeWidth: 2.5, color: accent, backgroundColor: Nami.line),
           ),
         ),
         DownloadPauseButton(d),

@@ -1,0 +1,99 @@
+import 'package:flutter/material.dart';
+
+import '../anilist.dart';
+import '../profile.dart';
+import '../settings.dart';
+import '../theme.dart';
+
+/// The heart of a favourite on AniList. It changes at once; AniList is told after,
+/// one request at a time, and the heart goes back if AniList refuses.
+class FavouriteButton extends StatefulWidget {
+  const FavouriteButton({
+    super.key,
+    required this.kind,
+    required this.id,
+    required this.initial,
+    this.compact = false,
+    this.toggle,
+  });
+
+  final FavouriteKind kind;
+  final int id;
+  final bool initial;
+
+  /// A plain icon (in a list), rather than a button the size of the ones beside it.
+  final bool compact;
+
+  /// Flips the favourite on AniList; [AniList.toggleFavourite] unless a test gives another.
+  final Future<void> Function(FavouriteKind, int)? toggle;
+
+  static const red = Color(0xFFE85D75);
+
+  @override
+  State<FavouriteButton> createState() => _FavouriteButtonState();
+}
+
+class _FavouriteButtonState extends State<FavouriteButton> {
+  /// What the heart shows: what the viewer asked for last.
+  late bool _on = widget.initial;
+
+  /// What AniList has.
+  late bool _sent = widget.initial;
+  bool _busy = false;
+
+  @override
+  void didUpdateWidget(FavouriteButton old) {
+    super.didUpdateWidget(old);
+    if (old.initial != widget.initial && !_busy) _on = _sent = widget.initial;
+  }
+
+  Future<void> _tap() async {
+    setState(() => _on = !_on);
+    if (_busy) return;
+    _busy = true;
+    final toggle = widget.toggle ?? AniList.instance.toggleFavourite;
+    try {
+      // Taps during a request only change what is wanted; it is sent once that request ends.
+      while (_on != _sent) {
+        await toggle(widget.kind, widget.id);
+        _sent = !_sent;
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _on = _sent);
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(t("Les favoris n'ont pas pu être modifiés.", 'Favourites could not be changed.'))),
+      );
+    } finally {
+      _busy = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = Icon(
+      _on ? Icons.favorite : Icons.favorite_border,
+      color: _on ? FavouriteButton.red : Nami.text,
+      size: widget.compact ? 22 : 20,
+    );
+    final label = _on
+        ? t('Retirer des favoris', 'Remove from favourites')
+        : t('Ajouter aux favoris', 'Add to favourites');
+    if (widget.compact) {
+      return IconButton(onPressed: _tap, icon: icon, tooltip: label);
+    }
+    return Semantics(
+      label: label,
+      button: true,
+      excludeSemantics: true,
+      child: Tooltip(
+        message: label,
+        child: OutlinedButton(
+          style: OutlinedButton.styleFrom(minimumSize: const Size(50, 50), padding: EdgeInsets.zero),
+          onPressed: _tap,
+          child: icon,
+        ),
+      ),
+    );
+  }
+}

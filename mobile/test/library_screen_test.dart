@@ -106,6 +106,46 @@ void main() {
     expect(find.text('Plus'), findsOneWidget);
   });
 
+  testWidgets('favourites show on the profile', (tester) async {
+    await pumpLibrary(
+      tester,
+      viewer: {
+        'favourites': {
+          'anime': {
+            'nodes': [
+              {
+                'id': 154587,
+                'title': {'romaji': 'Frieren'},
+              },
+            ],
+          },
+          'characters': {
+            'nodes': [
+              {
+                'id': 183965,
+                'name': {'full': 'Fern'},
+              },
+            ],
+          },
+          'studios': {
+            'nodes': [
+              {'id': 11, 'name': 'Madhouse'},
+            ],
+          },
+        },
+      },
+    );
+    for (final text in ['Favoris', 'Frieren', 'Fern', 'Madhouse', 'Personnages', 'Studios']) {
+      expect(find.text(text), findsWidgets, reason: text);
+    }
+    expect(find.text('Équipe'), findsNothing);
+  });
+
+  testWidgets('no favourites, no block', (tester) async {
+    await pumpLibrary(tester);
+    expect(find.text('Favoris'), findsNothing);
+  });
+
   testWidgets('no bio and no stats link for a new account', (tester) async {
     await pumpLibrary(
       tester,

@@ -374,6 +374,95 @@ class _ProfileHeader extends StatelessWidget {
             label: Text(t('Statistiques', 'Statistics')),
           ),
         ],
+        if (!viewer.favourites.isEmpty) _Favourites(viewer.favourites),
+      ],
+    );
+  }
+}
+
+/// The viewer's favourites, a row per kind. Anime open in Nami; characters, staff
+/// and studios on AniList, as Nami has no page for them.
+class _Favourites extends StatelessWidget {
+  const _Favourites(this.favourites);
+  final Favourites favourites;
+
+  @override
+  Widget build(BuildContext context) {
+    final f = favourites;
+    Widget heading(String text, {bool big = false}) => Padding(
+      padding: EdgeInsets.only(top: big ? 24 : 16, bottom: 10),
+      child: Semantics(header: true, child: Text(text, style: big ? Nami.section : Nami.meta)),
+    );
+    void open(String? url) {
+      if (url != null) launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    }
+
+    Widget people(List<FavouriteItem> items) => SizedBox(
+      height: 112,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: items.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 14),
+        itemBuilder: (context, i) {
+          final p = items[i];
+          return Semantics(
+            button: p.url != null,
+            label: p.name,
+            excludeSemantics: true,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: p.url == null ? null : () => open(p.url),
+              child: SizedBox(
+                width: 76,
+                child: Column(
+                  children: [
+                    SizedBox(width: 64, height: 64, child: CoverImage(p.image, radius: 32)),
+                    const SizedBox(height: 6),
+                    Text(
+                      p.name,
+                      maxLines: 2,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      style: Nami.caption.copyWith(color: Nami.text),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        heading(t('Favoris', 'Favourites'), big: true),
+        if (f.anime.isNotEmpty) ...[
+          heading(t('Animes', 'Anime')),
+          SizedBox(
+            height: 210,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: f.anime.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (context, i) => MediaCard(f.anime[i], width: 108),
+            ),
+          ),
+        ],
+        if (f.characters.isNotEmpty) ...[heading(t('Personnages', 'Characters')), people(f.characters)],
+        if (f.staff.isNotEmpty) ...[heading(t('Équipe', 'Staff')), people(f.staff)],
+        if (f.studios.isNotEmpty) ...[
+          heading('Studios'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final s in f.studios)
+                OutlinedButton(onPressed: s.url == null ? null : () => open(s.url), child: Text(s.name)),
+            ],
+          ),
+        ],
       ],
     );
   }

@@ -5,8 +5,10 @@ import 'package:url_launcher/url_launcher.dart';
 import '../anilist.dart';
 import '../anime_details.dart';
 import '../platform.dart';
+import '../profile.dart' show FavouriteKind;
 import '../settings.dart';
 import '../theme.dart';
+import '../ui/favourite_button.dart';
 import '../ui/tags.dart';
 import '../widgets.dart';
 
@@ -34,7 +36,9 @@ class TrailerScreen extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => launchUrl(Uri.parse(trailer.pageUrl), mode: LaunchMode.externalApplication),
-            child: Text(trailer.isYouTube ? t('Ouvrir sur YouTube', 'Open on YouTube') : t('Ouvrir le site', 'Open the site')),
+            child: Text(
+              trailer.isYouTube ? t('Ouvrir sur YouTube', 'Open on YouTube') : t('Ouvrir le site', 'Open the site'),
+            ),
           ),
         ],
       ),
@@ -58,7 +62,9 @@ class TrailerScreen extends StatelessWidget {
 }
 
 void openTrailer(BuildContext context, Media media, Trailer trailer) => Navigator.of(context).push(
-  MaterialPageRoute(builder: (_) => TrailerScreen(trailer: trailer, title: media.title.display)),
+  MaterialPageRoute(
+    builder: (_) => TrailerScreen(trailer: trailer, title: media.title.display),
+  ),
 );
 
 String _short(int n) => n >= 1000000
@@ -114,7 +120,10 @@ class _TrailerCard extends StatelessWidget {
                   Center(
                     child: DecoratedBox(
                       decoration: BoxDecoration(color: Nami.ground.withValues(alpha: 0.7), shape: BoxShape.circle),
-                      child: const Padding(padding: EdgeInsets.all(12), child: Icon(Icons.play_arrow_rounded, size: 34)),
+                      child: const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Icon(Icons.play_arrow_rounded, size: 34),
+                      ),
                     ),
                   ),
                 ],
@@ -243,7 +252,11 @@ class AnimeDetailsTab extends StatelessWidget {
         ],
         if (d.rankings.isNotEmpty) ...[
           _Heading(t('Classements', 'Rankings')),
-          for (final r in d.rankings.take(4)) Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(r, style: Nami.meta)),
+          for (final r in d.rankings.take(4))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(r, style: Nami.meta),
+            ),
         ],
         if (d.scores.isNotEmpty) ...[_Heading(t('Notes', 'Scores')), _ScoreChart(d.scores)],
         if (watching.isNotEmpty) ...[
@@ -253,7 +266,9 @@ class AnimeDetailsTab extends StatelessWidget {
         if (d.tags.isNotEmpty) ...[_Heading(t('Tags', 'Tags')), _Tags(d.tags)],
         if (d.staff.isNotEmpty) ...[
           _Heading(t('Équipe', 'Staff')),
-          _Grid(children: [for (final p in d.staff) _PersonTile(person: p, detail: p.role)]),
+          _Grid(
+            children: [for (final p in d.staff) _PersonTile(person: p, detail: p.role)],
+          ),
         ],
         if (d.links.isNotEmpty) ...[
           _Heading(t('Liens', 'Links')),
@@ -318,9 +333,18 @@ class AnimeCastTab extends StatelessWidget {
                     detail: c.main ? t('Principal', 'Main') : t('Secondaire', 'Supporting'),
                   ),
                 ),
+                if (AniList.instance.isLoggedIn && c.character.id != null)
+                  FavouriteButton(
+                    kind: FavouriteKind.character,
+                    id: c.character.id!,
+                    initial: c.character.isFavourite,
+                    compact: true,
+                  ),
                 if (c.voice != null) ...[
                   const SizedBox(width: 8),
-                  Expanded(child: _PersonTile(person: c.voice!, detail: t('Voix', 'Voice'))),
+                  Expanded(
+                    child: _PersonTile(person: c.voice!, detail: t('Voix', 'Voice')),
+                  ),
                 ],
               ],
             ),
