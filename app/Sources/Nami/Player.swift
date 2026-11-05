@@ -526,8 +526,8 @@ struct PlayerView: View {
                                 .buttonStyle(.bordered).tint(.white)
                         }
                         Spacer()
-                        // The countdown card offers the same action while it runs.
-                        if hasNext, countdown == nil {
+                        // The countdown card, or the button at the end of the episode, offers it then.
+                        if hasNext, countdown == nil, !atEnd {
                             Button { goNext(auto: false) } label: { Label(t("Épisode suivant", "Next episode"), systemImage: "forward.end.fill") }
                                 .buttonStyle(.borderedProminent)
                         }
@@ -690,8 +690,22 @@ struct PlayerView: View {
 
     // MARK: Floating
 
+    /// The end of an episode, where "Épisode suivant" shows by itself: from the start
+    /// of the ending when AniSkip knows it, otherwise the last 90 seconds (a typical
+    /// ending, as the +85 s jump over openings), and once it has ended. Same rule as
+    /// atEpisodeEnd in mobile/lib/playback.dart.
+    private var atEnd: Bool {
+        if model.ended { return true }
+        let length = model.lengthMs
+        guard length > 0 else { return false }
+        if let ending = skips.first(where: { $0.kind == .ending }) { return model.timeMs >= ending.startMs }
+        // A short video (a special, a recap) gets its last tenth rather than most of it.
+        let tail: Int32 = length < 5 * 60_000 ? length / 10 : 90_000
+        return model.timeMs >= length - tail
+    }
+
     /// Stays on screen while the controls are hidden: the skip button, a short
-    /// notice and the next-episode countdown.
+    /// notice, the next-episode countdown, and "Épisode suivant" at the end.
     private var floating: some View {
         VStack {
             Spacer()
@@ -723,6 +737,12 @@ struct PlayerView: View {
                     }
                     .padding(14)
                     .background(Self.panel, in: RoundedRectangle(cornerRadius: 8))
+                } else if hasNext, atEnd {
+                    Button { goNext(auto: false) } label: {
+                        Label(t("Épisode suivant", "Next episode"), systemImage: "forward.end.fill")
+                            .font(.headline).padding(.horizontal, 6).padding(.vertical, 4)
+                    }
+                    .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black)
                 } else if let offered {
                     Button { skipNow() } label: {
                         Label(offered.kind == .opening ? t("Passer l'intro", "Skip opening") : t("Passer le générique", "Skip ending"),

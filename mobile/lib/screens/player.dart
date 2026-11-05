@@ -501,8 +501,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         ),
                       ),
                     const Spacer(),
-                    // The s.countdown card offers the same action while it runs.
-                    if (s.hasNext && s.countdown == null)
+                    // The countdown card, or the button at the end of the episode, offers it then.
+                    if (s.hasNext && s.countdown == null && !s.atEnd)
                       FocusOutline(
                         child: FilledButton.icon(
                           onPressed: () => s.goNext(auto: false),
@@ -562,7 +562,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   /// Stays on screen while the controls are hidden: the skip button, a short
-  /// s.notice and the next-episode s.countdown.
+  /// s.notice, the next-episode s.countdown, and "Épisode suivant" at the end.
   Widget _floating() {
     final skip = s.offered;
     return SafeArea(
@@ -599,6 +599,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ),
             if (s.countdown != null)
               Align(alignment: Alignment.bottomRight, child: _countdownCard())
+            else if (s.hasNext && s.atEnd)
+              Align(
+                alignment: Alignment.bottomRight,
+                child: FocusOutline(
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Nami.text,
+                      foregroundColor: Nami.ground,
+                      minimumSize: const Size(0, 48),
+                    ),
+                    onPressed: () => s.goNext(auto: false),
+                    icon: const Icon(Icons.skip_next),
+                    label: Text(t('Épisode suivant', 'Next episode')),
+                  ),
+                ),
+              )
             else if (skip != null)
               Align(
                 alignment: Alignment.bottomRight,

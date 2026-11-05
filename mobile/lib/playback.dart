@@ -27,6 +27,20 @@ class PlayerExit {
 
 enum PlaybackPhase { connecting, chooseFile, playing, failed }
 
+/// The end of an episode, where "Épisode suivant" shows by itself: from the start
+/// of the ending when AniSkip knows it, otherwise the last 90 seconds (a typical
+/// ending, as the +85 s jump over openings), and once it has ended.
+bool atEpisodeEnd(Duration position, Duration length, List<SkipInterval> skips, {bool ended = false}) {
+  if (ended) return true;
+  if (length <= Duration.zero) return false;
+  for (final i in skips) {
+    if (i.kind == SkipKind.ending) return position >= i.start;
+  }
+  // A short video (a special, a recap) gets its last tenth rather than most of it.
+  final tail = length < const Duration(minutes: 5) ? length * 0.1 : const Duration(seconds: 90);
+  return position >= length - tail;
+}
+
 /// One episode being played: the torrent, mpv and everything that follows the
 /// playback position (resume, AniSkip, countdown, subtitles). It lives apart
 /// from the screens so the full-screen player and the mini-player can both
@@ -62,6 +76,8 @@ class PlaybackSession extends ChangeNotifier {
       player.stream.tracks.listen(_chooseSubtitle),
       player.stream.track.listen((_) => _applySubtitleStyle()),
       player.stream.completed.listen((done) {
+        _ended = done;
+        _updateEnd(player.state.position);
         if (!done) return;
         _checkWatched(force: true);
         if (hasNext && AppSettings.instance.autoNext) startCountdown();
@@ -113,6 +129,10 @@ class PlaybackSession extends ChangeNotifier {
   int? countdown;
   bool countdownCancelled = false;
   Timer? _countdownTimer;
+
+  /// At the end of the episode: "Épisode suivant" shows without the controls.
+  bool atEnd = false;
+  bool _ended = false;
 
   // Subtitles
   bool _subtitleChosen = false;
@@ -207,7 +227,15 @@ class PlaybackSession extends ChangeNotifier {
     }
   }
 
+  void _updateEnd(Duration position) {
+    final now = atEpisodeEnd(position, player.state.duration, skips, ended: _ended);
+    if (now == atEnd) return;
+    atEnd = now;
+    notifyListeners();
+  }
+
   void _onPosition(Duration position) {
+    _updateEnd(position);
     _checkWatched();
     if ((position - _lastSaved).abs() > const Duration(seconds: 5)) _saveResume();
 
