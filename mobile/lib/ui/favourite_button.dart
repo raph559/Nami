@@ -29,22 +29,35 @@ class FavouriteButton extends StatefulWidget {
 
   static const red = Color(0xFFE85D75);
 
+  /// What AniList confirmed during this session, by kind and id. Pages keep the
+  /// details they loaded, so a heart built again (another tab, the same anime
+  /// opened twice) starts from here; a toggle flips, so starting wrong would undo it.
+  static final _confirmed = <String, bool>{};
+
+  @visibleForTesting
+  static void forget() => _confirmed.clear();
+
   @override
   State<FavouriteButton> createState() => _FavouriteButtonState();
 }
 
 class _FavouriteButtonState extends State<FavouriteButton> {
+  String get _key => '${widget.kind.name}:${widget.id}';
+  bool get _known => FavouriteButton._confirmed[_key] ?? widget.initial;
+
   /// What the heart shows: what the viewer asked for last.
-  late bool _on = widget.initial;
+  late bool _on = _known;
 
   /// What AniList has.
-  late bool _sent = widget.initial;
+  late bool _sent = _known;
   bool _busy = false;
 
   @override
   void didUpdateWidget(FavouriteButton old) {
     super.didUpdateWidget(old);
-    if (old.initial != widget.initial && !_busy) _on = _sent = widget.initial;
+    if ((old.initial != widget.initial || old.id != widget.id || old.kind != widget.kind) && !_busy) {
+      _on = _sent = _known;
+    }
   }
 
   Future<void> _tap() async {
@@ -57,6 +70,7 @@ class _FavouriteButtonState extends State<FavouriteButton> {
       while (_on != _sent) {
         await toggle(widget.kind, widget.id);
         _sent = !_sent;
+        FavouriteButton._confirmed[_key] = _sent;
       }
     } catch (_) {
       if (!mounted) return;

@@ -210,11 +210,6 @@ class _DetailScreenState extends State<DetailScreen> {
     final style = tall ? OutlinedButton.styleFrom(minimumSize: const Size(0, 50)) : null;
     final loaded = details;
     return [
-      // Once AniList has said whether it is a favourite.
-      if (loaded != null)
-        FocusOutline(
-          child: FavouriteButton(kind: FavouriteKind.anime, id: media.id, initial: loaded.isFavourite),
-        ),
       FocusOutline(
         child: OutlinedButton.icon(
           style: style,
@@ -235,6 +230,11 @@ class _DetailScreenState extends State<DetailScreen> {
               semanticsLabel: t('Ta note : ${_score(score)} sur 10', 'Your score: ${_score(score)} out of 10'),
             ),
           ),
+        ),
+      // After the list, as on iPhone; once AniList has said whether it is a favourite.
+      if (loaded != null)
+        FocusOutline(
+          child: FavouriteButton(kind: FavouriteKind.anime, id: media.id, initial: loaded.isFavourite),
         ),
     ];
   }

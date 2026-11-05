@@ -24,6 +24,18 @@ Future<void> pumpButton(WidgetTester tester, Future<void> Function(FavouriteKind
 }
 
 void main() {
+  tearDown(FavouriteButton.forget);
+
+  testWidgets('a confirmed change is remembered when the heart is built again', (tester) async {
+    await pumpButton(tester, (_, _) async {});
+    await tester.tap(find.byType(FavouriteButton));
+    await tester.pumpAndSettle();
+    // Leaving the tab and coming back builds a new button from the details loaded before.
+    await tester.pumpWidget(const SizedBox());
+    await pumpButton(tester, (_, _) async {});
+    expect(find.byIcon(Icons.favorite), findsOneWidget);
+  });
+
   testWidgets('the heart fills at once', (tester) async {
     final done = Completer<void>();
     await pumpButton(tester, (_, _) => done.future);
@@ -45,11 +57,16 @@ void main() {
 
   testWidgets('two quick taps end as the last one', (tester) async {
     var calls = 0;
+    var running = 0;
+    var most = 0;
     var favourite = false;
     await pumpButton(tester, (_, _) async {
       calls++;
+      running++;
+      most = running > most ? running : most;
       await Future<void>.delayed(const Duration(milliseconds: 300));
       favourite = !favourite;
+      running--;
     });
     await tester.tap(find.byType(FavouriteButton));
     await tester.pump();
@@ -60,7 +77,8 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(find.byIcon(Icons.favorite_border), findsOneWidget);
     // Each toggle flips it: an even number of calls leaves it off, as wanted.
-    expect(calls.isEven, isTrue);
+    expect(calls, 2);
+    expect(most, 1);
     expect(favourite, isFalse);
   });
 }

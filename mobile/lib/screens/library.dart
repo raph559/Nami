@@ -397,8 +397,9 @@ class _Favourites extends StatelessWidget {
       if (url != null) launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     }
 
+    // Tall enough for two lines of name at the reader's text size.
     Widget people(List<FavouriteItem> items) => SizedBox(
-      height: 112,
+      height: 70 + MediaQuery.textScalerOf(context).scale(36),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: items.length,
@@ -441,7 +442,7 @@ class _Favourites extends StatelessWidget {
         if (f.anime.isNotEmpty) ...[
           heading(t('Animes', 'Anime')),
           SizedBox(
-            height: 210,
+            height: MediaCard.heightFor(context, 108),
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: f.anime.length,
@@ -454,13 +455,19 @@ class _Favourites extends StatelessWidget {
         if (f.staff.isNotEmpty) ...[heading(t('Équipe', 'Staff')), people(f.staff)],
         if (f.studios.isNotEmpty) ...[
           heading('Studios'),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final s in f.studios)
-                OutlinedButton(onPressed: s.url == null ? null : () => open(s.url), child: Text(s.name)),
-            ],
+          SizedBox(
+            height: 48,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: f.studios.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, i) {
+                final s = f.studios[i];
+                return Center(
+                  child: OutlinedButton(onPressed: s.url == null ? null : () => open(s.url), child: Text(s.name)),
+                );
+              },
+            ),
           ),
         ],
       ],

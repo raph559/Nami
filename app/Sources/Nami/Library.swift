@@ -176,7 +176,7 @@ struct LibraryView: View {
                 if let viewer = anilist.viewer {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
-                            ProfileHeader(viewer: viewer)
+                            ProfileHeader(viewer: viewer, ns: ns)
                             DownloadsLink().padding(.horizontal)
                             statusChips
                             content
@@ -375,6 +375,7 @@ struct ProfileRetry: View {
 
 private struct ProfileHeader: View {
     let viewer: Viewer
+    let ns: Namespace.ID
 
     private var stats: String {
         let a = viewer.statistics?.anime
@@ -408,7 +409,7 @@ private struct ProfileHeader: View {
                 .padding(.horizontal, 20)
             }
             if let favourites = viewer.favourites, !favourites.isEmpty {
-                FavouritesView(favourites: favourites).padding(.horizontal, 20)
+                FavouritesView(favourites: favourites, ns: ns).padding(.horizontal, 20)
             }
         }
     }

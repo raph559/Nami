@@ -284,8 +284,18 @@ void main() {
       expect(trailer.embedUrl, contains('youtube-nocookie.com/embed/abc123'));
       expect(trailer.pageUrl, 'https://www.youtube.com/watch?v=abc123');
       expect(AnimeDetails(const {}).trailer, isNull);
-      expect(AnimeDetails(const {'trailer': {'id': 'abc	', 'site': 'youtube'}}).trailer!.id, 'abc');
-      expect(AnimeDetails(const {'trailer': {'id': 'x', 'site': 'vimeo'}}).trailer, isNull);
+      expect(
+        AnimeDetails(const {
+          'trailer': {'id': 'abc	', 'site': 'youtube'},
+        }).trailer!.id,
+        'abc',
+      );
+      expect(
+        AnimeDetails(const {
+          'trailer': {'id': 'x', 'site': 'vimeo'},
+        }).trailer,
+        isNull,
+      );
     });
 
     test('rankings read as sentences, and manga stay out of the relations', () {
@@ -293,6 +303,19 @@ void main() {
       expect(d.rankings, ['#12 mieux noté de tous les temps', '#3 plus populaire Automne 2026']);
       expect(d.related.map((r) => r.media.title.display), ['Before', 'After', 'Aside']);
       expect(d.recommendations.length, 1);
+    });
+
+    testWidgets('the heart comes after the list button, which keeps the wide place', (tester) async {
+      answer();
+      await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.favorite_border), findsOneWidget);
+      expect(find.ancestor(of: find.byIcon(Icons.bookmark), matching: find.byType(Expanded)), findsOneWidget);
+      expect(find.ancestor(of: find.byIcon(Icons.favorite_border), matching: find.byType(Expanded)), findsNothing);
+      expect(
+        tester.getTopLeft(find.byIcon(Icons.favorite_border)).dx,
+        greaterThan(tester.getTopLeft(find.byIcon(Icons.bookmark)).dx),
+      );
     });
 
     testWidgets('the tabs show details, characters and what is related', (tester) async {
@@ -561,10 +584,8 @@ void main() {
           MaterialApp(
             theme: Nami.theme(),
             home: Builder(
-              builder: (context) => TextButton(
-                onPressed: () => pickSource(context, full(), 6),
-                child: const Text('Regarder'),
-              ),
+              builder: (context) =>
+                  TextButton(onPressed: () => pickSource(context, full(), 6), child: const Text('Regarder')),
             ),
           ),
         );

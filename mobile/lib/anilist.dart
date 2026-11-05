@@ -420,7 +420,6 @@ class AniList extends ChangeNotifier {
     };
     await query('mutation(\$id: Int) { ToggleFavourite($arg: \$id) { anime { pageInfo { total } } } }', {'id': id});
     await loadViewer();
-    notifyListeners();
   }
 
   Future<void> loadViewer() async {
@@ -437,7 +436,8 @@ class AniList extends ChangeNotifier {
             'formats(sort: COUNT_DESC) { format count } statuses(sort: COUNT_DESC) { status count } '
             'scores(sort: MEAN_SCORE) { score count } releaseYears(sort: ID) { releaseYear count } } } '
             'favourites { anime(perPage: 25) { nodes { id title { romaji english native userPreferred } '
-            'coverImage { extraLarge large color } format episodes seasonYear } } '
+            'coverImage { extraLarge large color } format type status episodes seasonYear averageScore '
+            'nextAiringEpisode { episode airingAt } } } '
             'characters(perPage: 25) { nodes { id name { full } image { large } siteUrl } } '
             'staff(perPage: 25) { nodes { id name { full } image { large } siteUrl } } '
             'studios(perPage: 25) { nodes { id name siteUrl } } } } }',

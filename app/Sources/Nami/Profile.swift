@@ -432,6 +432,14 @@ struct FavouriteButton: View {
 
     static let red = Color(red: 0xE8 / 255, green: 0x5D / 255, blue: 0x75 / 255)
 
+    /// What AniList confirmed during this session, by kind and id. Pages keep the
+    /// details they loaded, so a heart built again (another tab, the same anime
+    /// opened twice) starts from here; a toggle flips, so starting wrong would undo it.
+    @MainActor static var confirmed: [String: Bool] = [:]
+
+    private var key: String { "\(kind):\(id)" }
+    private var known: Bool { Self.confirmed[key] ?? initial }
+
     /// What the heart shows: what the viewer asked for last.
     @State private var on: Bool?
     /// What AniList has.
@@ -440,14 +448,14 @@ struct FavouriteButton: View {
     @State private var failed = false
 
     var body: some View {
-        let shown = on ?? initial
+        let shown = on ?? known
         let label = shown ? t("Retirer des favoris", "Remove from favourites") : t("Ajouter aux favoris", "Add to favourites")
         let heart = Image(systemName: shown ? "heart.fill" : "heart")
             .foregroundStyle(shown ? Self.red : Nami.text)
             .contentTransition(.symbolEffect(.replace))
         Group {
             if compact {
-                Button(action: tap) { heart.font(.title3).frame(width: 44, height: 44) }
+                Button(action: tap) { heart.font(.title3).frame(width: 44, height: 44).contentShape(Rectangle()) }
                     .buttonStyle(.plain)
             } else {
                 Button(action: tap) { heart.font(.headline).padding(.vertical, 6) }
@@ -463,18 +471,20 @@ struct FavouriteButton: View {
     }
 
     private func tap() {
-        on = !(on ?? initial)
+        on = !(on ?? known)
         guard !busy else { return }
         busy = true
         Task {
             // Taps during a request only change what is wanted; it is sent once that request ends.
             do {
-                while (on ?? initial) != (sent ?? initial) {
+                while (on ?? known) != (sent ?? known) {
                     try await AniList.shared.toggleFavourite(kind, id: id)
-                    sent = !(sent ?? initial)
+                    let now = !(sent ?? known)
+                    sent = now
+                    Self.confirmed[key] = now
                 }
             } catch {
-                on = sent ?? initial
+                on = sent ?? known
                 failed = true
             }
             busy = false
@@ -485,6 +495,8 @@ struct FavouriteButton: View {
 /// The viewer's favourites on the profile, a row per kind.
 struct FavouritesView: View {
     let favourites: Favourites
+    /// For the zoom into an anime's page, as from the list below.
+    let ns: Namespace.ID
     @Environment(\.openURL) private var openURL
 
     private func heading(_ text: String, big: Bool = false) -> some View {
@@ -514,8 +526,8 @@ struct FavouritesView: View {
 
     var body: some View {
         let anime = favourites.anime?.nodes ?? []
-        let characters = favourites.characters?.nodes ?? []
-        let staff = favourites.staff?.nodes ?? []
+        let characters = (favourites.characters?.nodes ?? []).filter { !$0.title.isEmpty }
+        let staff = (favourites.staff?.nodes ?? []).filter { !$0.title.isEmpty }
         let studios = favourites.studios?.nodes ?? []
         VStack(alignment: .leading, spacing: 8) {
             heading(t("Favoris", "Favourites"), big: true)
@@ -524,8 +536,9 @@ struct FavouritesView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 12) {
                         ForEach(anime) { m in
-                            NavigationLink(value: MediaRoute(media: m, source: "favourite-\(m.id)")) {
-                                MediaCard(media: m, width: 104)
+                            let route = MediaRoute(media: m, source: "favourite-\(m.id)")
+                            NavigationLink(value: route) {
+                                MediaCard(media: m, width: 104).zoomSource(route.source, in: ns)
                             }
                             .buttonStyle(.plain)
                         }
