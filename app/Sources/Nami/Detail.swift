@@ -363,11 +363,17 @@ struct SourcesSheet: View {
     @State private var search: SourceSearch?
     @State private var releases: [ReleaseInfo] = []
     @State private var showFailures = false
+    /// Asked for this search only; until one is picked, the quality in Settings, which it leaves alone.
+    @State private var chosen: String?
+    private var quality: String { chosen ?? resolution }
+    /// The qualities the list can ask for; "" asks the extensions for all of them.
+    private static let qualities = ["480", "720", "1080", "2160", ""]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header
+                if !extensions.enabled.isEmpty, !autoPick { qualityChoice }
                 content
             }
             .padding(.bottom, 24)
@@ -377,12 +383,39 @@ struct SourcesSheet: View {
         .presentationBackground(Nami.sheet)
         .presentationDragIndicator(.visible)
         .foregroundStyle(Nami.text)
-        .task {
-            let found = await SourceSearch.run(media: media, episode: episode, resolution: resolution)
-            releases = ReleaseInfo.rank(found.results, resolution: resolution)
+        .task(id: quality) {
+            let asked = quality
+            search = nil
+            releases = []
+            let found = await SourceSearch.run(media: media, episode: episode, resolution: asked)
+            // A quicker answer for a quality chosen since then is not overwritten.
+            guard asked == quality else { return }
+            releases = ReleaseInfo.rank(found.results, resolution: asked.isEmpty ? resolution : asked)
             search = found
             if autoPick, let best = releases.first { onPick(best.result) }
         }
+    }
+
+    private var qualityChoice: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Self.qualities, id: \.self) { q in
+                    let on = q == quality
+                    Button { chosen = q } label: {
+                        Text(q.isEmpty ? t("Toutes", "All") : "\(q)p")
+                            .font(.subheadline.weight(on ? .semibold : .regular))
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .foregroundStyle(on ? Nami.ground : Nami.text)
+                            .background(on ? Nami.text : Color.white.opacity(0.08), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .padding(.bottom, 8)
+        .accessibilityLabel(t("Qualité", "Quality"))
     }
 
     private var header: some View {
@@ -410,8 +443,8 @@ struct SourcesSheet: View {
             if releases.isEmpty {
                 message(t("Aucune source trouvée", "No source found"),
                         search.failures.isEmpty
-                            ? t("Tes extensions n'ont rien pour cet épisode. Essaie une autre qualité dans Réglages.",
-                                "Your extensions have nothing for this episode. Try another quality in Settings.")
+                            ? t("Tes extensions n'ont rien pour cet épisode dans cette qualité. Essaie une autre qualité au-dessus.",
+                                "Your extensions have nothing for this episode in this quality. Try another quality above.")
                             : search.failures.map { "\($0.name) : \($0.message)" }.joined(separator: "\n"))
             } else {
                 list(search)

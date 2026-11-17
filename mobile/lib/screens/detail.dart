@@ -234,7 +234,7 @@ class _DetailScreenState extends State<DetailScreen> {
       // After the list, as on iPhone; once AniList has said whether it is a favourite.
       if (loaded != null)
         FocusOutline(
-          child: FavouriteButton(kind: FavouriteKind.anime, id: media.id, initial: loaded.isFavourite),
+          child: FavouriteButton(kind: FavouriteKind.anime, id: media.id, initial: loaded.isFavourite, tall: tall),
         ),
     ];
   }

@@ -80,10 +80,14 @@ class SourcesSheet extends StatefulWidget {
     required this.episode,
     this.autoPick = false,
     this.panel = false,
+    this.searcher,
   });
   final Media media;
   final int episode;
   final bool autoPick;
+
+  /// Searches the extensions; [SourceSearch.run] unless a test gives another.
+  final Future<SourceSearch> Function(Media media, int episode, String resolution)? searcher;
 
   /// Shown in [SourcesPanel] (desktop) rather than a bottom sheet.
   final bool panel;
@@ -92,10 +96,18 @@ class SourcesSheet extends StatefulWidget {
   State<SourcesSheet> createState() => _SourcesSheetState();
 }
 
+/// The qualities the list can ask for; '' asks the extensions for all of them.
+const sourceQualities = ['480', '720', '1080', '2160', ''];
+
 class _SourcesSheetState extends State<SourcesSheet> {
   SourceSearch? search;
   List<ReleaseInfo> releases = [];
   bool showFailures = false;
+
+  /// Asked for this search only: starts on the quality in Settings, which it leaves alone.
+  String quality = AppSettings.instance.resolution;
+
+  bool get _hasSources => widget.searcher != null || ExtensionStore.instance.enabled.isNotEmpty;
 
   @override
   void initState() {
@@ -104,16 +116,19 @@ class _SourcesSheetState extends State<SourcesSheet> {
   }
 
   void _run() {
-    if (ExtensionStore.instance.enabled.isEmpty) return;
+    if (!_hasSources) return;
     setState(() {
       search = null;
       releases = [];
     });
-    SourceSearch.run(widget.media, widget.episode).then((s) {
-      if (mounted) {
+    final asked = quality;
+    final searcher = widget.searcher ?? (Media m, int e, String r) => SourceSearch.run(m, e, resolution: r);
+    searcher(widget.media, widget.episode, asked).then((s) {
+      // A quicker answer for a quality chosen since then is not overwritten.
+      if (mounted && asked == quality) {
         setState(() {
           search = s;
-          releases = rankReleases(s.results);
+          releases = rankReleases(s.results, resolution: asked.isEmpty ? null : asked);
         });
         if (widget.autoPick && releases.isNotEmpty) Navigator.pop(context, releases.first.result);
       }
@@ -170,6 +185,29 @@ class _SourcesSheetState extends State<SourcesSheet> {
             style: Nami.meta.copyWith(fontSize: widget.panel ? 12 : null),
           ),
         ],
+        if (_hasSources && !widget.autoPick) ...[
+          const SizedBox(height: 12),
+          Semantics(
+            label: t('Qualité', 'Quality'),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final q in sourceQualities)
+                  ChoiceChip(
+                    label: Text(q.isEmpty ? t('Toutes', 'All') : '${q}p'),
+                    selected: quality == q,
+                    showCheckmark: false,
+                    onSelected: (_) {
+                      if (quality == q) return;
+                      setState(() => quality = q);
+                      _run();
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
     if (widget.panel) {
@@ -211,7 +249,7 @@ class _SourcesSheetState extends State<SourcesSheet> {
 
   List<Widget> _body() {
     final s = search;
-    if (ExtensionStore.instance.enabled.isEmpty) {
+    if (!_hasSources) {
       return [
         SliverToBoxAdapter(
           child: StateMessage(
@@ -248,8 +286,8 @@ class _SourcesSheetState extends State<SourcesSheet> {
             title: t('Aucune source trouvée', 'No source found'),
             body: s.failures.isEmpty
                 ? t(
-                    "Tes extensions n'ont rien pour cet épisode. Essaie une autre qualité dans Réglages.",
-                    'Your extensions have nothing for this episode. Try another quality in Settings.',
+                    "Tes extensions n'ont rien pour cet épisode dans cette qualité. Essaie une autre qualité au-dessus.",
+                    'Your extensions have nothing for this episode in this quality. Try another quality above.',
                   )
                 : [for (final f in s.failures) '${f.name} : ${f.message}'].join('\n'),
             action: t('Relancer la recherche', 'Search again'),

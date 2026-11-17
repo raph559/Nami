@@ -318,6 +318,15 @@ void main() {
       );
     });
 
+    testWidgets('on desktop the heart is as tall as the buttons beside it', (tester) async {
+      answer();
+      await pumpDetail(tester, full(), desktop: true);
+      await tester.pumpAndSettle();
+      final heart = find.ancestor(of: find.byIcon(Icons.favorite_border), matching: find.byType(OutlinedButton));
+      final list = find.ancestor(of: find.byIcon(Icons.bookmark), matching: find.byType(OutlinedButton));
+      expect(tester.getSize(heart).height, tester.getSize(list).height);
+    });
+
     testWidgets('the tabs show details, characters and what is related', (tester) async {
       answer();
       await pumpDetail(tester, full(), desktop: false, size: const Size(390, 2400));

@@ -46,6 +46,44 @@ Future<List<Object?>> pumpOpener(WidgetTester tester, {required bool desktop}) a
 }
 
 void main() {
+  testWidgets('the quality can be chosen in the list, and searches again', (tester) async {
+    SharedPreferences.setMockInitialValues({'appLanguage': 'fr', 'resolution': '1080'});
+    await AppSettings.load();
+    tester.view.physicalSize = const Size(600, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final asked = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: Nami.theme(),
+        home: Scaffold(
+          body: SourcesSheet(
+            media: media,
+            episode: 4,
+            panel: true,
+            searcher: (_, _, resolution) async {
+              asked.add(resolution);
+              return SourceSearch();
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(asked, ['1080']);
+    for (final q in ['480p', '720p', '1080p', '2160p', 'Toutes']) {
+      expect(find.text(q), findsOneWidget, reason: q);
+    }
+    await tester.tap(find.text('720p'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Toutes'));
+    await tester.pumpAndSettle();
+    expect(asked, ['1080', '720', '']);
+    // Only for this search: the preferred quality stays.
+    expect(AppSettings.instance.resolution, '1080');
+    expect(find.textContaining('Essaie une autre qualité'), findsOneWidget);
+  });
+
   testWidgets('desktop opens a right panel', (tester) async {
     await pumpOpener(tester, desktop: true);
     expect(find.byType(SourcesSheet), findsOneWidget);

@@ -14,6 +14,7 @@ class FavouriteButton extends StatefulWidget {
     required this.id,
     required this.initial,
     this.compact = false,
+    this.tall = false,
     this.toggle,
     this.check,
   });
@@ -24,6 +25,10 @@ class FavouriteButton extends StatefulWidget {
 
   /// A plain icon (in a list), rather than a button the size of the ones beside it.
   final bool compact;
+
+  /// As tall as the large phone buttons beside it; otherwise the theme's height,
+  /// like the other buttons of its row.
+  final bool tall;
 
   /// Flips the favourite on AniList; [AniList.toggleFavourite] unless a test gives another.
   final Future<void> Function(FavouriteKind, int)? toggle;
@@ -134,7 +139,9 @@ class _FavouriteButtonState extends State<FavouriteButton> {
       child: Tooltip(
         message: label,
         child: OutlinedButton(
-          style: OutlinedButton.styleFrom(minimumSize: const Size(50, 50), padding: EdgeInsets.zero),
+          style: widget.tall
+              ? OutlinedButton.styleFrom(minimumSize: const Size(50, 50), padding: EdgeInsets.zero)
+              : OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12)),
           onPressed: _tap,
           child: icon,
         ),
